@@ -7,13 +7,25 @@ import { FadeIn } from '@/components/animations/FadeIn';
 import { SlideIn } from '@/components/animations/SlideIn';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { authHelpers, UserRole } from '@/lib/appwrite';
+import { authHelpers, UserRole, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { Users, Upload, FileText, Award } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Query } from 'appwrite';
+
+interface TeamData {
+  $id: string;
+  name: string;
+  teamName: string;
+  status: string;
+  membersCount: number;
+  idea_title: string;
+  institutionName: string;
+}
 
 export default function TeamDashboard() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
+  const [teamData, setTeamData] = useState<TeamData | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -27,6 +39,22 @@ export default function TeamDashboard() {
         router.push(role ? authHelpers.getRoleDashboard(role) : '/auth/login');
         return;
       }
+      
+      // Fetch team data
+      try {
+        const teamsResponse = await databases.listDocuments(
+          DATABASE_ID,
+          COLLECTIONS.TEAMS,
+          [Query.equal('leader_user_id', user.$id)]
+        );
+        
+        if (teamsResponse.total > 0) {
+          setTeamData(teamsResponse.documents[0] as any);
+        }
+      } catch (error) {
+        console.error('Error fetching team data:', error);
+      }
+      
       setIsLoading(false);
     };
     checkAuth();
@@ -95,10 +123,26 @@ export default function TeamDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <StatusItem label="Team Registration" status="Pending" />
-                <StatusItem label="Team Members" status="0/4 Added" />
-                <StatusItem label="Idea Submission" status="Not Started" />
-                <StatusItem label="Institution Review" status="Awaiting" />
+                <StatusItem 
+                  label="Approval Status" 
+                  status={teamData?.status === 'registered' ? "✓ Approved" : (teamData?.teamName ? "⏳ Pending Review" : "Not Started")} 
+                />
+                <StatusItem 
+                  label="Team Name" 
+                  status={teamData?.teamName || "Not Set"} 
+                />
+                <StatusItem 
+                  label="Team Members" 
+                  status={teamData ? `${teamData.membersCount}/5 Added` : "0/5 Added"} 
+                />
+                <StatusItem 
+                  label="Idea Title" 
+                  status={teamData?.idea_title || "Not Set"} 
+                />
+                <StatusItem 
+                  label="Institution" 
+                  status={teamData?.institutionName || "N/A"} 
+                />
               </div>
             </CardContent>
           </Card>

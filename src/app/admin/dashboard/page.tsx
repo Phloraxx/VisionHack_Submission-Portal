@@ -8,7 +8,7 @@ import { SlideIn } from '@/components/animations/SlideIn';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { authHelpers, UserRole } from '@/lib/appwrite';
-import { Settings, Database, Users, FileDown, ImagePlus, ToggleLeft } from 'lucide-react';
+import { Settings, Database, Users, FileDown, ImagePlus, ToggleLeft, UserCog } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function AdminDashboard() {
@@ -52,6 +52,15 @@ export default function AdminDashboard() {
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         <SlideIn delay={0.1}>
           <AdminActionCard
+            icon={UserCog}
+            title="Create Campus Leads"
+            description="Bulk upload CSV to create campus lead accounts"
+            action={() => router.push('/admin/campus-leads')}
+          />
+        </SlideIn>
+
+        <SlideIn delay={0.2}>
+          <AdminActionCard
             icon={ToggleLeft}
             title="Event Configuration"
             description="Toggle registration, nomination, and submission windows"
@@ -59,7 +68,7 @@ export default function AdminDashboard() {
           />
         </SlideIn>
 
-        <SlideIn delay={0.2}>
+        <SlideIn delay={0.3}>
           <AdminActionCard
             icon={Database}
             title="Manage Themes"
@@ -68,7 +77,7 @@ export default function AdminDashboard() {
           />
         </SlideIn>
 
-        <SlideIn delay={0.3}>
+        <SlideIn delay={0.4}>
           <AdminActionCard
             icon={ImagePlus}
             title="Gallery Management"
@@ -77,7 +86,7 @@ export default function AdminDashboard() {
           />
         </SlideIn>
 
-        <SlideIn delay={0.4}>
+        <SlideIn delay={0.5}>
           <AdminActionCard
             icon={Users}
             title="View All Teams"
@@ -86,7 +95,7 @@ export default function AdminDashboard() {
           />
         </SlideIn>
 
-        <SlideIn delay={0.5}>
+        <SlideIn delay={0.6}>
           <AdminActionCard
             icon={FileDown}
             title="Export Data"
@@ -95,7 +104,7 @@ export default function AdminDashboard() {
           />
         </SlideIn>
 
-        <SlideIn delay={0.6}>
+        <SlideIn delay={0.7}>
           <AdminActionCard
             icon={Settings}
             title="Assign Mentors"
