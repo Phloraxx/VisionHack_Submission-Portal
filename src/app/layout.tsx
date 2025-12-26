@@ -20,6 +20,10 @@ export const metadata: Metadata = {
   description: "Interactive dashboard for Vision Hack 2026 hackathon",
 };
 
+// Force dynamic rendering for Appwrite SSR compatibility
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default function RootLayout({
   children,
 }: Readonly<{
