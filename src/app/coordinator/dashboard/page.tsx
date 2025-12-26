@@ -24,6 +24,8 @@ export default function CoordinatorDashboard() {
   const [isFetching, setIsFetching] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [teams, setTeams] = useState<Team[]>([]);
+  // Track which team cards are expanded (by id)
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const checkAuth = async () => {

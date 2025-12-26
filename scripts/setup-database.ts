@@ -19,7 +19,7 @@
  * Usage: npm run setup-db
  */
 
-import { Client, Databases, Storage, Permission, Role } from 'node-appwrite';
+import { Client, Databases, Storage, Permission, Role, IndexType, Compression } from 'node-appwrite';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -133,10 +133,10 @@ async function createInstitutionsCollection() {
     await new Promise(resolve => setTimeout(resolve, 3000));
 
     log('  Creating indexes...', 'blue');
-    await databases.createIndex(DATABASE_ID, INSTITUTIONS_COLLECTION_ID, 'code_idx', 'unique', ['code'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, INSTITUTIONS_COLLECTION_ID, 'code_idx', IndexType.Unique, ['code'], ['ASC']);
     log('    ✓ code_idx (unique)', 'green');
     
-    await databases.createIndex(DATABASE_ID, INSTITUTIONS_COLLECTION_ID, 'email_idx', 'key', ['email'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, INSTITUTIONS_COLLECTION_ID, 'email_idx', IndexType.Key, ['email'], ['ASC']);
     log('    ✓ email_idx', 'green');
 
     log('✅ "institutions" collection created successfully!', 'bright');
@@ -224,13 +224,13 @@ async function createTeamsCollection() {
     await new Promise(resolve => setTimeout(resolve, 3000));
 
     log('  Creating indexes...', 'blue');
-    await databases.createIndex(DATABASE_ID, TEAMS_COLLECTION_ID, 'institution_idx', 'key', ['institution_id'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, TEAMS_COLLECTION_ID, 'institution_idx', IndexType.Key, ['institution_id'], ['ASC']);
     log('    ✓ institution_idx', 'green');
 
-    await databases.createIndex(DATABASE_ID, TEAMS_COLLECTION_ID, 'leader_idx', 'key', ['leader_user_id'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, TEAMS_COLLECTION_ID, 'leader_idx', IndexType.Key, ['leader_user_id'], ['ASC']);
     log('    ✓ leader_idx', 'green');
 
-    await databases.createIndex(DATABASE_ID, TEAMS_COLLECTION_ID, 'status_idx', 'key', ['status'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, TEAMS_COLLECTION_ID, 'status_idx', IndexType.Key, ['status'], ['ASC']);
     log('    ✓ status_idx', 'green');
 
     log('✅ "teams" collection created successfully!', 'bright');
@@ -299,10 +299,10 @@ async function createMembersCollection() {
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     log('  Creating indexes...', 'blue');
-    await databases.createIndex(DATABASE_ID, MEMBERS_COLLECTION_ID, 'team_idx', 'key', ['team_id'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, MEMBERS_COLLECTION_ID, 'team_idx', IndexType.Key, ['team_id'], ['ASC']);
     log('    ✓ team_idx', 'green');
 
-    await databases.createIndex(DATABASE_ID, MEMBERS_COLLECTION_ID, 'institution_idx', 'key', ['institution_id'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, MEMBERS_COLLECTION_ID, 'institution_idx', IndexType.Key, ['institution_id'], ['ASC']);
     log('    ✓ institution_idx', 'green');
 
     log('✅ "members" collection created successfully!', 'bright');
@@ -349,7 +349,7 @@ async function createConfigCollection() {
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     log('  Creating indexes...', 'blue');
-    await databases.createIndex(DATABASE_ID, CONFIG_COLLECTION_ID, 'key_idx', 'unique', ['key'], ['ASC']);
+    await databases.createIndex(DATABASE_ID, CONFIG_COLLECTION_ID, 'key_idx', IndexType.Unique, ['key'], ['ASC']);
     log('    ✓ key_idx (unique)', 'green');
 
     log('✅ "config" collection created successfully!', 'bright');
@@ -462,7 +462,7 @@ async function createSubmissionsBucket() {
       true, // enabled
       10485760, // 10MB max file size
       ['pdf', 'ppt', 'pptx'], // allowed file extensions
-      'none', // compression
+      Compression.None, // compression
       false, // encryption
       true // antivirus
     );
@@ -496,7 +496,7 @@ async function createAssetsBucket() {
       true, // enabled
       5242880, // 5MB max file size
       ['png', 'jpeg', 'jpg', 'webp', 'gif'], // allowed file extensions
-      'gzip', // compression
+      Compression.Gzip, // compression
       false, // encryption
       false // antivirus
     );
