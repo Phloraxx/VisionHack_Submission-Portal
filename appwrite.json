@@ -1,0 +1,10 @@
+{
+    "projectId": "694ef782000f408e69e2",
+    "projectName": "VisionHack_Submission-Portal",
+    "settings": {
+        "root": ".",
+        "output": ".next/standalone",
+        "entrypoint": "server.js",
+        "command": "npm run build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/"
+    }
+}
