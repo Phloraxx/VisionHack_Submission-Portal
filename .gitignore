@@ -23,6 +23,7 @@
 /build
 
 .next
+!.next.config.ts
 # misc
 .DS_Store
 *.pem
