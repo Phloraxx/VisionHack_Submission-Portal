@@ -164,13 +164,13 @@ export default function CoordinatorDashboard() {
                   className="border-gray-100 hover:shadow-lg transition-shadow rounded-xl overflow-hidden cursor-pointer h-full"
                   onClick={() => handleTeamClick(team.id)}
                 >
-                  <CardHeader className="bg-gradient-to-br from-gray-50 to-white p-4">
+                  <CardHeader className="bg-linear-to-br from-gray-50 to-white p-4">
                     <div className="space-y-3">
                       <CardTitle className="text-sm font-bold line-clamp-2">
                         {team.teamName}
                       </CardTitle>
                       <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                        <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                        <Building2 className="h-3.5 w-3.5 shrink-0" />
                         <span className="line-clamp-1">{team.institutionName}</span>
                       </div>
                     </div>
