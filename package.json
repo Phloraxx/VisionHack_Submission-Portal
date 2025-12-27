@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "setup-db": "tsx scripts/setup-database.ts",
-    "delete-db": "tsx scripts/delete-collections.ts"
+    "delete-db": "tsx scripts/delete-collections.ts",
+    "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

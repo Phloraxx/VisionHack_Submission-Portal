@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { serverDatabases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite-server';
 import { Query } from 'node-appwrite';
 
+// Cache teams list for 60 seconds to reduce database load
+export const revalidate = 60;
+
 export async function GET(request: NextRequest) {
   try {
     // Fetch all teams with status = "submitted"
@@ -58,11 +61,18 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    return NextResponse.json({
-      success: true,
-      teams: teamsWithInstitutions,
-      total: teamsWithInstitutions.length,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        teams: teamsWithInstitutions,
+        total: teamsWithInstitutions.length,
+      },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
+        },
+      }
+    );
   } catch (error: any) {
     console.error('Error fetching submitted teams:', error);
     return NextResponse.json(

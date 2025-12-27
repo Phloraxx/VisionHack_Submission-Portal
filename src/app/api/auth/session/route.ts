@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Client, Account } from 'node-appwrite';
 import { cookies } from 'next/headers';
 
+// No caching for auth endpoints
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   try {
     const cookieStore = await cookies();

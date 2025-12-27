@@ -1,31 +1,54 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authHelpers } from "@/lib/appwrite";
 import { FadeIn } from "@/components/animations/FadeIn";
 
 export default function Home() {
   const router = useRouter();
+  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     const checkAuth = async () => {
-      const user = await authHelpers.getCurrentUser();
-      if (user) {
-        const role = authHelpers.getUserRole(user);
-        if (role) {
-          const dashboard = authHelpers.getRoleDashboard(role);
-          router.push(dashboard);
+      try {
+        const user = await authHelpers.getCurrentUser();
+        if (!isMounted) return;
+
+        if (user) {
+          const role = authHelpers.getUserRole(user);
+          if (role) {
+            const dashboard = authHelpers.getRoleDashboard(role);
+            router.push(dashboard);
+          } else {
+            router.push("/auth/login");
+          }
         } else {
-          // Handle case where user exists but has no role
           router.push("/auth/login");
         }
-      } else {
-        router.push("/auth/login");
+      } catch (error) {
+        if (isMounted) {
+          router.push("/auth/login");
+        }
+      } finally {
+        if (isMounted) {
+          setIsChecking(false);
+        }
       }
     };
+
     checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
+
+  if (!isChecking) {
+    return null; // Avoid flash of content before redirect
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center">

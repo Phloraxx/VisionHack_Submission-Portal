@@ -54,7 +54,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 py-12 bg-gradient-to-b from-white to-gray-50">
+    <div className="min-h-screen flex items-center justify-center px-6 py-12 bg-linear-to-b from-white to-gray-50">
       <SlideIn direction="up" className="w-full max-w-md">
         <Card className="border-gray-100 shadow-lg">
           <CardHeader className="space-y-1">
@@ -77,7 +77,7 @@ export default function LoginPage() {
               {error && (
                 <FadeIn>
                   <div className="p-3 rounded-lg bg-red-50 border border-red-100 flex items-start gap-2">
-                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
                     <p className="text-sm text-red-600">{error}</p>
                   </div>
                 </FadeIn>

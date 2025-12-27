@@ -8,21 +8,33 @@ import { Toaster } from "@/components/ui/sonner";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: 'swap',
+  preload: true,
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: 'swap',
+  preload: true,
 });
 
 export const metadata: Metadata = {
-  title: "Vision Hack 2026 - Portal",
+  title: {
+    default: "Vision Hack 2026 - Portal",
+    template: "%s | Vision Hack 2026",
+  },
   description: "Interactive dashboard for Vision Hack 2026 hackathon",
+  keywords: ["hackathon", "vision hack", "2026", "innovation", "technology"],
+  authors: [{ name: "Vision Hack Team" }],
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
 };
 
-// Force dynamic rendering for Appwrite SSR compatibility
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+export const viewport = {
+  themeColor: '#ffffff',
+  width: 'device-width',
+  initialScale: 1,
+};
 
 export default function RootLayout({
   children,
