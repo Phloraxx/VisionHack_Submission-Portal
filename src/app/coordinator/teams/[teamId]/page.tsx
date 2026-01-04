@@ -8,7 +8,7 @@ import { SlideIn } from '@/components/animations/SlideIn';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { authHelpers, UserRole } from '@/lib/appwrite';
-import { ArrowLeft, Building2, Users, Mail, Phone, User, Lightbulb, Code, Award, Calendar } from 'lucide-react';
+import { ArrowLeft, Building2, Users, Mail, Phone, User, Lightbulb, Code, Award, Calendar, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface TeamMember {
@@ -47,13 +47,14 @@ interface TeamDetails {
   institutionName: string;
   members: TeamMember[];
   membersCount: number;
+  teamCode: string;
 }
 
 export default function TeamDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const teamId = params.teamId as string;
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isFetching, setIsFetching] = useState(true);
   const [team, setTeam] = useState<TeamDetails | null>(null);
@@ -71,7 +72,7 @@ export default function TeamDetailsPage() {
         return;
       }
       setIsLoading(false);
-      
+
       // Fetch team details
       await fetchTeamDetails();
     };
@@ -124,8 +125,8 @@ export default function TeamDetailsPage() {
   return (
     <div className="container mx-auto px-6 py-12">
       <FadeIn>
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           onClick={() => router.push('/coordinator/dashboard')}
           className="mb-6"
         >
@@ -161,17 +162,43 @@ export default function TeamDetailsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <h4 className="text-sm font-semibold text-gray-700 mb-1">Idea Title</h4>
-                <p className="text-gray-900">{team.ideaTitle}</p>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-1">Idea Title</h4>
+                    <p className="text-gray-900 font-medium">{team.ideaTitle}</p>
+                  </div>
+                  {team.submissionFileId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                      onClick={() => {
+                        const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+                        const fileUrl = `${endpoint}/storage/buckets/${process.env.NEXT_PUBLIC_APPWRITE_SUBMISSIONS_BUCKET_ID}/files/${team.submissionFileId}/view?project=${process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID}`;
+                        window.open(fileUrl, '_blank');
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      View Submission
+                    </Button>
+                  )}
+                </div>
+                {team.teamCode && (
+                  <div className="mt-2">
+                    <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                      Team Code: {team.teamCode}
+                    </span>
+                  </div>
+                )}
               </div>
-              
+
               {team.ideaDesc && (
                 <div>
                   <h4 className="text-sm font-semibold text-gray-700 mb-1">Description</h4>
                   <p className="text-gray-600 text-sm leading-relaxed">{team.ideaDesc}</p>
                 </div>
               )}
-              
+
               {team.techStack && (
                 <div>
                   <h4 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
@@ -181,7 +208,7 @@ export default function TeamDetailsPage() {
                   <p className="text-gray-600 text-sm">{team.techStack}</p>
                 </div>
               )}
-              
+
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
                   <Calendar className="h-4 w-4" />
@@ -220,7 +247,7 @@ export default function TeamDetailsPage() {
                   </div>
                 </div>
               )}
-              
+
               {team.institution && (
                 <div>
                   <h4 className="text-sm font-semibold text-gray-700 mb-2">Campus Lead</h4>
@@ -236,7 +263,7 @@ export default function TeamDetailsPage() {
                   </div>
                 </div>
               )}
-              
+
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-2">Team Lead</h4>
                 <div className="space-y-1">
@@ -295,7 +322,7 @@ export default function TeamDetailsPage() {
             ) : (
               <div className="grid md:grid-cols-2 gap-4">
                 {team.members.map((member, index) => (
-                  <div 
+                  <div
                     key={member.id}
                     className="border border-gray-100 rounded-lg p-4 hover:shadow-md transition-shadow"
                   >

@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const teamsWithInstitutions = await Promise.all(
       teamsResponse.documents.map(async (team: any) => {
         let institutionName = 'Unknown Institution';
-        
+
         if (team.institution_id) {
           try {
             const institution = await serverDatabases.getDocument(
@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
           createdAt: team.$createdAt,
           mentorName: team.mentor_name || '',
           mentorContact: team.mentor_contact || '',
+          teamCode: team.team_code || ''
         };
       })
     );

@@ -16,6 +16,7 @@ interface Team {
   id: string;
   teamName: string;
   institutionName: string;
+  teamCode: string; // From API it might be teamCode or team_code mapped
 }
 
 export default function CoordinatorDashboard() {
@@ -40,7 +41,7 @@ export default function CoordinatorDashboard() {
         return;
       }
       setIsLoading(false);
-      
+
       // Fetch teams
       await fetchTeams();
     };
@@ -81,7 +82,8 @@ export default function CoordinatorDashboard() {
     const query = searchQuery.toLowerCase();
     return (
       team.teamName.toLowerCase().includes(query) ||
-      team.institutionName.toLowerCase().includes(query)
+      team.institutionName.toLowerCase().includes(query) ||
+      (team.teamCode && team.teamCode.includes(query))
     );
   });
 
@@ -115,7 +117,7 @@ export default function CoordinatorDashboard() {
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search by team name, institution, idea title, or email..."
+                placeholder="Search by team name, code, institution, idea title, or email..."
                 className="pl-10"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -160,7 +162,7 @@ export default function CoordinatorDashboard() {
                 transition={{ type: 'spring', stiffness: 300 }}
                 className="h-full"
               >
-                <Card 
+                <Card
                   className="border-gray-100 hover:shadow-lg transition-shadow rounded-xl overflow-hidden cursor-pointer h-full"
                   onClick={() => handleTeamClick(team.id)}
                 >
@@ -173,6 +175,11 @@ export default function CoordinatorDashboard() {
                         <Building2 className="h-3.5 w-3.5 shrink-0" />
                         <span className="line-clamp-1">{team.institutionName}</span>
                       </div>
+                      {team.teamCode && (
+                        <div className="text-xs text-blue-600 font-mono bg-blue-50 px-2 py-1 rounded w-fit">
+                          Code: {team.teamCode}
+                        </div>
+                      )}
                     </div>
                   </CardHeader>
                 </Card>

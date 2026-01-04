@@ -32,6 +32,7 @@ interface Team {
   idea_tech_stack: string;
   mentor_name: string;
   mentor_contact: string;
+  team_code?: string;
 }
 
 interface TeamMember {
@@ -65,6 +66,8 @@ export default function InstitutionDashboard() {
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
   const [teamMembers, setTeamMembers] = useState<Record<string, TeamMember[]>>({});
 
+  const [config, setConfig] = useState({ registration: false, nomination: false });
+
   useEffect(() => {
     const checkAuth = async () => {
       const user = await authHelpers.getCurrentUser();
@@ -77,7 +80,21 @@ export default function InstitutionDashboard() {
         router.push(role ? authHelpers.getRoleDashboard(role) : '/auth/login');
         return;
       }
-      
+
+      // Fetch config
+      try {
+        const confRes = await fetch('/api/admin/config');
+        const confData = await confRes.json();
+        if (confData.success && confData.config) {
+          setConfig({
+            registration: confData.config.registration || false,
+            nomination: confData.config.nomination || false
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load config");
+      }
+
       // Fetch institution data
       await fetchInstitutionData(user.$id);
       setIsLoading(false);
@@ -96,7 +113,7 @@ export default function InstitutionDashboard() {
       if (response.documents.length > 0) {
         const institutionData = response.documents[0] as any;
         setInstitution(institutionData);
-        
+
         // Fetch invited teams for this institution
         await fetchInvitedTeams(institutionData.$id);
       } else {
@@ -115,7 +132,7 @@ export default function InstitutionDashboard() {
         COLLECTIONS.TEAMS,
         [Query.equal('institution_id', institutionId)]
       );
-      
+
       setInvitedTeams(response.documents as any[]);
     } catch (error: any) {
       console.error('Error fetching teams:', error);
@@ -123,12 +140,9 @@ export default function InstitutionDashboard() {
   };
 
   const addTeamLeadField = () => {
-    const totalAfterAdd = (institution?.teamsShortlisted || 0) + teamLeads.length + 1;
-    if (totalAfterAdd <= 5) {
-      setTeamLeads([...teamLeads, { name: '', email: '' }]);
-    } else {
-      toast.error('Cannot add more team leads. Maximum limit is 5 total.');
-    }
+    // Limit removed for inviting, but good to keep a reasonable UI limit if needed.
+    // Let's allow unlimited for now as per requirement.
+    setTeamLeads([...teamLeads, { name: '', email: '' }]);
   };
 
   const removeTeamLeadField = (index: number) => {
@@ -145,12 +159,12 @@ export default function InstitutionDashboard() {
 
   const toggleTeamExpansion = async (teamId: string) => {
     const newExpanded = new Set(expandedTeams);
-    
+
     if (newExpanded.has(teamId)) {
       newExpanded.delete(teamId);
     } else {
       newExpanded.add(teamId);
-      
+
       // Fetch members if not already loaded
       if (!teamMembers[teamId]) {
         try {
@@ -159,7 +173,7 @@ export default function InstitutionDashboard() {
             COLLECTIONS.MEMBERS,
             [Query.equal('team_id', teamId)]
           );
-          
+
           setTeamMembers(prev => ({
             ...prev,
             [teamId]: membersResponse.documents as any[]
@@ -170,19 +184,43 @@ export default function InstitutionDashboard() {
         }
       }
     }
-    
+
     setExpandedTeams(newExpanded);
   };
 
   const handleToggleApproval = async (teamId: string, teamName: string, currentStatus: string) => {
+    // Check Config
+    if (!config.nomination) {
+      toast.error("Team nomination (approval) is currently closed by Admin.");
+      return;
+    }
+
+    // If team has submitted, they are locked. Cannot unapprove.
+    if (currentStatus === 'submitted') {
+      toast.error("Cannot unapprove a team that has already submitted their idea.");
+      return;
+    }
+
+    // 'registered' counts as Approved/Locked slots (initially)
     const isCurrentlyApproved = currentStatus === 'registered';
+
+    // If trying to approve, check limit
+    if (!isCurrentlyApproved) {
+      if ((institution?.teamsShortlisted || 0) >= 5) {
+        toast.error('You can only approve up to 5 teams. Please unapprove another team first.');
+        return;
+      }
+    }
+
     const action = isCurrentlyApproved ? 'unapprove' : 'approve';
-    const newStatus = isCurrentlyApproved ? 'submitted' : 'registered';
-    
-    const message = isCurrentlyApproved 
-      ? `Unapprove team "${teamName}"? This will allow them to edit their data again.`
-      : `Approve team "${teamName}"? This will lock their data from further edits.`;
-    
+    // If unapproving, go to 'waitlisted'.
+    // If approving, go to 'registered'.
+    const newStatus = isCurrentlyApproved ? 'waitlisted' : 'registered';
+
+    const message = isCurrentlyApproved
+      ? `Unapprove team "${teamName}"? This will move them to waitlist and allow edits.`
+      : `Approve team "${teamName}"? This will confirm their slot (max 5) and lock edits.`;
+
     if (!window.confirm(message)) {
       return;
     }
@@ -194,9 +232,24 @@ export default function InstitutionDashboard() {
         teamId,
         { status: newStatus }
       );
-      
-      toast.success(isCurrentlyApproved ? 'Team unapproved. They can now edit their data.' : 'Team approved and locked!');
-      
+
+      // Update institution shortlisted count
+      if (institution) {
+        const newCount = (institution.teamsShortlisted || 0) + (isCurrentlyApproved ? -1 : 1);
+
+        await databases.updateDocument(
+          DATABASE_ID,
+          COLLECTIONS.INSTITUTIONS,
+          institution.$id,
+          { teamsShortlisted: newCount }
+        );
+
+        // Update local state immediately for responsiveness
+        setInstitution({ ...institution, teamsShortlisted: newCount });
+      }
+
+      toast.success(isCurrentlyApproved ? 'Team unapproved (Waitlisted).' : 'Team approved (Registered).');
+
       // Refresh teams
       if (institution) {
         await fetchInvitedTeams(institution.$id);
@@ -210,9 +263,15 @@ export default function InstitutionDashboard() {
 
 
   const handleInviteTeamLeads = async () => {
+    // Check Config
+    if (!config.registration) {
+      toast.error("Team invites are currently closed by Admin.");
+      return;
+    }
+
     // Validate input
     const validLeads = teamLeads.filter(lead => lead.name.trim() && lead.email.trim());
-    
+
     if (validLeads.length === 0) {
       toast.error('Please add at least one team lead');
       return;
@@ -228,12 +287,12 @@ export default function InstitutionDashboard() {
       return;
     }
 
-    // Check if campus lead has already invited teams
-    const totalTeamsAfterInvite = (institution.teamsShortlisted || 0) + validLeads.length;
-    if (totalTeamsAfterInvite > 5) {
-      toast.error(`You can only invite ${5 - (institution.teamsShortlisted || 0)} more team lead(s). Maximum is 5 total.`);
-      return;
-    }
+    // Limit removed
+    // const totalTeamsAfterInvite = (institution.teamsShortlisted || 0) + validLeads.length;
+    // if (totalTeamsAfterInvite > 5) {
+    //   toast.error(`You can only invite ${5 - (institution.teamsShortlisted || 0)} more team lead(s). Maximum is 5 total.`);
+    //   return;
+    // }
 
     setIsInviting(true);
 
@@ -277,11 +336,12 @@ export default function InstitutionDashboard() {
   const canInvite = institution && (institution.teamsShortlisted || 0) < 5;
   const remainingSlots = institution ? 5 - (institution.teamsShortlisted || 0) : 0;
 
+  // Add UI logic for locked buttons
   return (
     <div className="container mx-auto px-6 py-12">
       <FadeIn>
         <div className="space-y-2 mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Campus Lead Dashboard</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Institution Dashboard</h1>
           <p className="text-gray-600">
             {institution?.campusLeadName || 'Campus Lead'} • {institution?.name || 'Your Institution'}
           </p>
@@ -323,7 +383,7 @@ export default function InstitutionDashboard() {
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold flex items-center gap-2">
-                {canInvite ? (
+                {canInvite && config.registration ? (
                   <>
                     <CheckCircle className="h-6 w-6 text-green-600" />
                     <span className="text-green-600">Active</span>
@@ -331,7 +391,7 @@ export default function InstitutionDashboard() {
                 ) : (
                   <>
                     <Lock className="h-6 w-6 text-orange-600" />
-                    <span className="text-orange-600">Full</span>
+                    <span className="text-orange-600">Locked</span>
                   </>
                 )}
               </p>
@@ -349,12 +409,7 @@ export default function InstitutionDashboard() {
                 Invite Team Leads
               </CardTitle>
               <CardDescription>
-                Add the details of your shortlisted team leads (max 5 total)
-                {remainingSlots > 0 && (
-                  <span className="block mt-1 text-blue-600 font-medium">
-                    {remainingSlots} slot{remainingSlots !== 1 ? 's' : ''} remaining
-                  </span>
-                )}
+                Add the details of team leads to invite them to the platform.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -372,7 +427,7 @@ export default function InstitutionDashboard() {
                       </Button>
                     )}
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor={`name-${index}`}>Full Name</Label>
                     <Input
@@ -396,24 +451,28 @@ export default function InstitutionDashboard() {
                 </div>
               ))}
 
-              {((institution?.teamsShortlisted || 0) + teamLeads.length) < 5 && (
-                <Button
-                  variant="outline"
-                  onClick={addTeamLeadField}
-                  className="w-full"
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Another Team Lead ({remainingSlots - teamLeads.length} remaining)
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                onClick={addTeamLeadField}
+                className="w-full"
+                disabled={!config.registration}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add Another Team Lead
+              </Button>
 
               <Button
                 onClick={handleInviteTeamLeads}
-                disabled={isInviting || !canInvite}
+                disabled={isInviting || !canInvite || !config.registration}
                 className="w-full"
               >
                 {isInviting ? (
                   <>Sending invitations...</>
+                ) : !config.registration ? (
+                  <>
+                    <Lock className="h-4 w-4 mr-2" />
+                    Registration Closed
+                  </>
                 ) : (
                   <>
                     <Mail className="h-4 w-4 mr-2" />
@@ -422,11 +481,7 @@ export default function InstitutionDashboard() {
                 )}
               </Button>
 
-              {!canInvite && institution && institution.teamsShortlisted >= 5 && (
-                <p className="text-sm text-orange-600 text-center">
-                  You have reached the maximum limit of 5 team leads
-                </p>
-              )}
+              {/* Limit message removed */}
             </CardContent>
           </Card>
         </SlideIn>
@@ -492,7 +547,7 @@ export default function InstitutionDashboard() {
 
               <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> You can invite up to 5 team leads. Make sure the email addresses are correct as credentials will be sent automatically.
+                  <strong>Note:</strong> You can invite as many teams as you want, but you can only approve up to 5 teams for the final submission.
                 </p>
               </div>
             </CardContent>
@@ -517,10 +572,10 @@ export default function InstitutionDashboard() {
                 {invitedTeams.map((team, index) => {
                   const isExpanded = expandedTeams.has(team.$id);
                   const members = teamMembers[team.$id] || [];
-                  
+
                   return (
                     <div key={team.$id} className="border rounded-lg bg-white hover:shadow-md transition-all">
-                      <div 
+                      <div
                         className="p-4 cursor-pointer"
                         onClick={() => toggleTeamExpansion(team.$id)}
                       >
@@ -536,13 +591,21 @@ export default function InstitutionDashboard() {
                                       ✓ Approved
                                     </span>
                                   )}
-                                  {team.status === 'submitted' && team.teamName && (
+                                  {team.status === 'waitlisted' && (
+                                    <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full font-medium">
+                                      • Waitlisted
+                                    </span>
+                                  )}
+                                  {team.status === 'submitted' && (
                                     <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">
-                                      ⏳ Pending Review
+                                      ⏳ Review Pending
                                     </span>
                                   )}
                                 </div>
                                 <p className="text-sm text-gray-600">{team.teamLeadEmail}</p>
+                                {team.team_code && (
+                                  <p className="text-xs text-blue-600 font-mono mt-1">Code: {team.team_code}</p>
+                                )}
                               </div>
                             </div>
                             {team.teamName && (
@@ -574,28 +637,28 @@ export default function InstitutionDashboard() {
                           {/* Team Details */}
                           <div className="pt-4 space-y-3">
                             <h5 className="font-semibold text-gray-900">Team Details</h5>
-                            
+
                             {team.idea_title && (
                               <div>
                                 <p className="text-xs text-gray-500 uppercase font-medium">Idea Title</p>
                                 <p className="text-sm text-gray-900">{team.idea_title}</p>
                               </div>
                             )}
-                            
+
                             {team.idea_desc && (
                               <div>
                                 <p className="text-xs text-gray-500 uppercase font-medium">Description</p>
                                 <p className="text-sm text-gray-700">{team.idea_desc}</p>
                               </div>
                             )}
-                            
+
                             {team.idea_tech_stack && (
                               <div>
                                 <p className="text-xs text-gray-500 uppercase font-medium">Tech Stack</p>
                                 <p className="text-sm text-gray-700">{team.idea_tech_stack}</p>
                               </div>
                             )}
-                            
+
                             {team.mentor_name && (
                               <div>
                                 <p className="text-xs text-gray-500 uppercase font-medium">Faculty Mentor</p>
@@ -642,12 +705,32 @@ export default function InstitutionDashboard() {
                                   e.stopPropagation();
                                   handleToggleApproval(team.$id, team.teamName, team.status);
                                 }}
-                                className={team.status === 'registered' 
-                                  ? "w-full bg-orange-600 hover:bg-orange-700" 
-                                  : "w-full bg-green-600 hover:bg-green-700"
+                                // Lock button if submitted OR if nomination is closed (and not submitted, but checking config)
+                                // Actually if submitted, it's locked regardless of config.
+                                // If nomination closed, disable "Approve" (Waitlist -> Registered). 
+                                // What about "Unapprove"? Usually closed too.
+                                disabled={team.status === 'submitted' || (!config.nomination)}
+                                className={
+                                  team.status === 'submitted'
+                                    ? "w-full bg-gray-400 cursor-not-allowed text-white"
+                                    : !config.nomination
+                                      ? "w-full bg-gray-300 cursor-not-allowed text-gray-500"
+                                      : team.status === 'registered'
+                                        ? "w-full bg-orange-600 hover:bg-orange-700 text-white"
+                                        : "w-full bg-green-600 hover:bg-green-700 text-white"
                                 }
                               >
-                                {team.status === 'registered' ? (
+                                {team.status === 'submitted' ? (
+                                  <>
+                                    <Lock className="h-4 w-4 mr-2" />
+                                    Locked (Idea Submitted)
+                                  </>
+                                ) : !config.nomination ? (
+                                  <>
+                                    <Lock className="h-4 w-4 mr-2" />
+                                    Nomination Closed
+                                  </>
+                                ) : team.status === 'registered' ? (
                                   <>
                                     <X className="h-4 w-4 mr-2" />
                                     Unapprove (Allow Edits)

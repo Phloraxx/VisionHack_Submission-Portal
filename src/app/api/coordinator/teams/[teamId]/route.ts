@@ -27,7 +27,7 @@ export async function GET(
     // Fetch institution details
     let institutionName = 'Unknown Institution';
     let institutionData = null;
-    
+
     if (team.institution_id) {
       try {
         const institution = await serverDatabases.getDocument(
@@ -85,6 +85,7 @@ export async function GET(
         institutionName,
         members,
         membersCount: members.length,
+        teamCode: team.team_code || '',
       },
     });
   } catch (error: any) {

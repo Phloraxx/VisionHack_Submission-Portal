@@ -43,65 +43,64 @@ interface TeamMember {
 interface RegistrationRequest {
   userId: string;
   teamName: string;
-  ideaTitle?: string;
-  ideaDescription?: string;
-  techStack?: string;
-  mentorName?: string;
-  mentorContact?: string;
+  teamLeadPhone: string;
+  teamLeadGender: 'Male' | 'Female' | 'Other';
+  teamLeadRole: string;
   members: TeamMember[];
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: RegistrationRequest = await request.json();
-    const { 
-      userId, 
-      teamName, 
-      ideaTitle, 
-      ideaDescription, 
-      techStack, 
-      mentorName, 
-      mentorContact, 
-      members 
+    const {
+      userId,
+      teamName,
+      teamLeadPhone,
+      teamLeadGender,
+      teamLeadRole,
+      members
     } = body;
 
     // ==========================================
     // STEP 1: Validate Required Fields
     // ==========================================
-    
+
     if (!userId) {
       return NextResponse.json(
-        { error: 'Authentication required. Please log in again.' }, 
+        { error: 'Authentication required. Please log in again.' },
         { status: 401 }
       );
     }
 
     if (!teamName || teamName.trim() === '') {
       return NextResponse.json(
-        { error: 'Team name is required' }, 
+        { error: 'Team name is required' },
         { status: 400 }
       );
     }
 
+    // Validate Team Lead Details
+    if (!teamLeadPhone || teamLeadPhone.trim() === '') {
+      return NextResponse.json({ error: 'Team Lead Phone is required' }, { status: 400 });
+    }
+    if (!teamLeadGender || !['Male', 'Female', 'Other'].includes(teamLeadGender)) {
+      return NextResponse.json({ error: 'Team Lead Gender is invalid' }, { status: 400 });
+    }
+    if (!teamLeadRole || teamLeadRole.trim() === '') {
+      return NextResponse.json({ error: 'Team Lead Role is required' }, { status: 400 });
+    }
+
     if (!Array.isArray(members)) {
       return NextResponse.json(
-        { error: 'Members data is invalid' }, 
+        { error: 'Members data is invalid' },
         { status: 400 }
       );
     }
-    
-    // Team must have at least 1 member
-    if (members.length < 1) {
-      return NextResponse.json(
-        { error: 'At least 1 team member is required' }, 
-        { status: 400 }
-      );
-    }
-    
+
     // Maximum 5 members (excluding team leader)
     if (members.length > 5) {
       return NextResponse.json(
-        { error: 'Maximum 5 team members allowed (excluding team leader)' }, 
+        { error: 'Maximum 5 team members allowed (excluding team leader)' },
         { status: 400 }
       );
     }
@@ -109,62 +108,63 @@ export async function POST(request: NextRequest) {
     // ==========================================
     // STEP 2: Validate Each Member's Data
     // ==========================================
-    
+
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
       const memberNum = i + 1;
-      
+
       if (!member.fullName || member.fullName.trim() === '') {
         return NextResponse.json(
-          { error: `Member ${memberNum}: Full name is required` }, 
+          { error: `Member ${memberNum}: Full name is required` },
           { status: 400 }
         );
       }
-      
+
       if (!member.email || member.email.trim() === '') {
         return NextResponse.json(
-          { error: `Member ${memberNum}: Email is required` }, 
+          { error: `Member ${memberNum}: Email is required` },
           { status: 400 }
         );
       }
-      
+
       // Basic email validation
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(member.email)) {
         return NextResponse.json(
-          { error: `Member ${memberNum}: Invalid email format` }, 
+          { error: `Member ${memberNum}: Invalid email format` },
           { status: 400 }
         );
       }
-      
+
       if (!member.phone || member.phone.trim() === '') {
         return NextResponse.json(
-          { error: `Member ${memberNum}: Phone number is required` }, 
+          { error: `Member ${memberNum}: Phone number is required` },
           { status: 400 }
         );
       }
-      
+
       if (!member.gender || !['Male', 'Female', 'Other'].includes(member.gender)) {
         return NextResponse.json(
-          { error: `Member ${memberNum}: Valid gender is required (Male/Female/Other)` }, 
+          { error: `Member ${memberNum}: Valid gender is required (Male/Female/Other)` },
           { status: 400 }
         );
       }
-      
+
       if (!member.role || member.role.trim() === '') {
         return NextResponse.json(
-          { error: `Member ${memberNum}: Role is required` }, 
+          { error: `Member ${memberNum}: Role is required` },
           { status: 400 }
         );
       }
     }
 
-    // Check for duplicate emails within the team
+    // Check for duplicate emails within the team (including lead?)
+    // Lead credentials are in 'team' doc, we'll check later or assume lead email is unique vs members
     const emails = members.map(m => m.email.toLowerCase());
     const uniqueEmails = new Set(emails);
     if (emails.length !== uniqueEmails.size) {
       return NextResponse.json(
-        { error: 'Duplicate email addresses found in team members' }, 
+        { error: 'Duplicate email addresses found in team members' },
         { status: 400 }
       );
     }
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
     // ==========================================
     // STEP 3: Find Team Document for This User
     // ==========================================
-    
+
     // Team document is pre-created when campus lead invites team leads
     // We need to find it by the leader_user_id
     let teamsQuery;
@@ -185,31 +185,39 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
       console.error('Error querying teams:', error);
       return NextResponse.json(
-        { error: 'Database error. Please try again.' }, 
+        { error: 'Database error. Please try again.' },
         { status: 500 }
       );
     }
 
     if (teamsQuery.total === 0) {
       return NextResponse.json(
-        { 
-          error: 'No team found for your account. Please contact your campus lead to create your team first.' 
+        {
+          error: 'No team found for your account. Please contact your campus lead to create your team first.'
         },
         { status: 404 }
       );
     }
 
     const team = teamsQuery.documents[0];
-    
+
     // If somehow there are multiple teams for one user, log it but use the first one
     if (teamsQuery.total > 1) {
       console.warn(`Warning: User ${userId} has ${teamsQuery.total} teams. Using the first one.`);
     }
 
+    // Check if lead email is in members list
+    if (emails.includes(team.teamLeadEmail.toLowerCase())) {
+      return NextResponse.json(
+        { error: 'Team Lead email cannot be in the members list' },
+        { status: 400 }
+      );
+    }
+
     // ==========================================
     // STEP 4: Update Team Document with Details
     // ==========================================
-    
+
     let updatedTeam;
     try {
       updatedTeam = await serverDatabases.updateDocument(
@@ -220,25 +228,16 @@ export async function POST(request: NextRequest) {
           // Core team info
           name: teamName.trim(),
           teamName: teamName.trim(),
-          status: 'submitted',
-          membersCount: members.length,
-          
-          // Idea information (optional fields)
-          idea_title: ideaTitle?.trim() || '',
-          idea_desc: ideaDescription?.trim() || '',
-          idea_tech_stack: techStack?.trim() || '',
-          
-          // Mentor information (optional fields)
-          mentor_name: mentorName?.trim() || '',
-          mentor_contact: mentorContact?.trim() || ''
-          
+          status: 'submitted', // Or keep as is? Request didn't specify changing status logic, but usually after registration it is submitted.
+          membersCount: members.length + 1, // Include Lead
+
           // Note: $updatedAt is automatically managed by Appwrite
         }
       );
     } catch (error: any) {
       console.error('Error updating team:', error);
       return NextResponse.json(
-        { error: 'Failed to update team information. Please try again.' }, 
+        { error: 'Failed to update team information. Please try again.' },
         { status: 500 }
       );
     }
@@ -246,7 +245,7 @@ export async function POST(request: NextRequest) {
     // ==========================================
     // STEP 5: Manage Team Members
     // ==========================================
-    
+
     // First, remove any existing members (in case of re-submission/update)
     try {
       const existingMembers = await serverDatabases.listDocuments(
@@ -258,7 +257,7 @@ export async function POST(request: NextRequest) {
       if (existingMembers.total > 0) {
         console.log(`Deleting ${existingMembers.total} existing members for team ${team.$id}`);
         await Promise.all(
-          existingMembers.documents.map(doc => 
+          existingMembers.documents.map(doc =>
             serverDatabases.deleteDocument(DATABASE_ID, COLLECTIONS.MEMBERS, doc.$id)
               .catch(err => console.error(`Failed to delete member ${doc.$id}:`, err))
           )
@@ -270,7 +269,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new member documents
-    const memberPromises = members.map((member, index) => {
+    // Include Team Lead as a member
+    const allMembersToCreate = [
+      {
+        fullName: team.teamLeadName,
+        email: team.teamLeadEmail,
+        phone: teamLeadPhone,
+        gender: teamLeadGender,
+        role: teamLeadRole
+      },
+      ...members
+    ];
+
+    const memberPromises = allMembersToCreate.map((member, index) => {
       return serverDatabases.createDocument(
         DATABASE_ID,
         COLLECTIONS.MEMBERS,
@@ -279,7 +290,7 @@ export async function POST(request: NextRequest) {
           team_id: team.$id,
           institution_id: team.institution_id,
           institution_name: team.institutionName || '',
-          
+
           // Member details
           full_name: member.fullName.trim(),
           email: member.email.trim().toLowerCase(),
@@ -291,7 +302,7 @@ export async function POST(request: NextRequest) {
         console.error(`Failed to create member ${index + 1}:`, err);
         console.error('Member data:', member);
         console.error('Error details:', err.message, err.code);
-        throw new Error(`Failed to add member ${index + 1}: ${member.fullName}`);
+        throw new Error(`Failed to add member: ${member.fullName}`);
       });
     });
 
@@ -301,7 +312,7 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
       console.error('Error creating members:', error);
       return NextResponse.json(
-        { error: error.message || 'Failed to add team members. Please try again.' }, 
+        { error: error.message || 'Failed to add team members. Please try again.' },
         { status: 500 }
       );
     }
@@ -309,7 +320,7 @@ export async function POST(request: NextRequest) {
     // ==========================================
     // STEP 6: Update Institution Statistics
     // ==========================================
-    
+
     // Update the count of registered teams for this institution
     try {
       const institutionTeams = await serverDatabases.listDocuments(
@@ -337,7 +348,7 @@ export async function POST(request: NextRequest) {
     // ==========================================
     // STEP 7: Return Success Response
     // ==========================================
-    
+
     return NextResponse.json({
       success: true,
       message: 'Team registered successfully!',
@@ -363,7 +374,7 @@ export async function POST(request: NextRequest) {
     // Catch any unexpected errors
     console.error('Unexpected error in team registration:', error);
     return NextResponse.json(
-      { 
+      {
         error: 'An unexpected error occurred. Please try again or contact support.',
         details: process.env.NODE_ENV === 'development' ? error.message : undefined
       },

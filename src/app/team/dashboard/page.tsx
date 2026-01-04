@@ -20,12 +20,15 @@ interface TeamData {
   membersCount: number;
   idea_title: string;
   institutionName: string;
+  team_code?: string;
 }
 
 export default function TeamDashboard() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [teamData, setTeamData] = useState<TeamData | null>(null);
+
+  const [config, setConfig] = useState({ submissions: false });
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -39,7 +42,20 @@ export default function TeamDashboard() {
         router.push(role ? authHelpers.getRoleDashboard(role) : '/auth/login');
         return;
       }
-      
+
+      // Fetch config
+      try {
+        const confRes = await fetch('/api/admin/config');
+        const confData = await confRes.json();
+        if (confData.success && confData.config) {
+          setConfig({
+            submissions: confData.config.submissions || false
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load config");
+      }
+
       // Fetch team data
       try {
         const teamsResponse = await databases.listDocuments(
@@ -47,14 +63,14 @@ export default function TeamDashboard() {
           COLLECTIONS.TEAMS,
           [Query.equal('leader_user_id', user.$id)]
         );
-        
+
         if (teamsResponse.total > 0) {
           setTeamData(teamsResponse.documents[0] as any);
         }
       } catch (error) {
         console.error('Error fetching team data:', error);
       }
-      
+
       setIsLoading(false);
     };
     checkAuth();
@@ -86,8 +102,8 @@ export default function TeamDashboard() {
             </CardHeader>
             <CardContent className="space-y-2">
               <motion.div whileHover={{ x: 4 }}>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push('/team/register')}
                 >
@@ -96,14 +112,19 @@ export default function TeamDashboard() {
                 </Button>
               </motion.div>
               <motion.div whileHover={{ x: 4 }}>
-                <Button variant="outline" className="w-full justify-start">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => router.push('/team/submit-idea')}
+                  disabled={!config.submissions}
+                >
                   <Upload className="mr-2 h-4 w-4" />
-                  Submit Idea
+                  {config.submissions ? "Submit Idea" : "Submissions Closed"}
                 </Button>
               </motion.div>
               <motion.div whileHover={{ x: 4 }}>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push('/themes')}
                 >
@@ -123,25 +144,33 @@ export default function TeamDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <StatusItem 
-                  label="Approval Status" 
-                  status={teamData?.status === 'registered' ? "✓ Approved" : (teamData?.teamName ? "⏳ Pending Review" : "Not Started")} 
+                <StatusItem
+                  label="Approval Status"
+                  status={
+                    teamData?.status === 'registered' ? "✓ Approved" :
+                      (teamData?.status === 'waitlisted' ? "• Waitlisted" :
+                        (teamData?.teamName ? "⏳ Pending Review" : "Not Started"))
+                  }
                 />
-                <StatusItem 
-                  label="Team Name" 
-                  status={teamData?.teamName || "Not Set"} 
+                <StatusItem
+                  label="Team Name"
+                  status={teamData?.teamName || "Not Set"}
                 />
-                <StatusItem 
-                  label="Team Members" 
-                  status={teamData ? `${teamData.membersCount}/5 Added` : "0/5 Added"} 
+                <StatusItem
+                  label="Team Members"
+                  status={teamData ? `${teamData.membersCount}/5 Added` : "0/5 Added"}
                 />
-                <StatusItem 
-                  label="Idea Title" 
-                  status={teamData?.idea_title || "Not Set"} 
+                <StatusItem
+                  label="Idea Title"
+                  status={teamData?.idea_title || "Not Set"}
                 />
-                <StatusItem 
-                  label="Institution" 
-                  status={teamData?.institutionName || "N/A"} 
+                <StatusItem
+                  label="Team Code"
+                  status={teamData?.team_code || "Not Generated"}
+                />
+                <StatusItem
+                  label="Institution"
+                  status={teamData?.institutionName || "N/A"}
                 />
               </div>
             </CardContent>
