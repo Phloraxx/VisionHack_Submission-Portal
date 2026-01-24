@@ -61,14 +61,6 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'File upload failed' }, { status: 500 });
         }
 
-        // Check if team is allowed to submit (Must be approved/registered)
-        // We also allow 'submitted' status to allow updates if logic permits, 
-        // but strictly they must have been approved first.
-        const currentStatus = (team.status || '').toLowerCase();
-        if (currentStatus !== 'registered' && currentStatus !== 'submitted') {
-            return NextResponse.json({ error: 'Only approved teams can submit an idea.' }, { status: 403 });
-        }
-
         // Update Team Document
         try {
             await serverDatabases.updateDocument(

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { FadeIn } from '@/components/animations/FadeIn';
 import { SlideIn } from '@/components/animations/SlideIn';
@@ -18,7 +18,27 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [isCheckingConfig, setIsCheckingConfig] = useState(true);
   const router = useRouter();
+
+  // Check if registration is open
+  useEffect(() => {
+    const checkRegistrationStatus = async () => {
+      try {
+        const response = await fetch('/api/admin/config');
+        const data = await response.json();
+        if (data.success && data.config) {
+          setRegistrationOpen(data.config.registration || false);
+        }
+      } catch (error) {
+        console.error('Error fetching config:', error);
+      } finally {
+        setIsCheckingConfig(false);
+      }
+    };
+    checkRegistrationStatus();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +70,21 @@ export default function LoginPage() {
       toast.error('Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRegisterClick = () => {
+    if (!registrationOpen) {
+      toast('Registration is currently closed', {
+        description: 'Team registration is not open at this time. Please check back later or contact the administrators.',
+        className: 'bg-black-150',
+        style: {
+          background: 'black',
+          color: 'white',
+        },
+      });
+    } else {
+      router.push('/auth/register');
     }
   };
 
@@ -128,6 +163,29 @@ export default function LoginPage() {
               </FadeIn>
 
               <FadeIn delay={0.8}>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-gray-500">Or</span>
+                  </div>
+                </div>
+              </FadeIn>
+
+              <FadeIn delay={0.9}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleRegisterClick}
+                  disabled={isCheckingConfig}
+                >
+                  {isCheckingConfig ? 'Loading...' : 'Register New Team'}
+                </Button>
+              </FadeIn>
+
+              <FadeIn delay={1.0}>
                 <p className="text-sm text-center text-gray-600">
                   Contact your administrator for access credentials
                 </p>

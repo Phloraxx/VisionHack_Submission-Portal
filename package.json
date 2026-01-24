@@ -9,6 +9,7 @@
     "lint": "eslint",
     "setup-db": "tsx scripts/setup-database.ts",
     "delete-db": "tsx scripts/delete-collections.ts",
+    "add-district": "tsx scripts/add-district-field.ts",
     "analyze": "ANALYZE=true next build"
   },
   "dependencies": {

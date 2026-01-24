@@ -74,13 +74,6 @@ export default function SubmitIdeaPage() {
                         setExistingSubmission(true);
                     }
                     setStatus(team.status);
-
-                    const currentStatus = (team.status || '').toLowerCase();
-                    if (currentStatus !== 'registered' && currentStatus !== 'submitted') {
-                        toast.error("Your team must be approved by the Campus Lead before you can submit an idea.");
-                        setTimeout(() => router.push('/team/dashboard'), 2000);
-                        return;
-                    }
                 } else {
                     toast.error("Team not found. Please register your team first.");
                     router.push('/team/dashboard');

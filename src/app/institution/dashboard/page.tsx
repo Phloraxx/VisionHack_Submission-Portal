@@ -47,6 +47,7 @@ interface TeamMember {
 interface Institution {
   $id: string;
   name: string;
+  district?: string;
   campusLeadId: string;
   campusLeadName: string;
   campusLeadEmail: string;
@@ -345,6 +346,11 @@ export default function InstitutionDashboard() {
           <p className="text-gray-600">
             {institution?.campusLeadName || 'Campus Lead'} • {institution?.name || 'Your Institution'}
           </p>
+          {institution?.district && (
+            <p className="text-sm text-gray-600">
+              📍 District: {institution.district}
+            </p>
+          )}
           <p className="text-sm text-gray-500">
             {institution?.campusLeadEmail}
           </p>

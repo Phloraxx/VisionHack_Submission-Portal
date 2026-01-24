@@ -14,6 +14,7 @@ interface CSVRow {
   collegeName: string;
   campusLeadName: string;
   email: string;
+  district: string;
 }
 
 interface CreateResult {
@@ -41,6 +42,7 @@ export default function BulkCreateCampusLeads() {
     collegeName: '',
     campusLeadName: '',
     email: '',
+    district: '',
   });
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,9 +56,9 @@ export default function BulkCreateCampusLeads() {
       
       // Skip header row and parse CSV
       const data = rows.slice(1).map(row => {
-        const [collegeName, campusLeadName, email] = row.split(',').map(cell => cell.trim());
-        return { collegeName, campusLeadName, email };
-      }).filter(row => row.collegeName && row.campusLeadName && row.email);
+        const [collegeName, campusLeadName, email, district] = row.split(',').map(cell => cell.trim());
+        return { collegeName, campusLeadName, email, district };
+      }).filter(row => row.collegeName && row.campusLeadName && row.email && row.district);
       
       setCsvData(data);
       toast.success(`Loaded ${data.length} campus leads from CSV`);
@@ -105,7 +107,7 @@ export default function BulkCreateCampusLeads() {
   const handleCreateSingle = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!singleLead.collegeName || !singleLead.campusLeadName || !singleLead.email) {
+    if (!singleLead.collegeName || !singleLead.campusLeadName || !singleLead.email || !singleLead.district) {
       toast.error('Please fill in all fields');
       return;
     }
@@ -123,7 +125,7 @@ export default function BulkCreateCampusLeads() {
 
       if (data.success) {
         toast.success(`Successfully created campus lead for ${singleLead.collegeName}!`);
-        setSingleLead({ collegeName: '', campusLeadName: '', email: '' });
+        setSingleLead({ collegeName: '', campusLeadName: '', email: '', district: '' });
         
         // Update results if they exist
         if (results.length > 0) {
@@ -188,10 +190,10 @@ export default function BulkCreateCampusLeads() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreateSingle} className="space-y-4">
-              <div className="grid md:grid-cols-3 gap-4">
+              <div className="grid md:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <label htmlFor="collegeName" className="text-sm font-medium">
-                    College Name
+                    College Name *
                   </label>
                   <input
                     id="collegeName"
@@ -205,7 +207,7 @@ export default function BulkCreateCampusLeads() {
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="campusLeadName" className="text-sm font-medium">
-                    Campus Lead Name
+                    Campus Lead Name *
                   </label>
                   <input
                     id="campusLeadName"
@@ -219,7 +221,7 @@ export default function BulkCreateCampusLeads() {
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="email" className="text-sm font-medium">
-                    Email
+                    Email *
                   </label>
                   <input
                     id="email"
@@ -227,6 +229,20 @@ export default function BulkCreateCampusLeads() {
                     placeholder="john@scet.ac.in"
                     value={singleLead.email}
                     onChange={(e) => setSingleLead({ ...singleLead, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="district" className="text-sm font-medium">
+                    District *
+                  </label>
+                  <input
+                    id="district"
+                    type="text"
+                    placeholder="e.g., Thrissur"
+                    value={singleLead.district}
+                    onChange={(e) => setSingleLead({ ...singleLead, district: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
@@ -256,7 +272,7 @@ export default function BulkCreateCampusLeads() {
                 Bulk Upload via CSV
               </CardTitle>
               <CardDescription>
-                CSV format: collegeName, campusLeadName, email
+                CSV format: collegeName, campusLeadName, email, district
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -291,6 +307,7 @@ export default function BulkCreateCampusLeads() {
                     {csvData.slice(0, 10).map((row, index) => (
                       <div key={index} className="text-xs py-1 border-b last:border-0">
                         <span className="font-medium">{row.collegeName}</span> - {row.campusLeadName} ({row.email})
+                        {row.district && <span className="text-gray-500"> • {row.district}</span>}
                       </div>
                     ))}
                     {csvData.length > 10 && (
@@ -388,7 +405,10 @@ export default function BulkCreateCampusLeads() {
       <SlideIn delay={0.3}>
         <Card className="border-gray-100 mt-6">
           <CardHeader>
-            <CardTitle>CSV Format Requirements</CardTitle>
+            <CardTitle>CSV Format Guide</CardTitle>
+            <CardDescription>
+              Follow this format for bulk campus lead creation
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -396,16 +416,18 @@ export default function BulkCreateCampusLeads() {
                 Your CSV file should have the following columns (in order):
               </p>
               <div className="bg-gray-50 p-4 rounded font-mono text-sm">
-                <div className="font-bold mb-2">collegeName,campusLeadName,email</div>
-                <div>MIT College of Engineering,John Doe,john@example.com</div>
-                <div>Stanford University,Jane Smith,jane@example.com</div>
-                <div>Harvard University,Bob Johnson,bob@example.com</div>
+                <div className="font-bold mb-2">collegeName,campusLeadName,email,district</div>
+                <div>MIT College of Engineering,John Doe,john@example.com,Thrissur</div>
+                <div>Stanford University,Jane Smith,jane@example.com,Palakkad</div>
+                <div>Harvard University,Bob Johnson,bob@example.com,Ernakulam</div>
               </div>
               <ul className="text-sm text-gray-600 space-y-1 mt-4">
-                <li>• First row should be the header</li>
+                <li>• First row should be the header (collegeName,campusLeadName,email,district)</li>
+                <li>• District field is required for all institutions</li>
                 <li>• Each campus lead will receive an auto-generated password</li>
                 <li>• Credentials will be sent to their email addresses</li>
-                <li>• Campus leads can log in and invite 5 team leads each</li>
+                <li>• Campus leads can log in and invite unlimited team leads</li>
+                <li>• But can only approve up to 5 teams for final submission</li>
               </ul>
             </div>
           </CardContent>
