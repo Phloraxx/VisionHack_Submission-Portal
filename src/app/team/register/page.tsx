@@ -207,7 +207,11 @@ export default function TeamRegistrationPage() {
         throw new Error(data.error || 'Failed to register team');
       }
 
-      alert(isEditing ? 'Team updated successfully!' : 'Team registered successfully!');
+      if (isEditing) {
+        alert('Team updated successfully!');
+      } else {
+        alert('Team registered successfully! You will receive your login credentials via email.');
+      }
       router.push('/team/dashboard');
     } catch (error: any) {
       console.error('Error registering team:', error);

@@ -70,46 +70,19 @@ export default function AdminDashboard() {
 
         <SlideIn delay={0.3}>
           <AdminActionCard
-            icon={Database}
-            title="Manage Themes"
-            description="Add, edit, or remove hackathon themes"
-            action={() => router.push('/admin/themes')}
+            icon={Users}
+            title="View All Teams"
+            description="Browse, search, and manage all registered teams"
+            action={() => router.push('/admin/teams')}
           />
         </SlideIn>
 
         <SlideIn delay={0.4}>
           <AdminActionCard
-            icon={ImagePlus}
-            title="Gallery Management"
-            description="Upload and manage gallery images"
-            action={() => router.push('/admin/gallery')}
-          />
-        </SlideIn>
-
-        <SlideIn delay={0.5}>
-          <AdminActionCard
-            icon={Users}
-            title="View All Teams"
-            description="Browse and manage all registered teams"
-            action={() => router.push('/admin/teams')}
-          />
-        </SlideIn>
-
-        <SlideIn delay={0.6}>
-          <AdminActionCard
             icon={FileDown}
             title="Export Data"
             description="Download team and member data as CSV"
             action={() => router.push('/admin/export')}
-          />
-        </SlideIn>
-
-        <SlideIn delay={0.7}>
-          <AdminActionCard
-            icon={Settings}
-            title="Assign Mentors"
-            description="Assign mentors to nominated teams"
-            action={() => router.push('/admin/mentors')}
           />
         </SlideIn>
       </div>

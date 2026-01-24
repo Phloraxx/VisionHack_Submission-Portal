@@ -160,7 +160,7 @@ export default function RegisterPage() {
         return;
       }
 
-      toast.success("Team registered successfully! Check your email for login credentials.");
+      toast.success("🎉 Registration successful! Please check your email for login credentials to access your dashboard.");
       
       // Reset form
       setSelectedInstitution("");
@@ -213,11 +213,16 @@ export default function RegisterPage() {
       {/* Main Content */}
       <div className="container mx-auto px-6 py-12">
         <FadeIn>
-          <div className="max-w-4xl mx-auto space-y-2 mb-8 text-center">
+          <div className="max-w-4xl mx-auto space-y-4 mb-8 text-center">
             <h2 className="text-3xl font-bold tracking-tight">Register Your Team</h2>
             <p className="text-gray-600">
-              Join Vision Hack 2026 by registering your team. You'll receive login credentials via email.
+              Join Vision Hack 2026 by registering your team.
             </p>
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800 font-medium">
+                📧 After registration, you will receive your login credentials via email to access your dashboard.
+              </p>
+            </div>
           </div>
         </FadeIn>
 
@@ -451,7 +456,8 @@ export default function RegisterPage() {
 
           {/* Info Footer */}
           <div className="text-center text-sm text-gray-500 space-y-2">
-            <p>After registration, you&apos;ll receive login credentials via email.</p>
+            <p className="font-medium text-gray-700">📧 Important: Login credentials will be sent to the team lead&apos;s email address after registration.</p>
+            <p>Please check your inbox and spam folder for the credentials email.</p>
             <p>
               Already registered?{" "}
               <button

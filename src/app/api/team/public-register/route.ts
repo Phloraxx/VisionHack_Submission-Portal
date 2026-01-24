@@ -449,7 +449,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Team registered successfully! Check your email for login credentials.',
+      message: 'Team registered successfully! Login credentials have been sent to your email. Please check your inbox (and spam folder) to access your dashboard.',
       data: {
         team: {
           id: team.$id,
@@ -462,7 +462,7 @@ export async function POST(request: NextRequest) {
         credentials: {
           email: userResult.email,
           // Don't send password in response for security
-          message: 'Login credentials have been sent to your email'
+          message: 'Login credentials have been sent to the team lead email address. Please check your inbox and spam folder.'
         }
       }
     }, { status: 201 });
