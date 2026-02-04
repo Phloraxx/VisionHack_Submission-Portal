@@ -70,7 +70,7 @@ export default function QuestionnairePage() {
 
     // Validation Errors
     const [errors, setErrors] = useState<Record<string, string>>({});
-    const errorRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const errorRefs = useRef<Record<string, HTMLElement | null>>({});
 
     useEffect(() => {
         const init = async () => {
@@ -363,7 +363,7 @@ export default function QuestionnairePage() {
     };
 
     // Helper to register refs
-    const setRef = (key: string) => (el: HTMLDivElement | null) => {
+    const setRef = (key: string) => (el: HTMLElement | null) => {
         errorRefs.current[key] = el;
     };
 
