@@ -126,10 +126,10 @@ export default function TeamDashboard() {
                 <Button
                   variant="outline"
                   className="w-full justify-start"
-                  onClick={() => router.push('/themes')}
+                  onClick={() => router.push('/team/questionnaire')}
                 >
                   <FileText className="mr-2 h-4 w-4" />
-                  View Themes
+                  Questionnaire
                 </Button>
               </motion.div>
             </CardContent>
