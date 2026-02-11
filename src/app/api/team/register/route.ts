@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
           // Core team info
           name: teamName.trim(),
           teamName: teamName.trim(),
-          status: 'submitted', // Or keep as is? Request didn't specify changing status logic, but usually after registration it is submitted.
+          status: 'registered', // Initial status after registration
           membersCount: members.length + 1, // Include Lead
 
           // Note: $updatedAt is automatically managed by Appwrite

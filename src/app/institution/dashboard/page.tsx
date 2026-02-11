@@ -141,8 +141,6 @@ export default function InstitutionDashboard() {
   };
 
   const addTeamLeadField = () => {
-    // Limit removed for inviting, but good to keep a reasonable UI limit if needed.
-    // Let's allow unlimited for now as per requirement.
     setTeamLeads([...teamLeads, { name: '', email: '' }]);
   };
 
@@ -196,31 +194,36 @@ export default function InstitutionDashboard() {
       return;
     }
 
-    // If team has submitted, they are locked. Cannot unapprove.
-    if (currentStatus === 'submitted') {
+    // If team has submitted idea, they are locked. Cannot unapprove.
+    if (currentStatus === 'idea_submitted' || currentStatus === 'submitted') {
       toast.error("Cannot unapprove a team that has already submitted their idea.");
       return;
     }
 
-    // 'registered' counts as Approved/Locked slots (initially)
-    const isCurrentlyApproved = currentStatus === 'registered';
+    // Only teams who have submitted questionnaire can be shortlisted
+    if (currentStatus === 'registered' || currentStatus === 'waitlisted') {
+      toast.error("Team must submit questionnaire before they can be shortlisted.");
+      return;
+    }
+
+    // 'shortlisted' counts as Approved/Locked slots
+    const isCurrentlyApproved = currentStatus === 'shortlisted';
 
     // If trying to approve, check limit
     if (!isCurrentlyApproved) {
       if ((institution?.teamsShortlisted || 0) >= 5) {
-        toast.error('You can only approve up to 5 teams. Please unapprove another team first.');
+        toast.error('You can only shortlist up to 5 teams. Please un-shortlist another team first.');
         return;
       }
     }
 
-    const action = isCurrentlyApproved ? 'unapprove' : 'approve';
-    // If unapproving, go to 'waitlisted'.
-    // If approving, go to 'registered'.
-    const newStatus = isCurrentlyApproved ? 'waitlisted' : 'registered';
+    // If unapproving, go back to 'questionnaire_submitted'.
+    // If approving, go to 'shortlisted'.
+    const newStatus = isCurrentlyApproved ? 'questionnaire_submitted' : 'shortlisted';
 
     const message = isCurrentlyApproved
-      ? `Unapprove team "${teamName}"? This will move them to waitlist and allow edits.`
-      : `Approve team "${teamName}"? This will confirm their slot (max 5) and lock edits.`;
+      ? `Un-shortlist team "${teamName}"? This will allow them to edit questionnaire but remove them from shortlist.`
+      : `Shortlist team "${teamName}"? This will confirm their slot (max 5) and allow them to submit idea.`;
 
     if (!window.confirm(message)) {
       return;
@@ -249,7 +252,7 @@ export default function InstitutionDashboard() {
         setInstitution({ ...institution, teamsShortlisted: newCount });
       }
 
-      toast.success(isCurrentlyApproved ? 'Team unapproved (Waitlisted).' : 'Team approved (Registered).');
+      toast.success(isCurrentlyApproved ? 'Team un-shortlisted.' : 'Team shortlisted.');
 
       // Refresh teams
       if (institution) {
@@ -260,8 +263,6 @@ export default function InstitutionDashboard() {
       toast.error('Failed to update team status');
     }
   };
-
-
 
   const handleInviteTeamLeads = async () => {
     // Check Config
@@ -287,13 +288,6 @@ export default function InstitutionDashboard() {
       toast.error('Institution data not found');
       return;
     }
-
-    // Limit removed
-    // const totalTeamsAfterInvite = (institution.teamsShortlisted || 0) + validLeads.length;
-    // if (totalTeamsAfterInvite > 5) {
-    //   toast.error(`You can only invite ${5 - (institution.teamsShortlisted || 0)} more team lead(s). Maximum is 5 total.`);
-    //   return;
-    // }
 
     setIsInviting(true);
 
@@ -335,9 +329,7 @@ export default function InstitutionDashboard() {
   }
 
   const canInvite = institution && (institution.teamsShortlisted || 0) < 5;
-  const remainingSlots = institution ? 5 - (institution.teamsShortlisted || 0) : 0;
 
-  // Add UI logic for locked buttons
   return (
     <div className="container mx-auto px-6 py-12">
       <FadeIn>
@@ -486,8 +478,6 @@ export default function InstitutionDashboard() {
                   </>
                 )}
               </Button>
-
-              {/* Limit message removed */}
             </CardContent>
           </Card>
         </SlideIn>
@@ -553,7 +543,7 @@ export default function InstitutionDashboard() {
 
               <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> You can invite as many teams as you want, but you can only approve up to 5 teams for the final submission.
+                  <strong>Note:</strong> You can invite as many teams as you want, but you can only approve and shortlist up to 5 teams for the final submission.
                 </p>
               </div>
             </CardContent>
@@ -592,19 +582,24 @@ export default function InstitutionDashboard() {
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
                                   <h4 className="font-semibold text-lg">{team.teamLeadName}</h4>
-                                  {team.status === 'registered' && (
+                                  {team.status === 'shortlisted' && (
                                     <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">
-                                      ✓ Approved
+                                      ✓ Shortlisted
                                     </span>
                                   )}
-                                  {team.status === 'waitlisted' && (
+                                  {team.status === 'questionnaire_submitted' && (
+                                    <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                                      • Questionnaire Submitted
+                                    </span>
+                                  )}
+                                  {(team.status === 'registered' || team.status === 'waitlisted') && (
                                     <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full font-medium">
-                                      • Waitlisted
+                                      • Registered (Pending)
                                     </span>
                                   )}
-                                  {team.status === 'submitted' && (
+                                  {(team.status === 'idea_submitted' || team.status === 'submitted') && (
                                     <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">
-                                      ⏳ Review Pending
+                                      ⏳ Idea Submitted
                                     </span>
                                   )}
                                 </div>
@@ -705,49 +700,51 @@ export default function InstitutionDashboard() {
                           {/* Approval Toggle */}
                           {team.teamName && (
                             <div className="pt-2">
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleApproval(team.$id, team.teamName, team.status);
-                                }}
-                                // Lock button if submitted OR if nomination is closed (and not submitted, but checking config)
-                                // Actually if submitted, it's locked regardless of config.
-                                // If nomination closed, disable "Approve" (Waitlist -> Registered). 
-                                // What about "Unapprove"? Usually closed too.
-                                disabled={team.status === 'submitted' || (!config.nomination)}
-                                className={
-                                  team.status === 'submitted'
-                                    ? "w-full bg-gray-400 cursor-not-allowed text-white"
-                                    : !config.nomination
-                                      ? "w-full bg-gray-300 cursor-not-allowed text-gray-500"
-                                      : team.status === 'registered'
-                                        ? "w-full bg-orange-600 hover:bg-orange-700 text-white"
-                                        : "w-full bg-green-600 hover:bg-green-700 text-white"
-                                }
-                              >
-                                {team.status === 'submitted' ? (
-                                  <>
-                                    <Lock className="h-4 w-4 mr-2" />
-                                    Locked (Idea Submitted)
-                                  </>
-                                ) : !config.nomination ? (
-                                  <>
-                                    <Lock className="h-4 w-4 mr-2" />
-                                    Nomination Closed
-                                  </>
-                                ) : team.status === 'registered' ? (
-                                  <>
-                                    <X className="h-4 w-4 mr-2" />
-                                    Unapprove (Allow Edits)
-                                  </>
-                                ) : (
-                                  <>
-                                    <Check className="h-4 w-4 mr-2" />
-                                    Approve & Lock
-                                  </>
-                                )}
-                              </Button>
+                              {team.status === 'registered' || team.status === 'waitlisted' ? (
+                                <div className="p-2 bg-gray-100 rounded text-center text-sm text-gray-500">
+                                  Team must submit questionnaire to be eligible for shortlisting.
+                                </div>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleApproval(team.$id, team.teamName, team.status);
+                                  }}
+                                  disabled={team.status === 'idea_submitted' || team.status === 'submitted' || (!config.nomination && team.status !== 'shortlisted')}
+                                  className={
+                                    team.status === 'idea_submitted' || team.status === 'submitted'
+                                      ? "w-full bg-gray-400 cursor-not-allowed text-white"
+                                      : !config.nomination && team.status !== 'shortlisted'
+                                        ? "w-full bg-gray-300 cursor-not-allowed text-gray-500"
+                                        : team.status === 'shortlisted'
+                                          ? "w-full bg-orange-600 hover:bg-orange-700 text-white"
+                                          : "w-full bg-green-600 hover:bg-green-700 text-white"
+                                  }
+                                >
+                                  {team.status === 'idea_submitted' || team.status === 'submitted' ? (
+                                    <>
+                                      <Lock className="h-4 w-4 mr-2" />
+                                      Locked (Idea Submitted)
+                                    </>
+                                  ) : !config.nomination && team.status !== 'shortlisted' ? (
+                                    <>
+                                      <Lock className="h-4 w-4 mr-2" />
+                                      Shortlisting Closed
+                                    </>
+                                  ) : team.status === 'shortlisted' ? (
+                                    <>
+                                      <X className="h-4 w-4 mr-2" />
+                                      Un-shortlist (Allow Edits)
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check className="h-4 w-4 mr-2" />
+                                      Shortlist & Lock
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           )}
                         </div>

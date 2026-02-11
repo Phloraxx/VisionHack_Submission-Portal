@@ -12,12 +12,12 @@ import { authHelpers, UserRole } from '@/lib/appwrite';
 import { Search, Building2, MapPin, Users, TrendingUp, Filter, Mail, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
 } from '@/components/ui/select';
 
 interface Team {
@@ -134,37 +134,37 @@ export default function CoordinatorDashboard() {
   // Filter teams based on search query, district, institution, and status
   const filteredTeams = teams.filter((team) => {
     const query = searchQuery.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       team.teamName.toLowerCase().includes(query) ||
       team.institutionName.toLowerCase().includes(query) ||
       team.teamLeadName.toLowerCase().includes(query) ||
       team.teamLeadEmail.toLowerCase().includes(query) ||
       (team.teamCode && team.teamCode.toLowerCase().includes(query));
-    
+
     const matchesDistrict = districtFilter === 'all' || team.district === districtFilter;
     const matchesInstitution = institutionFilter === 'all' || team.institutionId === institutionFilter;
     const matchesStatus = statusFilter === 'all' || team.status === statusFilter;
-    
+
     return matchesSearch && matchesDistrict && matchesInstitution && matchesStatus;
   });
 
   // Filter institutions based on search and district
   const filteredInstitutions = institutions.filter((inst) => {
     const query = searchQuery.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       inst.name.toLowerCase().includes(query) ||
       inst.campusLeadName.toLowerCase().includes(query) ||
       inst.campusLeadEmail.toLowerCase().includes(query);
-    
+
     const matchesDistrict = districtFilter === 'all' || inst.district === districtFilter;
-    
+
     return matchesSearch && matchesDistrict;
   });
 
   // Calculate statistics based on current filters
   const filteredStats = {
     totalTeams: filteredTeams.length,
-    totalInstitutions: viewMode === 'institutions' 
+    totalInstitutions: viewMode === 'institutions'
       ? filteredInstitutions.length
       : new Set(filteredTeams.map(t => t.institutionId)).size,
     registeredTeams: filteredTeams.filter(t => t.status === 'registered').length,
@@ -227,8 +227,8 @@ export default function CoordinatorDashboard() {
                 </Select>
               </div>
               {districtFilter !== 'all' && (
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setDistrictFilter('all')}
                 >
@@ -423,24 +423,25 @@ export default function CoordinatorDashboard() {
                     <CardHeader className="bg-gradient-to-br from-gray-50 to-white p-4">
                       <div className="space-y-3">
                         <div className="flex justify-between items-start">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                            team.status === 'registered' 
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${team.status === 'idea_submitted' || team.status === 'submitted'
+                            ? 'bg-purple-100 text-purple-800'
+                            : team.status === 'shortlisted'
                               ? 'bg-green-100 text-green-800'
-                              : team.status === 'submitted'
-                              ? 'bg-blue-100 text-blue-800'
-                              : team.status === 'waitlisted'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {team.status}
+                              : team.status === 'questionnaire_submitted'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                            {team.status === 'idea_submitted' ? 'Idea Submitted' :
+                              team.status === 'questionnaire_submitted' ? 'Quest. Submitted' :
+                                team.status.charAt(0).toUpperCase() + team.status.slice(1)}
                           </span>
                           <span className="text-xs text-gray-500">{team.membersCount} members</span>
                         </div>
-                        
+
                         <CardTitle className="text-sm font-bold line-clamp-2">
                           {team.teamName}
                         </CardTitle>
-                        
+
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1.5 text-xs text-gray-600">
                             <Building2 className="h-3.5 w-3.5 shrink-0" />
@@ -451,7 +452,7 @@ export default function CoordinatorDashboard() {
                             <span className="line-clamp-1">{team.district}</span>
                           </div>
                         </div>
-                        
+
                         {team.teamCode && (
                           <div className="text-xs text-blue-600 font-mono bg-blue-50 px-2 py-1 rounded w-fit">
                             {team.teamCode}

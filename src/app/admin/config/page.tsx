@@ -20,7 +20,8 @@ export default function AdminConfigPage() {
     const [config, setConfig] = useState({
         registration: false,
         nomination: false,
-        submissions: false
+        submissions: false,
+        questionnaire: false
     });
 
     useEffect(() => {
@@ -44,7 +45,8 @@ export default function AdminConfigPage() {
                     setConfig({
                         registration: data.config.registration || false,
                         nomination: data.config.nomination || false,
-                        submissions: data.config.submissions || false
+                        submissions: data.config.submissions || false,
+                        questionnaire: data.config.questionnaire || false
                     });
                 }
             } catch (error) {
@@ -56,7 +58,7 @@ export default function AdminConfigPage() {
         checkAuth();
     }, [router]);
 
-    const handleToggle = async (key: 'registration' | 'nomination' | 'submissions', value: boolean) => {
+    const handleToggle = async (key: 'registration' | 'nomination' | 'submissions' | 'questionnaire', value: boolean) => {
         // Optimistic update
         const newConfig = { ...config, [key]: value };
         setConfig(newConfig);
@@ -131,6 +133,41 @@ export default function AdminConfigPage() {
                             <p>
                                 <strong>Enabled:</strong> Campus Leads can send invites to add new teams to the waitlist.<br />
                                 <strong>Disabled:</strong> The "Invite" button will be locked for all Campus Leads.
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Questionnaire Control */}
+                <Card className={`border-l-4 transition-all ${config.questionnaire ? 'border-l-green-500' : 'border-l-gray-300'}`}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <div className="space-y-1">
+                            <CardTitle className="text-xl flex items-center gap-2">
+                                <FileText className="h-5 w-5" />
+                                Questionnaire
+                            </CardTitle>
+                            <CardDescription>
+                                Allow Teams to submit or edit their questionnaire.
+                            </CardDescription>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={config.questionnaire}
+                                    onChange={(e) => handleToggle('questionnaire', e.target.checked)}
+                                />
+                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-sm text-gray-500 mt-2 flex items-start gap-2 bg-gray-50 p-3 rounded">
+                            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                            <p>
+                                <strong>Enabled:</strong> Teams can access and submit/edit their questionnaire.<br />
+                                <strong>Disabled:</strong> Questionnaire access is read-only or blocked.
                             </p>
                         </div>
                     </CardContent>

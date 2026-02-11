@@ -21,6 +21,7 @@ export default function QuestionnairePage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isQuestionnaireOpen, setIsQuestionnaireOpen] = useState(false);
 
     // Auth & Context
     const [user, setUser] = useState<any>(null);
@@ -120,7 +121,11 @@ export default function QuestionnairePage() {
                     const ratings: Record<string, string> = {};
                     saved.resources_needed.forEach((r: string) => {
                         const [key, val] = r.split(':');
-                        if (key && val) ratings[key] = val;
+                        // Handle potential $ prefix from old saves
+                        const cleanKey = key.startsWith('$') ? key.substring(1) : key;
+                        const cleanVal = val.startsWith('$') ? val.substring(1) : val;
+
+                        if (cleanKey && cleanVal) ratings[cleanKey] = cleanVal;
                     });
                     setResourceRatings(ratings);
 
@@ -304,7 +309,7 @@ export default function QuestionnairePage() {
 
         try {
             // Prepare resources array
-            const resourcesArray = Object.entries(resourceRatings).map(([k, v]) => `$${k}:$${v}`);
+            const resourcesArray = Object.entries(resourceRatings).map(([k, v]) => `${k}:${v}`);
 
             const payload = {
                 user_id: user.$id,
@@ -342,6 +347,17 @@ export default function QuestionnairePage() {
                     existingResponseId,
                     payload
                 );
+
+                // Also ensure team status is updated if it was just registered
+                if (team.status === 'registered') {
+                    await databases.updateDocument(
+                        DATABASE_ID,
+                        COLLECTIONS.TEAMS,
+                        team.$id,
+                        { status: 'questionnaire_submitted' }
+                    );
+                }
+
                 toast.success("Questionnaire updated successfully");
             } else {
                 await databases.createDocument(
@@ -350,6 +366,15 @@ export default function QuestionnairePage() {
                     ID.unique(),
                     payload
                 );
+
+                // Update team status to questionnaire_submitted
+                await databases.updateDocument(
+                    DATABASE_ID,
+                    COLLECTIONS.TEAMS,
+                    team.$id,
+                    { status: 'questionnaire_submitted' }
+                );
+
                 toast.success("Questionnaire submitted successfully");
                 setTimeout(() => router.push('/team/dashboard'), 1500);
             }
@@ -372,525 +397,533 @@ export default function QuestionnairePage() {
     return (
         <div className="container mx-auto px-4 py-8 max-w-4xl">
             <FadeIn>
-                <div className="mb-8 space-y-2">
-                    <h1 className="text-3xl font-bold tracking-tight">Kudumbashree Participant Questionnaire</h1>
-                    <p className="text-gray-600">Please fill out this form to help us understand your unit better. All fields are required.</p>
+                <div className="space-y-2 mb-8">
+                    <h1 className="text-3xl font-bold tracking-tight">Team Profile Questionnaire</h1>
+                    <p className="text-gray-600">Complete this detailed profile to help us understand your team better.</p>
+                    {!isQuestionnaireOpen && (
+                        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 flex items-center gap-2 mt-4">
+                            <AlertCircle className="h-5 w-5" />
+                            <p className="font-medium">Questionnaire submissions are currently closed. You can view your answers but cannot make changes.</p>
+                        </div>
+                    )}
                 </div>
             </FadeIn>
 
-            <form onSubmit={handleSubmit} className="space-y-8 pb-12">
+            <form onSubmit={handleSubmit}>
+                <fieldset disabled={!isQuestionnaireOpen} className="space-y-8 disabled:opacity-80 pb-12">
 
-                {/* 1. Profile */}
-                <Section title="1. Profile Details">
-                    <div className="grid gap-6 md:grid-cols-2">
-                        <div className="space-y-2" ref={setRef('profile_id')}>
-                            <Label className={errors.profile_id ? "text-red-500" : ""}>Profile ID / Team Code *</Label>
-                            <Input
-                                value={formData.profile_id}
-                                onChange={e => {
-                                    setFormData({ ...formData, profile_id: e.target.value });
-                                    if (e.target.value) setErrors(p => ({ ...p, profile_id: '' }));
-                                }}
-                                className={errors.profile_id ? "border-red-500" : ""}
-                            />
-                            {errors.profile_id && <p className="text-sm text-red-500">{errors.profile_id}</p>}
-                        </div>
-
-                        <div className="space-y-2" ref={setRef('age')}>
-                            <Label className={errors.age ? "text-red-500" : ""}>Age *</Label>
-                            <Input
-                                type="number"
-                                placeholder="Age"
-                                value={formData.age}
-                                onChange={e => {
-                                    setFormData({ ...formData, age: e.target.value });
-                                    if (e.target.value) setErrors(p => ({ ...p, age: '' }));
-                                }}
-                                className={errors.age ? "border-red-500" : ""}
-                            />
-                            {errors.age && <p className="text-sm text-red-500">{errors.age}</p>}
-                        </div>
-
-                        <div className="space-y-2" ref={setRef('gender')}>
-                            <Label className={errors.gender ? "text-red-500" : ""}>Gender *</Label>
-                            <RadioGroup
-                                value={formData.gender}
-                                onValueChange={v => {
-                                    setFormData({ ...formData, gender: v });
-                                    setErrors(p => ({ ...p, gender: '' }));
-                                }}
-                                className="flex gap-6 mt-2"
-                            >
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="Male" id="gender-male" />
-                                    <Label htmlFor="gender-male" className="font-normal">Male</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="Female" id="gender-female" />
-                                    <Label htmlFor="gender-female" className="font-normal">Female</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="Other" id="gender-other" />
-                                    <Label htmlFor="gender-other" className="font-normal">Other</Label>
-                                </div>
-                            </RadioGroup>
-                            {errors.gender && <p className="text-sm text-red-500">{errors.gender}</p>}
-                        </div>
-
-                        <div className="space-y-2 md:col-span-2" ref={setRef('education_level')}>
-                            <Label className={errors.education_level ? "text-red-500" : ""}>Education Level *</Label>
-                            <RadioGroup
-                                value={formData.education_level}
-                                onValueChange={v => {
-                                    setFormData({ ...formData, education_level: v });
-                                    setErrors(p => ({ ...p, education_level: '' }));
-                                }}
-                                className="grid md:grid-cols-2 gap-4 mt-2"
-                            >
-                                {["No formal education", "Primary", "Secondary", "Higher Secondary", "Graduate / Diploma / Professional"].map(opt => (
-                                    <div key={opt} className="flex items-center space-x-2">
-                                        <RadioGroupItem value={opt} id={`edu-${opt}`} />
-                                        <Label htmlFor={`edu-${opt}`} className="font-normal">{opt}</Label>
-                                    </div>
-                                ))}
-                            </RadioGroup>
-                            {errors.education_level && <p className="text-sm text-red-500">{errors.education_level}</p>}
-                        </div>
-                    </div>
-                </Section>
-
-                {/* 2. Activity */}
-                <Section title="2. Information on Livelihood Activity">
-                    <div className="space-y-6">
-                        <div className="space-y-3" ref={setRef('current_activity')}>
-                            <Label className={errors.current_activity ? "text-red-500" : ""}>Which activities are you currently engaged in? *</Label>
-                            <RadioGroup
-                                value={formData.current_activity}
-                                onValueChange={v => {
-                                    setFormData({ ...formData, current_activity: v });
-                                    setErrors(p => ({ ...p, current_activity: '' }));
-                                }}
-                                className="grid md:grid-cols-2 gap-4"
-                            >
-                                {[
-                                    "Food production / processing",
-                                    "Café / catering",
-                                    "Apparel / handicraft making",
-                                    "Agriculture / farming / nursery",
-                                    "Waste management (Haritha Karma Sena)",
-                                    "Construction work",
-                                    "Sales / trading products",
-                                    "Marketing / distribution",
-                                    "Services (housekeeping, wellness, driving)",
-                                    "Other"
-                                ].map(opt => (
-                                    <div key={opt} className="flex items-center space-x-2">
-                                        <RadioGroupItem value={opt} id={`act-${opt}`} />
-                                        <Label htmlFor={`act-${opt}`} className="font-normal">{opt}</Label>
-                                    </div>
-                                ))}
-                            </RadioGroup>
-                            {errors.current_activity && <p className="text-sm text-red-500">{errors.current_activity}</p>}
-
-                            {formData.current_activity === "Other" && (
-                                <div className="mt-2" ref={setRef('activity_other')}>
-                                    <Input
-                                        placeholder="Specify other activity"
-                                        value={formData.activity_other}
-                                        onChange={e => {
-                                            setFormData({ ...formData, activity_other: e.target.value });
-                                            if (e.target.value) setErrors(p => ({ ...p, activity_other: '' }));
-                                        }}
-                                        className={errors.activity_other ? "border-red-500" : ""}
-                                    />
-                                    {errors.activity_other && <p className="text-sm text-red-500">{errors.activity_other}</p>}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="grid md:grid-cols-2 gap-6">
-                            <div className="space-y-3" ref={setRef('activity_duration')}>
-                                <Label className={errors.activity_duration ? "text-red-500" : ""}>How long have you been doing this? *</Label>
-                                <RadioGroup
-                                    value={formData.activity_duration}
-                                    onValueChange={v => {
-                                        setFormData({ ...formData, activity_duration: v });
-                                        setErrors(p => ({ ...p, activity_duration: '' }));
-                                    }}
-                                >
-                                    <div className="flex items-center space-x-2">
-                                        <RadioGroupItem value="Less than 1 year" id="dur-less" />
-                                        <Label htmlFor="dur-less">Less than 1 year</Label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <RadioGroupItem value="More than 1 year" id="dur-more" />
-                                        <Label htmlFor="dur-more">More than 1 year</Label>
-                                    </div>
-                                </RadioGroup>
-                                {errors.activity_duration && <p className="text-sm text-red-500">{errors.activity_duration}</p>}
-                            </div>
-
-                            <div className="space-y-3" ref={setRef('is_primary_income')}>
-                                <Label className={errors.is_primary_income ? "text-red-500" : ""}>Is this your primary source of income? *</Label>
-                                <RadioGroup
-                                    value={formData.is_primary_income === true ? "yes" : (formData.is_primary_income === false ? "no" : "")}
-                                    onValueChange={v => {
-                                        setFormData({ ...formData, is_primary_income: v === "yes" });
-                                        setErrors(p => ({ ...p, is_primary_income: '' }));
-                                    }}
-                                >
-                                    <div className="flex items-center space-x-2">
-                                        <RadioGroupItem value="yes" id="inc-yes" />
-                                        <Label htmlFor="inc-yes">Yes</Label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <RadioGroupItem value="no" id="inc-no" />
-                                        <Label htmlFor="inc-no">No</Label>
-                                    </div>
-                                </RadioGroup>
-                                {errors.is_primary_income && <p className="text-sm text-red-500">{errors.is_primary_income}</p>}
-                            </div>
-                        </div>
-
-                        <div className="space-y-3" ref={setRef('monthly_income')}>
-                            <Label className={errors.monthly_income ? "text-red-500" : ""}>Average monthly income *</Label>
-                            <RadioGroup
-                                value={formData.monthly_income}
-                                onValueChange={v => {
-                                    setFormData({ ...formData, monthly_income: v });
-                                    setErrors(p => ({ ...p, monthly_income: '' }));
-                                }}
-                                className="grid md:grid-cols-3 gap-4"
-                            >
-                                {[
-                                    "< ₹5,000",
-                                    "₹5,001–₹10,000",
-                                    "₹10,001–₹20,000",
-                                    "₹20,000",
-                                    "More than 20,000"
-                                ].map(opt => (
-                                    <div key={opt} className="flex items-center space-x-2">
-                                        <RadioGroupItem value={opt} id={`income-${opt}`} />
-                                        <Label htmlFor={`income-${opt}`} className="font-normal">{opt}</Label>
-                                    </div>
-                                ))}
-                            </RadioGroup>
-                            {errors.monthly_income && <p className="text-sm text-red-500">{errors.monthly_income}</p>}
-                        </div>
-                    </div>
-                </Section>
-
-                {/* 3. Skills */}
-                <Section title="3. Skills & Training">
-                    <div className="space-y-6">
-                        <div className="space-y-3" ref={setRef('has_formal_training')}>
-                            <Label className={errors.has_formal_training ? "text-red-500" : ""}>Do you have any formal training? *</Label>
-                            <RadioGroup
-                                value={formData.has_formal_training === true ? "yes" : (formData.has_formal_training === false ? "no" : "")}
-                                onValueChange={v => {
-                                    setFormData({ ...formData, has_formal_training: v === "yes" });
-                                    setErrors(p => ({ ...p, has_formal_training: '' }));
-                                }}
-                            >
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="yes" id="train-yes" />
-                                    <Label htmlFor="train-yes">Yes</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="no" id="train-no" />
-                                    <Label htmlFor="train-no">No</Label>
-                                </div>
-                            </RadioGroup>
-                            {errors.has_formal_training && <p className="text-sm text-red-500">{errors.has_formal_training}</p>}
-
-                            {formData.has_formal_training === true && (
-                                <div className="mt-2" ref={setRef('training_details')}>
-                                    <Input
-                                        placeholder="If yes, what type and from whom?"
-                                        value={formData.training_details}
-                                        onChange={e => {
-                                            setFormData({ ...formData, training_details: e.target.value });
-                                            if (e.target.value) setErrors(p => ({ ...p, training_details: '' }));
-                                        }}
-                                        className={errors.training_details ? "border-red-500" : ""}
-                                    />
-                                    {errors.training_details && <p className="text-sm text-red-500">{errors.training_details}</p>}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="space-y-3" ref={setRef('skills_to_improve')}>
-                            <Label className={errors.skills_to_improve ? "text-red-500" : ""}>What skills do you need to improve? *</Label>
-                            <div className="grid md:grid-cols-2 gap-4">
-                                {[
-                                    "Technical production skills",
-                                    "Digital/Mobile skills",
-                                    "Quality control",
-                                    "Pricing & costing",
-                                    "Customer handling",
-                                    "Marketing & branding"
-                                ].map(skill => (
-                                    <div key={skill} className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id={`skill-${skill}`}
-                                            checked={formData.skills_to_improve.includes(skill)}
-                                            onCheckedChange={(c) => handleCheckboxChange('skills_to_improve', skill, c as boolean)}
-                                        />
-                                        <Label htmlFor={`skill-${skill}`} className="font-normal">{skill}</Label>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex items-center space-x-2 mt-2">
-                                <Label>Other:</Label>
+                    {/* 1. Profile */}
+                    <Section title="1. Profile Details">
+                        <div className="grid gap-6 md:grid-cols-2">
+                            <div className="space-y-2" ref={setRef('profile_id')}>
+                                <Label className={errors.profile_id ? "text-red-500" : ""}>Profile ID / Team Code *</Label>
                                 <Input
-                                    value={formData.skills_other}
+                                    value={formData.profile_id}
                                     onChange={e => {
-                                        setFormData({ ...formData, skills_other: e.target.value });
-                                        if (e.target.value) setErrors(p => ({ ...p, skills_to_improve: '' })); // Clear list error if other typed
+                                        setFormData({ ...formData, profile_id: e.target.value });
+                                        if (e.target.value) setErrors(p => ({ ...p, profile_id: '' }));
                                     }}
-                                    className="max-w-xs"
+                                    className={errors.profile_id ? "border-red-500" : ""}
                                 />
+                                {errors.profile_id && <p className="text-sm text-red-500">{errors.profile_id}</p>}
                             </div>
-                            {errors.skills_to_improve && <p className="text-sm text-red-500">{errors.skills_to_improve}</p>}
-                        </div>
-                    </div>
-                </Section>
 
-                {/* 4. Requirements */}
-                <Section title="4. Requirements & Challenges">
-                    <div className="space-y-4">
-                        <Label ref={setRef('resources_needed')} className={errors.resources_needed ? "text-red-500" : ""}>Rate your need (High / Medium / Low) for ALL items *</Label>
-                        <div className="grid gap-4 bg-gray-50 p-4 rounded-lg">
-                            {[
-                                "Manpower",
-                                "Storage space",
-                                "Work space / workshop",
-                                "Packaging equipment",
-                                "Marketing support",
-                                "Sales channels",
-                                "Financial support",
-                                "Digital tools",
-                                "Packaging & quality certification",
-                                "Transport & Logistics"
-                            ].map(res => (
-                                <div key={res} className="grid grid-cols-1 md:grid-cols-2 items-center gap-2">
-                                    <span className={cn("text-sm font-medium", !resourceRatings[res] && errors.resources_needed && "text-red-600")}>{res}</span>
+                            <div className="space-y-2" ref={setRef('age')}>
+                                <Label className={errors.age ? "text-red-500" : ""}>Age *</Label>
+                                <Input
+                                    type="number"
+                                    placeholder="Age"
+                                    value={formData.age}
+                                    onChange={e => {
+                                        setFormData({ ...formData, age: e.target.value });
+                                        if (e.target.value) setErrors(p => ({ ...p, age: '' }));
+                                    }}
+                                    className={errors.age ? "border-red-500" : ""}
+                                />
+                                {errors.age && <p className="text-sm text-red-500">{errors.age}</p>}
+                            </div>
+
+                            <div className="space-y-2" ref={setRef('gender')}>
+                                <Label className={errors.gender ? "text-red-500" : ""}>Gender *</Label>
+                                <RadioGroup
+                                    value={formData.gender}
+                                    onValueChange={v => {
+                                        setFormData({ ...formData, gender: v });
+                                        setErrors(p => ({ ...p, gender: '' }));
+                                    }}
+                                    className="flex gap-6 mt-2"
+                                >
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="Male" id="gender-male" />
+                                        <Label htmlFor="gender-male" className="font-normal">Male</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="Female" id="gender-female" />
+                                        <Label htmlFor="gender-female" className="font-normal">Female</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="Other" id="gender-other" />
+                                        <Label htmlFor="gender-other" className="font-normal">Other</Label>
+                                    </div>
+                                </RadioGroup>
+                                {errors.gender && <p className="text-sm text-red-500">{errors.gender}</p>}
+                            </div>
+
+                            <div className="space-y-2 md:col-span-2" ref={setRef('education_level')}>
+                                <Label className={errors.education_level ? "text-red-500" : ""}>Education Level *</Label>
+                                <RadioGroup
+                                    value={formData.education_level}
+                                    onValueChange={v => {
+                                        setFormData({ ...formData, education_level: v });
+                                        setErrors(p => ({ ...p, education_level: '' }));
+                                    }}
+                                    className="grid md:grid-cols-2 gap-4 mt-2"
+                                >
+                                    {["No formal education", "Primary", "Secondary", "Higher Secondary", "Graduate / Diploma / Professional"].map(opt => (
+                                        <div key={opt} className="flex items-center space-x-2">
+                                            <RadioGroupItem value={opt} id={`edu-${opt}`} />
+                                            <Label htmlFor={`edu-${opt}`} className="font-normal">{opt}</Label>
+                                        </div>
+                                    ))}
+                                </RadioGroup>
+                                {errors.education_level && <p className="text-sm text-red-500">{errors.education_level}</p>}
+                            </div>
+                        </div>
+                    </Section>
+
+                    {/* 2. Activity */}
+                    <Section title="2. Information on Livelihood Activity">
+                        <div className="space-y-6">
+                            <div className="space-y-3" ref={setRef('current_activity')}>
+                                <Label className={errors.current_activity ? "text-red-500" : ""}>Which activities are you currently engaged in? *</Label>
+                                <RadioGroup
+                                    value={formData.current_activity}
+                                    onValueChange={v => {
+                                        setFormData({ ...formData, current_activity: v });
+                                        setErrors(p => ({ ...p, current_activity: '' }));
+                                    }}
+                                    className="grid md:grid-cols-2 gap-4"
+                                >
+                                    {[
+                                        "Food production / processing",
+                                        "Café / catering",
+                                        "Apparel / handicraft making",
+                                        "Agriculture / farming / nursery",
+                                        "Waste management (Haritha Karma Sena)",
+                                        "Construction work",
+                                        "Sales / trading products",
+                                        "Marketing / distribution",
+                                        "Services (housekeeping, wellness, driving)",
+                                        "Other"
+                                    ].map(opt => (
+                                        <div key={opt} className="flex items-center space-x-2">
+                                            <RadioGroupItem value={opt} id={`act-${opt}`} />
+                                            <Label htmlFor={`act-${opt}`} className="font-normal">{opt}</Label>
+                                        </div>
+                                    ))}
+                                </RadioGroup>
+                                {errors.current_activity && <p className="text-sm text-red-500">{errors.current_activity}</p>}
+
+                                {formData.current_activity === "Other" && (
+                                    <div className="mt-2" ref={setRef('activity_other')}>
+                                        <Input
+                                            placeholder="Specify other activity"
+                                            value={formData.activity_other}
+                                            onChange={e => {
+                                                setFormData({ ...formData, activity_other: e.target.value });
+                                                if (e.target.value) setErrors(p => ({ ...p, activity_other: '' }));
+                                            }}
+                                            className={errors.activity_other ? "border-red-500" : ""}
+                                        />
+                                        {errors.activity_other && <p className="text-sm text-red-500">{errors.activity_other}</p>}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <div className="space-y-3" ref={setRef('activity_duration')}>
+                                    <Label className={errors.activity_duration ? "text-red-500" : ""}>How long have you been doing this? *</Label>
                                     <RadioGroup
-                                        value={resourceRatings[res] || ''}
-                                        onValueChange={v => handleResourceRatingChange(res, v)}
-                                        className="flex gap-4"
-                                    >
-                                        {['High', 'Medium', 'Low'].map(rating => (
-                                            <div key={rating} className="flex items-center space-x-1">
-                                                <RadioGroupItem value={rating} id={`res-${res}-${rating}`} />
-                                                <Label htmlFor={`res-${res}-${rating}`} className="text-sm font-normal">{rating}</Label>
-                                            </div>
-                                        ))}
-                                    </RadioGroup>
-                                </div>
-                            ))}
-                        </div>
-                        {errors.resources_needed && <p className="text-sm text-red-500 flex items-center gap-2"><AlertCircle className="h-4 w-4" /> {errors.resources_needed}</p>}
-
-                        <div className="space-y-2">
-                            <Label>Challenges you face</Label>
-                            <Textarea
-                                value={formData.challenges}
-                                onChange={e => setFormData({ ...formData, challenges: e.target.value })}
-                                placeholder="Describe any challenges..."
-                            />
-                        </div>
-                    </div>
-                </Section>
-
-                {/* 5. Sales */}
-                <Section title="5. Sales & Market">
-                    <div className="space-y-6">
-                        <div className="space-y-3" ref={setRef('sales_channels')}>
-                            <Label className={errors.sales_channels ? "text-red-500" : ""}>Where do you currently sell your products? *</Label>
-                            <div className="grid md:grid-cols-2 gap-4">
-                                {[
-                                    "Local markets",
-                                    "Weekly markets",
-                                    "Online (ONDC / other platform)",
-                                    "Shops / consignments",
-                                    "Direct to customers"
-                                ].map(chan => (
-                                    <div key={chan} className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id={`chan-${chan}`}
-                                            checked={formData.sales_channels.includes(chan)}
-                                            onCheckedChange={(c) => handleCheckboxChange('sales_channels', chan, c as boolean)}
-                                        />
-                                        <Label htmlFor={`chan-${chan}`} className="font-normal">{chan}</Label>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex items-center space-x-2 mt-2">
-                                <Label>Other:</Label>
-                                <Input
-                                    value={formData.sales_other}
-                                    onChange={e => {
-                                        setFormData({ ...formData, sales_other: e.target.value });
-                                        if (e.target.value) setErrors(p => ({ ...p, sales_channels: '' }));
-                                    }}
-                                    className="max-w-xs"
-                                />
-                            </div>
-                            {errors.sales_channels && <p className="text-sm text-red-500">{errors.sales_channels}</p>}
-                        </div>
-
-                        <div className="space-y-3" ref={setRef('selling_difficulty')}>
-                            <Label className={errors.selling_difficulty ? "text-red-500" : ""}>Do you face difficulties in selling your products? *</Label>
-                            <RadioGroup
-                                value={formData.selling_difficulty === true ? "yes" : (formData.selling_difficulty === false ? "no" : "")}
-                                onValueChange={v => {
-                                    setFormData({ ...formData, selling_difficulty: v === "yes" });
-                                    setErrors(p => ({ ...p, selling_difficulty: '' }));
-                                }}
-                            >
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="yes" id="diff-yes" />
-                                    <Label htmlFor="diff-yes">Yes</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="no" id="diff-no" />
-                                    <Label htmlFor="diff-no">No</Label>
-                                </div>
-                            </RadioGroup>
-                            {errors.selling_difficulty && <p className="text-sm text-red-500">{errors.selling_difficulty}</p>}
-
-                            {formData.selling_difficulty === true && (
-                                <div className="mt-2" ref={setRef('selling_difficulty_details')}>
-                                    <Textarea
-                                        placeholder="What are the difficulties?"
-                                        value={formData.selling_difficulty_details}
-                                        onChange={e => {
-                                            setFormData({ ...formData, selling_difficulty_details: e.target.value });
-                                            if (e.target.value) setErrors(p => ({ ...p, selling_difficulty_details: '' }));
+                                        value={formData.activity_duration}
+                                        onValueChange={v => {
+                                            setFormData({ ...formData, activity_duration: v });
+                                            setErrors(p => ({ ...p, activity_duration: '' }));
                                         }}
-                                        className={errors.selling_difficulty_details ? "border-red-500" : ""}
-                                    />
-                                    {errors.selling_difficulty_details && <p className="text-sm text-red-500">{errors.selling_difficulty_details}</p>}
+                                    >
+                                        <div className="flex items-center space-x-2">
+                                            <RadioGroupItem value="Less than 1 year" id="dur-less" />
+                                            <Label htmlFor="dur-less">Less than 1 year</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <RadioGroupItem value="More than 1 year" id="dur-more" />
+                                            <Label htmlFor="dur-more">More than 1 year</Label>
+                                        </div>
+                                    </RadioGroup>
+                                    {errors.activity_duration && <p className="text-sm text-red-500">{errors.activity_duration}</p>}
                                 </div>
-                            )}
-                        </div>
-                    </div>
-                </Section>
 
-                {/* 6. Support & Future */}
-                <Section title="6. Future Plans & Support">
-                    <div className="space-y-6">
-                        <div className="space-y-3" ref={setRef('support_needed')}>
-                            <Label className={errors.support_needed ? "text-red-500" : ""}>Would you like support in: *</Label>
-                            <div className="grid md:grid-cols-2 gap-4">
-                                {[
-                                    "Branding",
-                                    "Packaging design",
-                                    "Digital marketing",
-                                    "Sales network expansion",
-                                    "Participation in exhibitions/fairs",
-                                    "Pricing strategy",
-                                    "Online sales"
-                                ].map(item => (
-                                    <div key={item} className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id={`sup-${item}`}
-                                            checked={formData.support_needed.includes(item)}
-                                            onCheckedChange={(c) => handleCheckboxChange('support_needed', item, c as boolean)}
+                                <div className="space-y-3" ref={setRef('is_primary_income')}>
+                                    <Label className={errors.is_primary_income ? "text-red-500" : ""}>Is this your primary source of income? *</Label>
+                                    <RadioGroup
+                                        value={formData.is_primary_income === true ? "yes" : (formData.is_primary_income === false ? "no" : "")}
+                                        onValueChange={v => {
+                                            setFormData({ ...formData, is_primary_income: v === "yes" });
+                                            setErrors(p => ({ ...p, is_primary_income: '' }));
+                                        }}
+                                    >
+                                        <div className="flex items-center space-x-2">
+                                            <RadioGroupItem value="yes" id="inc-yes" />
+                                            <Label htmlFor="inc-yes">Yes</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <RadioGroupItem value="no" id="inc-no" />
+                                            <Label htmlFor="inc-no">No</Label>
+                                        </div>
+                                    </RadioGroup>
+                                    {errors.is_primary_income && <p className="text-sm text-red-500">{errors.is_primary_income}</p>}
+                                </div>
+                            </div>
+
+                            <div className="space-y-3" ref={setRef('monthly_income')}>
+                                <Label className={errors.monthly_income ? "text-red-500" : ""}>Average monthly income *</Label>
+                                <RadioGroup
+                                    value={formData.monthly_income}
+                                    onValueChange={v => {
+                                        setFormData({ ...formData, monthly_income: v });
+                                        setErrors(p => ({ ...p, monthly_income: '' }));
+                                    }}
+                                    className="grid md:grid-cols-3 gap-4"
+                                >
+                                    {[
+                                        "< ₹5,000",
+                                        "₹5,001–₹10,000",
+                                        "₹10,001–₹20,000",
+                                        "₹20,000",
+                                        "More than 20,000"
+                                    ].map(opt => (
+                                        <div key={opt} className="flex items-center space-x-2">
+                                            <RadioGroupItem value={opt} id={`income-${opt}`} />
+                                            <Label htmlFor={`income-${opt}`} className="font-normal">{opt}</Label>
+                                        </div>
+                                    ))}
+                                </RadioGroup>
+                                {errors.monthly_income && <p className="text-sm text-red-500">{errors.monthly_income}</p>}
+                            </div>
+                        </div>
+                    </Section>
+
+                    {/* 3. Skills */}
+                    <Section title="3. Skills & Training">
+                        <div className="space-y-6">
+                            <div className="space-y-3" ref={setRef('has_formal_training')}>
+                                <Label className={errors.has_formal_training ? "text-red-500" : ""}>Do you have any formal training? *</Label>
+                                <RadioGroup
+                                    value={formData.has_formal_training === true ? "yes" : (formData.has_formal_training === false ? "no" : "")}
+                                    onValueChange={v => {
+                                        setFormData({ ...formData, has_formal_training: v === "yes" });
+                                        setErrors(p => ({ ...p, has_formal_training: '' }));
+                                    }}
+                                >
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="yes" id="train-yes" />
+                                        <Label htmlFor="train-yes">Yes</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="no" id="train-no" />
+                                        <Label htmlFor="train-no">No</Label>
+                                    </div>
+                                </RadioGroup>
+                                {errors.has_formal_training && <p className="text-sm text-red-500">{errors.has_formal_training}</p>}
+
+                                {formData.has_formal_training === true && (
+                                    <div className="mt-2" ref={setRef('training_details')}>
+                                        <Input
+                                            placeholder="If yes, what type and from whom?"
+                                            value={formData.training_details}
+                                            onChange={e => {
+                                                setFormData({ ...formData, training_details: e.target.value });
+                                                if (e.target.value) setErrors(p => ({ ...p, training_details: '' }));
+                                            }}
+                                            className={errors.training_details ? "border-red-500" : ""}
                                         />
-                                        <Label htmlFor={`sup-${item}`} className="font-normal">{item}</Label>
+                                        {errors.training_details && <p className="text-sm text-red-500">{errors.training_details}</p>}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-3" ref={setRef('skills_to_improve')}>
+                                <Label className={errors.skills_to_improve ? "text-red-500" : ""}>What skills do you need to improve? *</Label>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    {[
+                                        "Technical production skills",
+                                        "Digital/Mobile skills",
+                                        "Quality control",
+                                        "Pricing & costing",
+                                        "Customer handling",
+                                        "Marketing & branding"
+                                    ].map(skill => (
+                                        <div key={skill} className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`skill-${skill}`}
+                                                checked={formData.skills_to_improve.includes(skill)}
+                                                onCheckedChange={(c) => handleCheckboxChange('skills_to_improve', skill, c as boolean)}
+                                            />
+                                            <Label htmlFor={`skill-${skill}`} className="font-normal">{skill}</Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center space-x-2 mt-2">
+                                    <Label>Other:</Label>
+                                    <Input
+                                        value={formData.skills_other}
+                                        onChange={e => {
+                                            setFormData({ ...formData, skills_other: e.target.value });
+                                            if (e.target.value) setErrors(p => ({ ...p, skills_to_improve: '' })); // Clear list error if other typed
+                                        }}
+                                        className="max-w-xs"
+                                    />
+                                </div>
+                                {errors.skills_to_improve && <p className="text-sm text-red-500">{errors.skills_to_improve}</p>}
+                            </div>
+                        </div>
+                    </Section>
+
+                    {/* 4. Requirements */}
+                    <Section title="4. Requirements & Challenges">
+                        <div className="space-y-4">
+                            <Label ref={setRef('resources_needed')} className={errors.resources_needed ? "text-red-500" : ""}>Rate your need (High / Medium / Low) for ALL items *</Label>
+                            <div className="grid gap-4 bg-gray-50 p-4 rounded-lg">
+                                {[
+                                    "Manpower",
+                                    "Storage space",
+                                    "Work space / workshop",
+                                    "Packaging equipment",
+                                    "Marketing support",
+                                    "Sales channels",
+                                    "Financial support",
+                                    "Digital tools",
+                                    "Packaging & quality certification",
+                                    "Transport & Logistics"
+                                ].map(res => (
+                                    <div key={res} className="grid grid-cols-1 md:grid-cols-2 items-center gap-2">
+                                        <span className={cn("text-sm font-medium", !resourceRatings[res] && errors.resources_needed && "text-red-600")}>{res}</span>
+                                        <RadioGroup
+                                            value={resourceRatings[res] || ''}
+                                            onValueChange={v => handleResourceRatingChange(res, v)}
+                                            className="flex gap-4"
+                                        >
+                                            {['High', 'Medium', 'Low'].map(rating => (
+                                                <div key={rating} className="flex items-center space-x-1">
+                                                    <RadioGroupItem value={rating} id={`res-${res}-${rating}`} />
+                                                    <Label htmlFor={`res-${res}-${rating}`} className="text-sm font-normal">{rating}</Label>
+                                                </div>
+                                            ))}
+                                        </RadioGroup>
                                     </div>
                                 ))}
                             </div>
-                            <div className="flex items-center space-x-2 mt-2">
-                                <Label>Other:</Label>
-                                <Input
-                                    value={formData.support_other}
-                                    onChange={e => {
-                                        setFormData({ ...formData, support_other: e.target.value });
-                                        if (e.target.value) setErrors(p => ({ ...p, support_needed: '' }));
-                                    }}
-                                    className="max-w-xs"
+                            {errors.resources_needed && <p className="text-sm text-red-500 flex items-center gap-2"><AlertCircle className="h-4 w-4" /> {errors.resources_needed}</p>}
+
+                            <div className="space-y-2">
+                                <Label>Challenges you face</Label>
+                                <Textarea
+                                    value={formData.challenges}
+                                    onChange={e => setFormData({ ...formData, challenges: e.target.value })}
+                                    placeholder="Describe any challenges..."
                                 />
                             </div>
-                            {errors.support_needed && <p className="text-sm text-red-500">{errors.support_needed}</p>}
                         </div>
+                    </Section>
 
-                        <div className="space-y-3" ref={setRef('growth_plans')}>
-                            <Label className={errors.growth_plans ? "text-red-500" : ""}>How would you like to grow your livelihood in 2–3 years? *</Label>
-                            <div className="grid md:grid-cols-2 gap-4">
-                                {[
-                                    "Increase monthly income",
-                                    "Expand production",
-                                    "Start a new product/service",
-                                    "Employ more people",
-                                    "Sell outside my locality/district/state",
-                                    "Go digital / online sales",
-                                    "Build a brand",
-                                    "Become a trainer/mentor",
-                                    "Not sure yet"
-                                ].map(plan => (
-                                    <div key={plan} className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id={`plan-${plan}`}
-                                            checked={formData.growth_plans.includes(plan)}
-                                            onCheckedChange={(c) => handleCheckboxChange('growth_plans', plan, c as boolean)}
-                                        />
-                                        <Label htmlFor={`plan-${plan}`} className="font-normal">{plan}</Label>
-                                    </div>
-                                ))}
+                    {/* 5. Sales */}
+                    <Section title="5. Sales & Market">
+                        <div className="space-y-6">
+                            <div className="space-y-3" ref={setRef('sales_channels')}>
+                                <Label className={errors.sales_channels ? "text-red-500" : ""}>Where do you currently sell your products? *</Label>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    {[
+                                        "Local markets",
+                                        "Weekly markets",
+                                        "Online (ONDC / other platform)",
+                                        "Shops / consignments",
+                                        "Direct to customers"
+                                    ].map(chan => (
+                                        <div key={chan} className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`chan-${chan}`}
+                                                checked={formData.sales_channels.includes(chan)}
+                                                onCheckedChange={(c) => handleCheckboxChange('sales_channels', chan, c as boolean)}
+                                            />
+                                            <Label htmlFor={`chan-${chan}`} className="font-normal">{chan}</Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center space-x-2 mt-2">
+                                    <Label>Other:</Label>
+                                    <Input
+                                        value={formData.sales_other}
+                                        onChange={e => {
+                                            setFormData({ ...formData, sales_other: e.target.value });
+                                            if (e.target.value) setErrors(p => ({ ...p, sales_channels: '' }));
+                                        }}
+                                        className="max-w-xs"
+                                    />
+                                </div>
+                                {errors.sales_channels && <p className="text-sm text-red-500">{errors.sales_channels}</p>}
                             </div>
-                            {errors.growth_plans && <p className="text-sm text-red-500">{errors.growth_plans}</p>}
-                        </div>
 
-                        <div className="space-y-3" ref={setRef('mobile_usage')}>
-                            <Label className={errors.mobile_usage ? "text-red-500" : ""}>How do you currently use mobile/social media? *</Label>
-                            <div className="grid md:grid-cols-1 gap-4">
-                                {[
-                                    "I do not use social media for work",
-                                    "WhatsApp (customer orders, groups, photos)",
-                                    "Facebook (posting products / pages)",
-                                    "Instagram (reels, product photos)",
-                                    "YouTube (learning skills / watching tutorials)",
-                                    "Online platforms (ONDC, marketplaces, apps)",
-                                    "I want to use social media but don’t know how"
-                                ].map(use => (
-                                    <div key={use} className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id={`mob-${use}`}
-                                            checked={formData.mobile_usage.includes(use)}
-                                            onCheckedChange={(c) => handleCheckboxChange('mobile_usage', use, c as boolean)}
-                                        />
-                                        <Label htmlFor={`mob-${use}`} className="font-normal">{use}</Label>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex items-center space-x-2 mt-2">
-                                <Label>Other:</Label>
-                                <Input
-                                    value={formData.mobile_usage_other}
-                                    onChange={e => {
-                                        setFormData({ ...formData, mobile_usage_other: e.target.value });
-                                        if (e.target.value) setErrors(p => ({ ...p, mobile_usage: '' }));
+                            <div className="space-y-3" ref={setRef('selling_difficulty')}>
+                                <Label className={errors.selling_difficulty ? "text-red-500" : ""}>Do you face difficulties in selling your products? *</Label>
+                                <RadioGroup
+                                    value={formData.selling_difficulty === true ? "yes" : (formData.selling_difficulty === false ? "no" : "")}
+                                    onValueChange={v => {
+                                        setFormData({ ...formData, selling_difficulty: v === "yes" });
+                                        setErrors(p => ({ ...p, selling_difficulty: '' }));
                                     }}
-                                    className="max-w-xs"
-                                />
+                                >
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="yes" id="diff-yes" />
+                                        <Label htmlFor="diff-yes">Yes</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="no" id="diff-no" />
+                                        <Label htmlFor="diff-no">No</Label>
+                                    </div>
+                                </RadioGroup>
+                                {errors.selling_difficulty && <p className="text-sm text-red-500">{errors.selling_difficulty}</p>}
+
+                                {formData.selling_difficulty === true && (
+                                    <div className="mt-2" ref={setRef('selling_difficulty_details')}>
+                                        <Textarea
+                                            placeholder="What are the difficulties?"
+                                            value={formData.selling_difficulty_details}
+                                            onChange={e => {
+                                                setFormData({ ...formData, selling_difficulty_details: e.target.value });
+                                                if (e.target.value) setErrors(p => ({ ...p, selling_difficulty_details: '' }));
+                                            }}
+                                            className={errors.selling_difficulty_details ? "border-red-500" : ""}
+                                        />
+                                        {errors.selling_difficulty_details && <p className="text-sm text-red-500">{errors.selling_difficulty_details}</p>}
+                                    </div>
+                                )}
                             </div>
-                            {errors.mobile_usage && <p className="text-sm text-red-500">{errors.mobile_usage}</p>}
                         </div>
-                    </div>
-                </Section>
+                    </Section>
 
-                <Button size="lg" className="w-full text-lg" disabled={isSubmitting}>
-                    {isSubmitting ? (
-                        <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Submitting...
-                        </>
-                    ) : 'Submit Questionnaire'}
-                </Button>
+                    {/* 6. Support & Future */}
+                    <Section title="6. Future Plans & Support">
+                        <div className="space-y-6">
+                            <div className="space-y-3" ref={setRef('support_needed')}>
+                                <Label className={errors.support_needed ? "text-red-500" : ""}>Would you like support in: *</Label>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    {[
+                                        "Branding",
+                                        "Packaging design",
+                                        "Digital marketing",
+                                        "Sales network expansion",
+                                        "Participation in exhibitions/fairs",
+                                        "Pricing strategy",
+                                        "Online sales"
+                                    ].map(item => (
+                                        <div key={item} className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`sup-${item}`}
+                                                checked={formData.support_needed.includes(item)}
+                                                onCheckedChange={(c) => handleCheckboxChange('support_needed', item, c as boolean)}
+                                            />
+                                            <Label htmlFor={`sup-${item}`} className="font-normal">{item}</Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center space-x-2 mt-2">
+                                    <Label>Other:</Label>
+                                    <Input
+                                        value={formData.support_other}
+                                        onChange={e => {
+                                            setFormData({ ...formData, support_other: e.target.value });
+                                            if (e.target.value) setErrors(p => ({ ...p, support_needed: '' }));
+                                        }}
+                                        className="max-w-xs"
+                                    />
+                                </div>
+                                {errors.support_needed && <p className="text-sm text-red-500">{errors.support_needed}</p>}
+                            </div>
 
+                            <div className="space-y-3" ref={setRef('growth_plans')}>
+                                <Label className={errors.growth_plans ? "text-red-500" : ""}>How would you like to grow your livelihood in 2–3 years? *</Label>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    {[
+                                        "Increase monthly income",
+                                        "Expand production",
+                                        "Start a new product/service",
+                                        "Employ more people",
+                                        "Sell outside my locality/district/state",
+                                        "Go digital / online sales",
+                                        "Build a brand",
+                                        "Become a trainer/mentor",
+                                        "Not sure yet"
+                                    ].map(plan => (
+                                        <div key={plan} className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`plan-${plan}`}
+                                                checked={formData.growth_plans.includes(plan)}
+                                                onCheckedChange={(c) => handleCheckboxChange('growth_plans', plan, c as boolean)}
+                                            />
+                                            <Label htmlFor={`plan-${plan}`} className="font-normal">{plan}</Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                {errors.growth_plans && <p className="text-sm text-red-500">{errors.growth_plans}</p>}
+                            </div>
+
+                            <div className="space-y-3" ref={setRef('mobile_usage')}>
+                                <Label className={errors.mobile_usage ? "text-red-500" : ""}>How do you currently use mobile/social media? *</Label>
+                                <div className="grid md:grid-cols-1 gap-4">
+                                    {[
+                                        "I do not use social media for work",
+                                        "WhatsApp (customer orders, groups, photos)",
+                                        "Facebook (posting products / pages)",
+                                        "Instagram (reels, product photos)",
+                                        "YouTube (learning skills / watching tutorials)",
+                                        "Online platforms (ONDC, marketplaces, apps)",
+                                        "I want to use social media but don’t know how"
+                                    ].map(use => (
+                                        <div key={use} className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`mob-${use}`}
+                                                checked={formData.mobile_usage.includes(use)}
+                                                onCheckedChange={(c) => handleCheckboxChange('mobile_usage', use, c as boolean)}
+                                            />
+                                            <Label htmlFor={`mob-${use}`} className="font-normal">{use}</Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center space-x-2 mt-2">
+                                    <Label>Other:</Label>
+                                    <Input
+                                        value={formData.mobile_usage_other}
+                                        onChange={e => {
+                                            setFormData({ ...formData, mobile_usage_other: e.target.value });
+                                            if (e.target.value) setErrors(p => ({ ...p, mobile_usage: '' }));
+                                        }}
+                                        className="max-w-xs"
+                                    />
+                                </div>
+                                {errors.mobile_usage && <p className="text-sm text-red-500">{errors.mobile_usage}</p>}
+                            </div>
+                        </div>
+                    </Section>
+
+                    <Button size="lg" className="w-full text-lg" disabled={isSubmitting}>
+                        {isSubmitting ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Submitting...
+                            </>
+                        ) : 'Submit Questionnaire'}
+                    </Button>
+
+                </fieldset>
             </form>
         </div>
     );
