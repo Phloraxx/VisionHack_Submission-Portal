@@ -8,6 +8,7 @@ import { LogOut, Menu } from 'lucide-react';
 import { authHelpers } from '@/lib/appwrite';
 import { toast } from 'sonner';
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 
 export function Header() {
   const router = useRouter();
@@ -54,18 +55,30 @@ export function Header() {
           <nav className="hidden md:flex items-center space-x-1">
           </nav>
 
-          <div className="flex items-center space-x-2">
+          {/* Centered Logo */}
+          <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+            <div className="relative h-12 w-48 overflow-hidden select-none">
+              <Image
+                src="/logo.jpeg"
+                alt="Logo"
+                fill
+                className="object-contain" // Use object-contain to fit long horizontal logo
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
             <Button variant="ghost" size="icon" className="md:hidden">
               <Menu className="h-5 w-5" />
             </Button>
             {isLoggedIn && (
-              <Button 
+              <Button
                 variant="ghost"
                 onClick={handleLogout}
                 className="flex items-center gap-2"
               >
                 <LogOut className="h-5 w-5" />
-                <span>Logout</span>
+                <span className="hidden md:inline">Logout</span>
               </Button>
             )}
           </div>

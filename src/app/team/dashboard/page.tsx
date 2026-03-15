@@ -106,9 +106,23 @@ export default function TeamDashboard() {
                   variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push('/team/register')}
+                  // Disable editing if shortlisted or beyond
+                  disabled={teamData?.status === 'shortlisted' || teamData?.status === 'idea_submitted' || teamData?.status === 'selected'}
                 >
                   <Users className="mr-2 h-4 w-4" />
-                  Register Team
+                  {teamData?.teamName ? "Edit Team Details" : "Register Team"}
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ x: 4 }}>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => router.push('/team/questionnaire')}
+                  // Disable questionnaire if not registered
+                  disabled={!teamData?.teamName}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  {teamData?.status === 'questionnaire_submitted' || teamData?.status === 'shortlisted' ? "View/Edit Questionnaire" : "Fill Questionnaire"}
                 </Button>
               </motion.div>
               <motion.div whileHover={{ x: 4 }}>
@@ -116,20 +130,13 @@ export default function TeamDashboard() {
                   variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push('/team/submit-idea')}
-                  disabled={!config.submissions}
+                  // Only allow submission if shortlisted and submissions open
+                  disabled={!config.submissions || teamData?.status !== 'shortlisted'}
                 >
                   <Upload className="mr-2 h-4 w-4" />
-                  {config.submissions ? "Submit Idea" : "Submissions Closed"}
-                </Button>
-              </motion.div>
-              <motion.div whileHover={{ x: 4 }}>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => router.push('/themes')}
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  View Themes
+                  {config.submissions
+                    ? (teamData?.status !== 'shortlisted' ? "Shortlisting Required to Submit" : "Submit Idea")
+                    : "Submissions Closed"}
                 </Button>
               </motion.div>
             </CardContent>
@@ -147,9 +154,12 @@ export default function TeamDashboard() {
                 <StatusItem
                   label="Approval Status"
                   status={
-                    teamData?.status === 'registered' ? "✓ Approved" :
-                      (teamData?.status === 'waitlisted' ? "• Waitlisted" :
-                        (teamData?.teamName ? "⏳ Pending Review" : "Not Started"))
+                    teamData?.status === 'selected' ? "🏆 Selected for Final" :
+                      teamData?.status === 'idea_submitted' ? "✓ Idea Submitted" :
+                        teamData?.status === 'shortlisted' ? "⭐ Shortlisted" :
+                          teamData?.status === 'questionnaire_submitted' ? "📝 Questionnaire Submitted" :
+                            teamData?.status === 'registered' ? "👤 Registered" :
+                              (teamData?.status === 'waitlisted' ? "• Waitlisted" : "Not Started")
                   }
                 />
                 <StatusItem

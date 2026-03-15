@@ -14,7 +14,8 @@ export async function GET() {
         const config = {
             registration: false,
             nomination: false,
-            submissions: false
+            submissions: false,
+            questionnaire: false
         };
 
         // Map documents to config
@@ -22,6 +23,7 @@ export async function GET() {
             if (doc.key === 'registration_open') config.registration = doc.value_bool;
             if (doc.key === 'nomination_open') config.nomination = doc.value_bool;
             if (doc.key === 'submission_open') config.submissions = doc.value_bool;
+            if (doc.key === 'questionnaire_open') config.questionnaire = doc.value_bool;
         });
 
         return NextResponse.json({ success: true, config });
@@ -69,6 +71,14 @@ export async function POST(request: NextRequest) {
         if (subDoc && body.submissions !== undefined) {
             updatePromises.push(serverDatabases.updateDocument(
                 DATABASE_ID, COLLECTIONS.CONFIG, subDoc.$id, { value_bool: body.submissions }
+            ));
+        }
+
+        // 4. Questionnaire
+        const questDoc = findDoc('questionnaire_open');
+        if (questDoc && body.questionnaire !== undefined) {
+            updatePromises.push(serverDatabases.updateDocument(
+                DATABASE_ID, COLLECTIONS.CONFIG, questDoc.$id, { value_bool: body.questionnaire }
             ));
         }
 

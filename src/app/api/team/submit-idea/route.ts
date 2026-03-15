@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
 
         const team = teamsQuery.documents[0];
 
+        if (team.status !== 'shortlisted') {
+            return NextResponse.json({ error: 'Team must be shortlisted by the institution before submitting an idea.' }, { status: 403 });
+        }
+
         // Upload File
         let fileId = '';
         try {
@@ -72,7 +76,7 @@ export async function POST(request: NextRequest) {
                     idea_desc: ideaDescription,
                     idea_tech_stack: techStack,
                     submission_file_id: fileId,
-                    status: 'submitted',
+                    status: 'idea_submitted',
                 }
             );
         } catch (error: any) {
