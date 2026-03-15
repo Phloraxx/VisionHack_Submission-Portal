@@ -280,8 +280,7 @@ export async function POST(request: NextRequest) {
       console.error('Failed to create user account:', userResult.error);
       return NextResponse.json(
         { 
-          error: 'Failed to create user account. The email might already be in use.',
-          details: userResult.error
+          error: 'Failed to create user account. The email might already be in use.'
         },
         { status: 500 }
       );
@@ -401,7 +400,7 @@ export async function POST(request: NextRequest) {
         console.error('Failed to rollback team creation:', rollbackError);
       }
       return NextResponse.json(
-        { error: error.message || 'Failed to add team members. Please try again.' },
+        { error: 'Failed to add team members. Please try again.' },
         { status: 500 }
       );
     }
@@ -471,8 +470,7 @@ export async function POST(request: NextRequest) {
     console.error('Unexpected error in public team registration:', error);
     return NextResponse.json(
       {
-        error: 'An unexpected error occurred. Please try again or contact support.',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        error: 'An unexpected error occurred. Please try again or contact support.'
       },
       { status: 500 }
     );
