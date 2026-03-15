@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('Error fetching submitted teams:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch teams' },
+      { error: 'Failed to fetch teams' },
       { status: 500 }
     );
   }

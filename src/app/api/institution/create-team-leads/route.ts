@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error in create team leads:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create team leads' },
+      { error: 'Failed to create team leads. Please check the data and try again.' },
       { status: 500 }
     );
   }

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('Error fetching institutions:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch institutions' },
+      { error: 'Failed to fetch institutions' },
       { status: 500 }
     );
   }
