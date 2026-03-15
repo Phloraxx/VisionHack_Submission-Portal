@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { motion } from 'framer-motion';
-import { LogIn, AlertCircle } from 'lucide-react';
+import { LogIn, AlertCircle, Loader2 } from 'lucide-react';
 import { authHelpers } from '@/lib/appwrite';
 import { toast } from 'sonner';
 
@@ -156,7 +156,11 @@ export default function LoginPage() {
                     size="lg"
                     disabled={isLoading}
                   >
-                    <LogIn className="mr-2 h-4 w-4" />
+                    {isLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <LogIn className="mr-2 h-4 w-4" />
+                    )}
                     {isLoading ? 'Signing in...' : 'Sign In'}
                   </Button>
                 </motion.div>
