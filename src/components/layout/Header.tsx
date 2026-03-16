@@ -68,7 +68,7 @@ export function Header() {
           </div>
 
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" className="md:hidden">
+            <Button variant="ghost" size="icon" className="md:hidden" aria-label="Toggle menu">
               <Menu className="h-5 w-5" />
             </Button>
             {isLoggedIn && (

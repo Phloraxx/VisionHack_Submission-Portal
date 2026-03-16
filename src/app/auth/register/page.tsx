@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { InstitutionSelector } from "@/components/ui/institution-selector";
 import { motion } from "framer-motion";
-import { UserPlus, Save, ArrowLeft } from "lucide-react";
+import { UserPlus, Save, ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Member {
@@ -448,7 +448,11 @@ export default function RegisterPage() {
           <FadeIn delay={0.8}>
             <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
               <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
-                <Save className="mr-2 h-4 w-4" />
+                {isSubmitting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
                 {isSubmitting ? "Registering..." : "Register Team"}
               </Button>
             </motion.div>
