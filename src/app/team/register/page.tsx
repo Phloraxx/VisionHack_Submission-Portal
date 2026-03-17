@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { motion } from 'framer-motion';
-import { UserPlus, Save, User } from 'lucide-react';
+import { UserPlus, Save, User, Loader2 } from 'lucide-react';
 import { authHelpers, UserRole, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { Query } from 'appwrite';
 
@@ -275,8 +275,9 @@ export default function TeamRegistrationPage() {
               <Separator className="my-2" />
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Full Name</Label>
+                  <Label htmlFor="leadName">Full Name</Label>
                   <Input
+                    id="leadName"
                     value={leadName}
                     disabled={true}
                     className="bg-gray-50"
@@ -284,8 +285,9 @@ export default function TeamRegistrationPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Email</Label>
+                  <Label htmlFor="leadEmail">Email</Label>
                   <Input
+                    id="leadEmail"
                     value={leadEmail}
                     disabled={true}
                     className="bg-gray-50"
@@ -376,6 +378,7 @@ export default function TeamRegistrationPage() {
                             size="sm"
                             onClick={() => removeMember(index)}
                             className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            aria-label={`Remove Member ${index + 1}`}
                           >
                             Remove
                           </Button>
@@ -384,8 +387,9 @@ export default function TeamRegistrationPage() {
 
                       <div className="grid md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label>Full Name</Label>
+                          <Label htmlFor={`member-${index}-fullName`}>Full Name</Label>
                           <Input
+                            id={`member-${index}-fullName`}
                             placeholder="Full name"
                             value={member.fullName}
                             onChange={(e) => handleMemberChange(index, 'fullName', e.target.value)}
@@ -395,8 +399,9 @@ export default function TeamRegistrationPage() {
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Email</Label>
+                          <Label htmlFor={`member-${index}-email`}>Email</Label>
                           <Input
+                            id={`member-${index}-email`}
                             type="email"
                             placeholder="email@example.com"
                             value={member.email}
@@ -407,8 +412,9 @@ export default function TeamRegistrationPage() {
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Phone</Label>
+                          <Label htmlFor={`member-${index}-phone`}>Phone</Label>
                           <Input
+                            id={`member-${index}-phone`}
                             placeholder="+91 1234567890"
                             value={member.phone}
                             onChange={(e) => handleMemberChange(index, 'phone', e.target.value)}
@@ -418,13 +424,13 @@ export default function TeamRegistrationPage() {
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Gender</Label>
+                          <Label htmlFor={`member-${index}-gender`}>Gender</Label>
                           <Select
                             value={member.gender}
                             onValueChange={(value) => handleMemberChange(index, 'gender', value)}
                             disabled={isApproved}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger id={`member-${index}-gender`}>
                               <SelectValue placeholder="Select gender" />
                             </SelectTrigger>
                             <SelectContent>
@@ -436,8 +442,9 @@ export default function TeamRegistrationPage() {
                         </div>
 
                         <div className="space-y-2 md:col-span-2">
-                          <Label>Role</Label>
+                          <Label htmlFor={`member-${index}-role`}>Role</Label>
                           <Input
+                            id={`member-${index}-role`}
                             placeholder="e.g., Developer, Designer, Manager"
                             value={member.role}
                             onChange={(e) => handleMemberChange(index, 'role', e.target.value)}
@@ -463,7 +470,11 @@ export default function TeamRegistrationPage() {
               className="w-full"
               disabled={isSubmitting || isApproved}
             >
-              <Save className="mr-2 h-4 w-4" />
+              {isSubmitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
               {isApproved
                 ? '✓ Approved - Contact Campus Lead for Changes'
                 : (isSubmitting
