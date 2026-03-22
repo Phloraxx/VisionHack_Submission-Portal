@@ -206,7 +206,7 @@ export default function SubmitIdeaPage() {
 
                                 <div className="space-y-2">
                                     <Label htmlFor="file">Presentation (PDF/PPT)</Label>
-                                    <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative">
+                                    <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
                                         <Input
                                             id="file"
                                             type="file"
