@@ -82,11 +82,20 @@ export function InstitutionSelector({
   return (
     <div className="space-y-2" ref={containerRef}>
       <Label htmlFor="institutionSearch">Select Your Institution *</Label>
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
+      <div
+        className="relative"
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-controls={isOpen ? "institution-listbox" : undefined}
+      >
+        <Search aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
         <Input
           ref={inputRef}
           id="institutionSearch"
+          role="searchbox"
+          aria-autocomplete="list"
+          aria-controls={isOpen ? "institution-listbox" : undefined}
           placeholder={
             selectedInst
               ? `${selectedInst.name} (${selectedInst.district})`
@@ -105,6 +114,7 @@ export function InstitutionSelector({
           autoComplete="off"
         />
         <ChevronDown
+          aria-hidden="true"
           className={`absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 transition-transform ${
             isOpen ? "rotate-180" : ""
           }`}
@@ -112,10 +122,14 @@ export function InstitutionSelector({
 
         {/* Dropdown */}
         {isOpen && !disabled && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto">
+          <div
+            id="institution-listbox"
+            role="listbox"
+            className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto"
+          >
             {institutionsByDistrict.length > 0 ? (
               institutionsByDistrict.map(([district, insts]) => (
-                <div key={district}>
+                <div key={district} role="group" aria-label={district}>
                   <div className="px-3 py-2 text-sm font-semibold text-gray-500 bg-gray-50 sticky top-0">
                     {district}
                   </div>
@@ -123,21 +137,23 @@ export function InstitutionSelector({
                     <button
                       key={inst.id}
                       type="button"
+                      role="option"
+                      aria-selected={selectedInstitution === inst.id}
                       onClick={() => handleSelect(inst.id)}
-                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center justify-between transition-colors ${
+                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset flex items-center justify-between transition-colors ${
                         selectedInstitution === inst.id ? "bg-blue-50" : ""
                       }`}
                     >
                       <span className="text-sm">{inst.name}</span>
                       {selectedInstitution === inst.id && (
-                        <Check className="h-4 w-4 text-blue-600" />
+                        <Check aria-hidden="true" className="h-4 w-4 text-blue-600" />
                       )}
                     </button>
                   ))}
                 </div>
               ))
             ) : (
-              <div className="px-3 py-8 text-sm text-center text-gray-500">
+              <div role="status" aria-live="polite" className="px-3 py-8 text-sm text-center text-gray-500">
                 {isLoading ? "Loading..." : "No institutions found"}
               </div>
             )}
