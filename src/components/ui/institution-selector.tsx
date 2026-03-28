@@ -83,10 +83,14 @@ export function InstitutionSelector({
     <div className="space-y-2" ref={containerRef}>
       <Label htmlFor="institutionSearch">Select Your Institution *</Label>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
+        <Search aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
         <Input
           ref={inputRef}
           id="institutionSearch"
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-controls={isOpen ? "institution-listbox" : undefined}
+          aria-autocomplete="list"
           placeholder={
             selectedInst
               ? `${selectedInst.name} (${selectedInst.district})`
@@ -105,6 +109,7 @@ export function InstitutionSelector({
           autoComplete="off"
         />
         <ChevronDown
+          aria-hidden="true"
           className={`absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 transition-transform ${
             isOpen ? "rotate-180" : ""
           }`}
@@ -112,32 +117,43 @@ export function InstitutionSelector({
 
         {/* Dropdown */}
         {isOpen && !disabled && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto">
+          <div
+            id="institution-listbox"
+            role="listbox"
+            aria-label="Institutions"
+            className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto"
+          >
             {institutionsByDistrict.length > 0 ? (
               institutionsByDistrict.map(([district, insts]) => (
-                <div key={district}>
-                  <div className="px-3 py-2 text-sm font-semibold text-gray-500 bg-gray-50 sticky top-0">
+                <div key={district} role="group" aria-labelledby={`district-${district.replace(/\s+/g, '-')}`}>
+                  <div
+                    id={`district-${district.replace(/\s+/g, '-')}`}
+                    role="presentation"
+                    className="px-3 py-2 text-sm font-semibold text-gray-500 bg-gray-50 sticky top-0"
+                  >
                     {district}
                   </div>
                   {insts.map((inst) => (
                     <button
                       key={inst.id}
                       type="button"
+                      role="option"
+                      aria-selected={selectedInstitution === inst.id}
                       onClick={() => handleSelect(inst.id)}
-                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center justify-between transition-colors ${
+                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 flex items-center justify-between transition-colors ${
                         selectedInstitution === inst.id ? "bg-blue-50" : ""
                       }`}
                     >
                       <span className="text-sm">{inst.name}</span>
                       {selectedInstitution === inst.id && (
-                        <Check className="h-4 w-4 text-blue-600" />
+                        <Check aria-hidden="true" className="h-4 w-4 text-blue-600" />
                       )}
                     </button>
                   ))}
                 </div>
               ))
             ) : (
-              <div className="px-3 py-8 text-sm text-center text-gray-500">
+              <div aria-live="polite" className="px-3 py-8 text-sm text-center text-gray-500">
                 {isLoading ? "Loading..." : "No institutions found"}
               </div>
             )}
