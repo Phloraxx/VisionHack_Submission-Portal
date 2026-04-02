@@ -420,6 +420,7 @@ export default function InstitutionDashboard() {
                         variant="ghost"
                         size="sm"
                         onClick={() => removeTeamLeadField(index)}
+                        aria-label={`Remove Team Lead ${index + 1}`}
                       >
                         <Trash2 className="h-4 w-4 text-red-600" />
                       </Button>
