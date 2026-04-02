@@ -75,15 +75,67 @@ export function InstitutionSelector({
     onSearchChange(""); // Clear search after selection
   };
 
+  const listboxRef = useRef<HTMLDivElement>(null);
+
   const handleInputFocus = () => {
     setIsOpen(true);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setIsOpen(true);
+      // Focus first option
+      setTimeout(() => {
+        const firstOption = listboxRef.current?.querySelector('[role="option"]') as HTMLElement;
+        if (firstOption) firstOption.focus();
+      }, 0);
+    } else if (e.key === "Escape") {
+      setIsOpen(false);
+      inputRef.current?.focus();
+    }
+  };
+
+  const handleOptionKeyDown = (e: React.KeyboardEvent, instId: string) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleSelect(instId);
+      inputRef.current?.focus();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const current = document.activeElement as HTMLElement;
+      const options = Array.from(listboxRef.current?.querySelectorAll('[role="option"]') || []);
+      const currentIndex = options.indexOf(current);
+      if (currentIndex < options.length - 1) {
+        (options[currentIndex + 1] as HTMLElement).focus();
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const current = document.activeElement as HTMLElement;
+      const options = Array.from(listboxRef.current?.querySelectorAll('[role="option"]') || []);
+      const currentIndex = options.indexOf(current);
+      if (currentIndex > 0) {
+        (options[currentIndex - 1] as HTMLElement).focus();
+      } else if (currentIndex === 0) {
+        inputRef.current?.focus();
+      }
+    } else if (e.key === "Escape") {
+      setIsOpen(false);
+      inputRef.current?.focus();
+    }
   };
 
   return (
     <div className="space-y-2" ref={containerRef}>
       <Label htmlFor="institutionSearch">Select Your Institution *</Label>
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
+      <div
+        className="relative"
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-controls="institution-listbox"
+      >
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 z-10" aria-hidden="true" />
         <Input
           ref={inputRef}
           id="institutionSearch"
@@ -100,44 +152,56 @@ export function InstitutionSelector({
             if (!isOpen) setIsOpen(true);
           }}
           onFocus={handleInputFocus}
+          onKeyDown={handleKeyDown}
           className="pl-10 pr-10"
           disabled={disabled || isLoading}
           autoComplete="off"
+          aria-autocomplete="list"
         />
         <ChevronDown
           className={`absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 transition-transform ${
             isOpen ? "rotate-180" : ""
           }`}
+          aria-hidden="true"
         />
 
         {/* Dropdown */}
         {isOpen && !disabled && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto">
+          <div
+            id="institution-listbox"
+            ref={listboxRef}
+            role="listbox"
+            className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto"
+          >
             {institutionsByDistrict.length > 0 ? (
               institutionsByDistrict.map(([district, insts]) => (
-                <div key={district}>
-                  <div className="px-3 py-2 text-sm font-semibold text-gray-500 bg-gray-50 sticky top-0">
+                <div key={district} role="group" aria-label={district}>
+                  <div className="px-3 py-2 text-sm font-semibold text-gray-500 bg-gray-50 sticky top-0" aria-hidden="true">
                     {district}
                   </div>
                   {insts.map((inst) => (
                     <button
                       key={inst.id}
                       type="button"
+                      role="option"
+                      aria-selected={selectedInstitution === inst.id}
                       onClick={() => handleSelect(inst.id)}
-                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center justify-between transition-colors ${
+                      onKeyDown={(e) => handleOptionKeyDown(e, inst.id)}
+                      tabIndex={-1}
+                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring flex items-center justify-between transition-colors ${
                         selectedInstitution === inst.id ? "bg-blue-50" : ""
                       }`}
                     >
                       <span className="text-sm">{inst.name}</span>
                       {selectedInstitution === inst.id && (
-                        <Check className="h-4 w-4 text-blue-600" />
+                        <Check className="h-4 w-4 text-blue-600" aria-hidden="true" />
                       )}
                     </button>
                   ))}
                 </div>
               ))
             ) : (
-              <div className="px-3 py-8 text-sm text-center text-gray-500">
+              <div className="px-3 py-8 text-sm text-center text-gray-500" aria-live="polite">
                 {isLoading ? "Loading..." : "No institutions found"}
               </div>
             )}
