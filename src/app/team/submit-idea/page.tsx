@@ -206,7 +206,7 @@ export default function SubmitIdeaPage() {
 
                                 <div className="space-y-2">
                                     <Label htmlFor="file">Presentation (PDF/PPT)</Label>
-                                    <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative">
+                                    <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 transition-colors cursor-pointer relative">
                                         <Input
                                             id="file"
                                             type="file"
@@ -214,6 +214,7 @@ export default function SubmitIdeaPage() {
                                             onChange={handleFileChange}
                                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                             required={!existingSubmission}
+                                            title="Upload presentation file"
                                         />
                                         <Upload className="h-8 w-8 text-gray-400 mb-2" />
                                         <p className="text-sm font-medium text-gray-700">
