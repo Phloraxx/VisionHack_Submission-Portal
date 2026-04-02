@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { FadeIn } from "@/components/animations/FadeIn";
 import { SlideIn } from "@/components/animations/SlideIn";
 import { Button } from "@/components/ui/button";
@@ -202,10 +203,12 @@ export default function RegisterPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => router.push("/")}
+            asChild
           >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Login
+            <Link href="/">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Login
+            </Link>
           </Button>
         </div>
       </div>
@@ -469,13 +472,12 @@ export default function RegisterPage() {
             <p>Please check your inbox and spam folder for the credentials email.</p>
             <p>
               Already registered?{" "}
-              <button
-                type="button"
-                onClick={() => router.push("/")}
+              <Link
+                href="/"
                 className="text-blue-600 hover:underline"
               >
                 Login here
-              </button>
+              </Link>
             </p>
           </div>
         </form>
