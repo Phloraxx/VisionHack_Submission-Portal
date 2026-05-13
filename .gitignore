@@ -10,11 +10,7 @@
 !.yarn/releases
 !.yarn/versions
 
-/docs/*
-/docs/
-
-*.md
-!README.md
+/docs
 
 # testing
 /coverage
@@ -33,18 +29,12 @@
 *.pem
 
 /scripts
-/scripts/*
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-!.env
 
 # vercel
 .vercel
