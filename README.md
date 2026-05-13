@@ -1,230 +1,109 @@
-# 🎯 VisionHack Submission Portal
+# VisionHack Submission Portal
 
-A comprehensive hackathon submission portal built with Next.js, Appwrite, and TypeScript, featuring an automated **cascade inviting system** for managing campus leads and team leads.
-
-## ✨ Features
-
-### 🔄 Cascade Inviting System
-- **Bulk Campus Lead Creation**: Upload CSV to create 250+ campus lead accounts automatically
-- **Automated Credentials**: Generate secure passwords and send via email
-- **Team Lead Invitations**: Campus leads can invite up to 5 team leads each
-- **Email Notifications**: Beautiful HTML emails with login credentials
-- **Role-Based Access**: Admin, Campus Lead, and Team Lead dashboards
-
-### 🎨 Modern UI/UX
-- Minimal white theme design
-- Framer Motion animations
-- Responsive layouts
-- Toast notifications (Sonner)
-- Radix UI components
-
-### 🔐 Security
-- Role-based authentication via Appwrite
-- Secure password generation
-- Server-side API key protection
-- Input validation and sanitization
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+ installed
-- Appwrite instance (cloud or self-hosted)
-- Email service (optional for development)
-
-### Installation
-
-1. **Clone and install dependencies**
-```bash
-npm install
-```
-
-2. **Configure environment variables**
-```env
-# .env.local
-NEXT_PUBLIC_APPWRITE_ENDPOINT="https://your-appwrite.com/v1"
-NEXT_PUBLIC_APPWRITE_PROJECT_ID="your_project_id"
-APPWRITE_API_KEY="your_api_key_here"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-```
-
-3. **Set up Appwrite collections**
-
-See [QUICK-SETUP.md](./docs/QUICK-SETUP.md) for detailed database schema.
-
-4. **Run development server**
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to see the portal.
-
-## 📖 Documentation
-
-### Complete Guides
-- **[🚀 QUICK-SETUP.md](./docs/QUICK-SETUP.md)** - Step-by-step setup instructions
-- **[📚 CASCADE-INVITING.md](./docs/CASCADE-INVITING.md)** - Complete feature documentation
-- **[📊 SYSTEM-FLOW.md](./docs/SYSTEM-FLOW.md)** - Visual flow diagrams
-- **[✅ CHECKLIST.md](./docs/CHECKLIST.md)** - Pre-launch verification
-- **[📋 IMPLEMENTATION-SUMMARY.md](./docs/IMPLEMENTATION-SUMMARY.md)** - What's been built
-
-### Quick Links
-- Sample CSV: [docs/sample-campus-leads.csv](./docs/sample-campus-leads.csv)
-- API Documentation: See [CASCADE-INVITING.md](./docs/CASCADE-INVITING.md#api-endpoints)
-
-## 🎯 System Overview
-
-```
-Admin → Upload CSV with 250 colleges
-   ↓
-System creates 250 campus lead accounts
-   ↓
-Campus leads receive email with credentials
-   ↓
-Campus leads invite 5 team leads each
-   ↓
-Team leads receive email with credentials
-   ↓
-Team leads register teams & submit projects
-```
-
-**Capacity**: 250 colleges → 1,250 team leads → 1,250 teams
-
-## 📁 Project Structure
-
-```
-src/
-├── app/
-│   ├── admin/               # Admin pages
-│   │   ├── dashboard/       # Admin dashboard
-│   │   └── campus-leads/    # CSV upload page
-│   ├── institution/         # Campus lead pages
-│   │   └── dashboard/       # Team lead invitation
-│   ├── team/               # Team lead pages
-│   └── api/                # API routes
-│       ├── admin/
-│       │   └── create-campus-leads/
-│       └── institution/
-│           └── create-team-leads/
-├── components/
-│   ├── animations/         # Framer Motion animations
-│   ├── layout/            # Header, Footer
-│   └── ui/                # Reusable UI components
-├── lib/
-│   ├── appwrite.ts        # Appwrite configuration
-│   ├── auth-service.ts    # User account creation
-│   └── email-service.ts   # Email notifications
-└── docs/                  # Documentation
-```
-
-## 🔑 Key Features Implemented
-
-### For Admins
-- ✅ Bulk upload CSV with campus leads
-- ✅ Auto-create user accounts in Appwrite
-- ✅ Auto-generate secure passwords
-- ✅ Send credentials via email
-- ✅ View creation results and statistics
-
-### For Campus Leads
-- ✅ Login with auto-generated credentials
-- ✅ View institution dashboard
-- ✅ Invite up to 5 team leads
-- ✅ Dynamic form with add/remove fields
-- ✅ Real-time validation
-
-### For Team Leads
-- ✅ Receive email invitation
-- ✅ Login to team dashboard
-- ✅ Access team registration (ready for implementation)
-
-## 🛠️ Tech Stack
-
-- **Framework**: Next.js 16 (App Router)
-- **Language**: TypeScript
-- **Backend**: Appwrite (Auth, Database, Storage)
-- **UI Components**: Radix UI
-- **Styling**: Tailwind CSS
-- **Animations**: Framer Motion
-- **Notifications**: Sonner
-- **Icons**: Lucide React
-
-## 📧 Email System
-
-The system includes beautiful HTML email templates for:
-- **Campus Lead Invitations** - Welcome message with credentials
-- **Team Lead Invitations** - Shortlist notification with credentials
-
-Configure your email service:
-- Appwrite Messaging (recommended)
-- Resend / SendGrid / Mailgun
-- Console logging (development)
-
-## 🔐 User Roles
-
-| Role | Label | Permissions |
-|------|-------|-------------|
-| Admin | `admin` | Create campus leads, manage system |
-| Campus Lead | `institution` | Invite team leads, view teams |
-| Team Lead | `lead` | Register team, submit project |
-
-## 🧪 Testing
-
-Use the sample CSV file:
-```bash
-docs/sample-campus-leads.csv
-```
-
-Contains 10 sample colleges for testing.
-
-## 🚀 Deployment
-
-### Vercel (Recommended)
-1. Push to GitHub
-2. Import to Vercel
-3. Add environment variables
-4. Deploy!
-
-### Environment Variables for Production
-```env
-NEXT_PUBLIC_APPWRITE_ENDPOINT="https://your-production-appwrite.com/v1"
-NEXT_PUBLIC_APPWRITE_PROJECT_ID="production_project_id"
-APPWRITE_API_KEY="production_api_key"
-NEXT_PUBLIC_APP_URL="https://your-domain.com"
-```
-
-## 📊 Database Schema
-
-### institutions Collection
-- Stores college information
-- Links to campus lead user ID
-- Tracks team registration stats
-
-### teams Collection
-- Stores team information
-- Links to institution
-- Links to team lead user ID
-
-See [QUICK-SETUP.md](./docs/QUICK-SETUP.md) for complete schema.
-
-## 🤝 Contributing
-
-This is a private project for VisionHack. For issues or questions, contact the development team.
-
-## 📝 License
-
-Copyright © 2025 VisionHack. All rights reserved.
-
-## 🎉 What's Next?
-
-After setup:
-1. Configure Appwrite API key
-2. Set up database collections
-3. Upload CSV with campus leads
-4. Campus leads invite team leads
-5. Start accepting team registrations!
+A hackathon submission portal for **Vision Hack 2026** — built with Next.js 16 + Appwrite (BaaS). It manages the full lifecycle from bulk campus lead creation to team registration, questionnaire submission, idea submission, and coordinator oversight.
 
 ---
 
-**Need help?** Check the [documentation](./docs/) or review the setup guides.
+## Architecture Overview
 
-**Ready to go?** Follow [QUICK-SETUP.md](./docs/QUICK-SETUP.md) to get started!
+The portal implements a **cascade inviting system** with four hierarchical roles:
+
+```
+Admin → creates Campus Leads → creates Team Leads → register teams → submit ideas
+```
+
+| Role | Appwrite Label | Dashboard | Responsibility |
+|------|---------------|-----------|---------------|
+| Admin | `admin` | `/admin/dashboard` | Create campus leads in bulk via CSV, toggle config, view/edit all teams, export |
+| Coordinator | `coordinator` | `/coordinator/dashboard` | View teams and institutions across districts |
+| Campus Lead | `institution` | `/institution/dashboard` | Invite team leads, approve/shortlist teams (max 5) |
+| Team Lead | `lead` | `/team/dashboard` | Register team, fill questionnaire, submit idea |
+
+### Team Status Lifecycle
+
+```
+waitlisted → registered → questionnaire_submitted → shortlisted → idea_submitted → selected
+```
+
+---
+
+## System Architecture
+
+### Frontend — Next.js 16 App Router (Client Components)
+
+All pages are client-side React components using the App Router:
+
+- **`/auth/login`**, **`/auth/register`** — Authentication and public team registration
+- **`/admin/*`** — Admin hub, campus lead creation, config toggles, team management, CSV export
+- **`/institution/dashboard`** — Campus lead invite/approve workflows
+- **`/team/*`** — Team registration, long-form questionnaire, idea submission with file upload
+- **`/coordinator/*`** — District/institution filtered views, team detail with CSV download
+
+**UI Layer:** Radix UI primitives (shadcn/ui style), Tailwind CSS v4, Framer Motion animations, Lucide icons, Sonner toasts.
+
+### Backend — Appwrite (self-hosted BaaS)
+
+- **Auth:** Email/password sessions with role labels
+- **Database:** 7 collections — `institutions`, `teams`, `members`, `config`, `questionnaire_responses`, `themes`, `gallery`
+- **Storage:** 2 buckets — `submissions` (PDF/PPT, 10MB) and `assets` (images, 5MB)
+- **Users:** Managed server-side via API key
+
+### API Routes (Next.js Route Handlers)
+
+| Route | Purpose |
+|-------|---------|
+| `POST /api/auth/login` | Create Appwrite session |
+| `GET|DELETE /api/auth/session` | Read or destroy session |
+| `POST /api/admin/create-campus-leads` | Bulk-create campus leads from CSV |
+| `GET|POST /api/admin/config` | Read/write config toggles |
+| `POST /api/institution/create-team-leads` | Campus lead invites team leads |
+| `GET /api/institutions/list` | List active institutions (for registration dropdown) |
+| `POST /api/team/register` | Team lead registers team with members |
+| `POST /api/team/public-register` | Public team registration (creates user + team) |
+| `POST /api/team/submit-idea` | Submit idea with file upload |
+| `GET /api/coordinator/teams` | List all teams with stats |
+| `GET /api/coordinator/teams/[id]` | Single team detail + questionnaire |
+| `GET /api/coordinator/institutions` | List institutions with team stats |
+
+### Core Services (`src/lib/`)
+
+- **`appwrite.ts`** — Client-side Appwrite SDK init, auth helpers, role detection
+- **`appwrite-server.ts`** — Server-side client with API key
+- **`auth-service.ts`** — User account creation, password generation, bulk operations
+- **`email-service.ts`** — Nodemailer-based email with HTML templates (credentials delivery)
+- **`server-auth.ts`** — Server-side session validation from cookie
+
+---
+
+## Data Flow
+
+```
+[Browser] ──→ Next.js Client Components
+                │
+                ├── Direct Appwrite SDK calls (reads: listDocuments)
+                └── fetch() → Next.js API Routes → Appwrite SDK (writes: secured by API key)
+                                                    │
+                                                    └── Appwrite (self-hosted)
+                                                        ├── Auth (sessions)
+                                                        ├── Database (7 collections)
+                                                        ├── Storage (2 buckets)
+                                                        └── Users API (create accounts)
+```
+
+Write operations (team registration, campus lead creation, config changes) are routed through API handlers to keep the API key server-side. Read operations (team lists, institution data) often use the client SDK directly.
+
+---
+
+## Key Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16.1 (App Router, Turbopack) |
+| Language | TypeScript 5 |
+| Styling | Tailwind CSS v4 |
+| Backend | Appwrite (self-hosted) |
+| UI Components | Radix UI — shadcn/ui style |
+| Animations | Framer Motion |
+| Email | Nodemailer (Gmail SMTP) |
+| Icons | Lucide React |
+| Notifications | Sonner |

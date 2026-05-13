@@ -10,7 +10,11 @@
 !.yarn/releases
 !.yarn/versions
 
+/docs/*
+/docs/
+
 *.md
+!README.md
 
 # testing
 /coverage
@@ -23,9 +27,13 @@
 /build
 
 .next
+!.next.config.ts
 # misc
 .DS_Store
 *.pem
+
+/scripts
+/scripts/*
 
 # debug
 npm-debug.log*

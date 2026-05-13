@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { motion } from 'framer-motion';
-import { UserPlus, Save } from 'lucide-react';
+import { UserPlus, Save, User } from 'lucide-react';
 import { authHelpers, UserRole, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { Query } from 'appwrite';
 
@@ -28,12 +28,16 @@ export default function TeamRegistrationPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userId, setUserId] = useState('');
+
+  // Team Lead Details
+  const [leadName, setLeadName] = useState('');
+  const [leadEmail, setLeadEmail] = useState('');
+  const [leadPhone, setLeadPhone] = useState('');
+  const [leadGender, setLeadGender] = useState('');
+  const [leadRole, setLeadRole] = useState('');
+
+  // Team Details
   const [teamName, setTeamName] = useState('');
-  const [ideaTitle, setIdeaTitle] = useState('');
-  const [ideaDescription, setIdeaDescription] = useState('');
-  const [techStack, setTechStack] = useState('');
-  const [mentorName, setMentorName] = useState('');
-  const [mentorContact, setMentorContact] = useState('');
   const [members, setMembers] = useState<Member[]>([
     { fullName: '', email: '', phone: '', gender: '', role: '' },
   ]);
@@ -53,7 +57,9 @@ export default function TeamRegistrationPage() {
         return;
       }
       setUserId(user.$id);
-      
+      setLeadName(user.name);
+      setLeadEmail(user.email);
+
       // Fetch existing team data
       try {
         const teamsResponse = await databases.listDocuments(
@@ -61,38 +67,55 @@ export default function TeamRegistrationPage() {
           COLLECTIONS.TEAMS,
           [Query.equal('leader_user_id', user.$id)]
         );
-        
+
         if (teamsResponse.total > 0) {
           const team = teamsResponse.documents[0] as any;
-          
+
           // Pre-fill team information if exists
           if (team.teamName) {
             setTeamName(team.teamName || '');
-            setIdeaTitle(team.idea_title || '');
-            setIdeaDescription(team.idea_desc || '');
-            setTechStack(team.idea_tech_stack || '');
-            setMentorName(team.mentor_name || '');
-            setMentorContact(team.mentor_contact || '');
             setIsEditing(true);
             setIsApproved(team.status === 'registered');
-            
-            // Fetch existing members
+
+            // Fetch existing members including lead
             try {
               const membersResponse = await databases.listDocuments(
                 DATABASE_ID,
                 COLLECTIONS.MEMBERS,
                 [Query.equal('team_id', team.$id)]
               );
-              
+
               if (membersResponse.total > 0) {
-                const existingMembers = membersResponse.documents.map((doc: any) => ({
+                const allMembers = membersResponse.documents.map((doc: any) => ({
                   fullName: doc.full_name || '',
                   email: doc.email || '',
                   phone: doc.phone || '',
                   gender: doc.gender || '',
                   role: doc.role || ''
                 }));
-                setMembers(existingMembers);
+
+                // Separate Lead from other members based on email
+                const leadMember = allMembers.find(m => m.email.toLowerCase() === user.email.toLowerCase());
+                const otherMembers = allMembers.filter(m => m.email.toLowerCase() !== user.email.toLowerCase());
+
+                if (leadMember) {
+                  setLeadPhone(leadMember.phone);
+                  setLeadGender(leadMember.gender);
+                  setLeadRole(leadMember.role);
+                }
+
+                if (otherMembers.length > 0) {
+                  setMembers(otherMembers);
+                } else {
+                  // Start effectively with empty if no other members found (shouldn't really happen if logic requires 1 member, but safety first)
+                  if (allMembers.length === 0 && !leadMember) {
+                    setMembers([{ fullName: '', email: '', phone: '', gender: '', role: '' }]);
+                  } else if (otherMembers.length === 0) {
+                    // If only lead is there, we need at least one member slot focused (or maybe allow 0 if logic changed? No, request implies 1-5 members excluding lead)
+                    // Actually, user said 1-5 members. Let's keep existing logic.
+                    setMembers([{ fullName: '', email: '', phone: '', gender: '', role: '' }]);
+                  }
+                }
               }
             } catch (error) {
               console.error('Error fetching members:', error);
@@ -102,7 +125,7 @@ export default function TeamRegistrationPage() {
       } catch (error) {
         console.error('Error fetching team data:', error);
       }
-      
+
       setIsLoading(false);
     };
     checkAuth();
@@ -128,18 +151,25 @@ export default function TeamRegistrationPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (isApproved) {
       alert('Your team has been approved by the campus lead. You cannot edit the data. Please contact your campus lead if changes are needed.');
       return;
     }
-    
+
     setIsSubmitting(true);
 
     try {
-      // Validate member count
+      // Validate Lead Details
+      if (!leadPhone || !leadGender || !leadRole) {
+        alert('Please fill in all team lead details');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate member count (1-5 excluding lead)
       if (members.length < 1 || members.length > 5) {
-        alert('Team must have between 1 and 5 members');
+        alert('Team must have between 1 and 5 members (excluding Team Lead)');
         setIsSubmitting(false);
         return;
       }
@@ -164,11 +194,9 @@ export default function TeamRegistrationPage() {
         body: JSON.stringify({
           userId,
           teamName,
-          ideaTitle,
-          ideaDescription,
-          techStack,
-          mentorName,
-          mentorContact,
+          teamLeadPhone: leadPhone,
+          teamLeadGender: leadGender,
+          teamLeadRole: leadRole,
           members,
         }),
       });
@@ -179,7 +207,11 @@ export default function TeamRegistrationPage() {
         throw new Error(data.error || 'Failed to register team');
       }
 
-      alert(isEditing ? 'Team updated successfully!' : 'Team registered successfully!');
+      if (isEditing) {
+        alert('Team updated successfully!');
+      } else {
+        alert('Team registered successfully! You will receive your login credentials via email.');
+      }
       router.push('/team/dashboard');
     } catch (error: any) {
       console.error('Error registering team:', error);
@@ -205,10 +237,10 @@ export default function TeamRegistrationPage() {
             {isApproved ? 'Team Registration (Approved)' : (isEditing ? 'Update Team Registration' : 'Team Registration')}
           </h1>
           <p className="text-gray-600">
-            {isApproved 
-              ? 'Your team has been approved by the campus lead. Contact them for any changes.' 
-              : (isEditing 
-                ? 'Update your team details for Vision Hack 2026' 
+            {isApproved
+              ? 'Your team has been approved by the campus lead. Contact them for any changes.'
+              : (isEditing
+                ? 'Update your team details for Vision Hack 2026'
                 : 'Register your team for Vision Hack 2026')}
           </p>
           {isApproved && (
@@ -225,8 +257,8 @@ export default function TeamRegistrationPage() {
         <SlideIn delay={0.2}>
           <Card className="border-gray-100">
             <CardHeader>
-              <CardTitle>Team Information</CardTitle>
-              <CardDescription>Basic details about your team</CardDescription>
+              <CardTitle>Team Lead Information</CardTitle>
+              <CardDescription>Your personal details</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -240,62 +272,67 @@ export default function TeamRegistrationPage() {
                   required
                 />
               </div>
+              <Separator className="my-2" />
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Full Name</Label>
+                  <Input
+                    value={leadName}
+                    disabled={true}
+                    className="bg-gray-50"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="ideaTitle">Idea Title (Optional)</Label>
-                <Input
-                  id="ideaTitle"
-                  placeholder="Brief title of your project idea"
-                  value={ideaTitle}
-                  onChange={(e) => setIdeaTitle(e.target.value)}
-                  disabled={isApproved}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    value={leadEmail}
+                    disabled={true}
+                    className="bg-gray-50"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="ideaDescription">Idea Description (Optional)</Label>
-                <Input
-                  id="ideaDescription"
-                  placeholder="Describe your project idea"
-                  value={ideaDescription}
-                  onChange={(e) => setIdeaDescription(e.target.value)}
-                  disabled={isApproved}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="leadPhone">Phone</Label>
+                  <Input
+                    id="leadPhone"
+                    placeholder="+91 1234567890"
+                    value={leadPhone}
+                    onChange={(e) => setLeadPhone(e.target.value)}
+                    disabled={isApproved}
+                    required
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="techStack">Tech Stack (Optional)</Label>
-                <Input
-                  id="techStack"
-                  placeholder="e.g., React, Node.js, MongoDB"
-                  value={techStack}
-                  onChange={(e) => setTechStack(e.target.value)}
-                  disabled={isApproved}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="leadGender">Gender</Label>
+                  <Select
+                    value={leadGender}
+                    onValueChange={setLeadGender}
+                    disabled={isApproved}
+                  >
+                    <SelectTrigger id="leadGender">
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <Separator />
-
-              <div className="space-y-2">
-                <Label htmlFor="mentorName">Faculty Mentor Name (Optional)</Label>
-                <Input
-                  id="mentorName"
-                  placeholder="Name of your faculty mentor"
-                  value={mentorName}
-                  onChange={(e) => setMentorName(e.target.value)}
-                  disabled={isApproved}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="mentorContact">Mentor Contact (Optional)</Label>
-                <Input
-                  id="mentorContact"
-                  placeholder="Email or phone number"
-                  value={mentorContact}
-                  onChange={(e) => setMentorContact(e.target.value)}
-                  disabled={isApproved}
-                />
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="leadRole">Role</Label>
+                  <Input
+                    id="leadRole"
+                    placeholder="e.g., Team Lead, Full Stack Developer"
+                    value={leadRole}
+                    onChange={(e) => setLeadRole(e.target.value)}
+                    disabled={isApproved}
+                    required
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -344,7 +381,7 @@ export default function TeamRegistrationPage() {
                           </Button>
                         )}
                       </div>
-                      
+
                       <div className="grid md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Full Name</Label>
@@ -382,7 +419,7 @@ export default function TeamRegistrationPage() {
 
                         <div className="space-y-2">
                           <Label>Gender</Label>
-                          <Select 
+                          <Select
                             value={member.gender}
                             onValueChange={(value) => handleMemberChange(index, 'gender', value)}
                             disabled={isApproved}
@@ -420,17 +457,17 @@ export default function TeamRegistrationPage() {
 
         <FadeIn delay={0.8}>
           <motion.div whileHover={{ scale: isApproved ? 1 : 1.01 }} whileTap={{ scale: isApproved ? 1 : 0.99 }}>
-            <Button 
-              type="submit" 
-              size="lg" 
-              className="w-full" 
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
               disabled={isSubmitting || isApproved}
             >
               <Save className="mr-2 h-4 w-4" />
-              {isApproved 
+              {isApproved
                 ? '✓ Approved - Contact Campus Lead for Changes'
-                : (isSubmitting 
-                  ? (isEditing ? 'Updating...' : 'Registering...') 
+                : (isSubmitting
+                  ? (isEditing ? 'Updating...' : 'Registering...')
                   : (isEditing ? 'Update Team' : 'Register Team'))}
             </Button>
           </motion.div>

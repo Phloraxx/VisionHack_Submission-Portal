@@ -27,7 +27,7 @@ export async function GET(
     // Fetch institution details
     let institutionName = 'Unknown Institution';
     let institutionData = null;
-    
+
     if (team.institution_id) {
       try {
         const institution = await serverDatabases.getDocument(
@@ -64,6 +64,22 @@ export async function GET(
       role: member.role,
     }));
 
+    // Fetch questionnaire response
+    let questionnaire = null;
+    try {
+      const qResponse = await serverDatabases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.QUESTIONNAIRE,
+        [Query.equal('team_id', teamId)]
+      );
+
+      if (qResponse.documents.length > 0) {
+        questionnaire = qResponse.documents[0];
+      }
+    } catch (error) {
+      console.error('Failed to fetch questionnaire:', error);
+    }
+
     return NextResponse.json({
       success: true,
       team: {
@@ -85,6 +101,8 @@ export async function GET(
         institutionName,
         members,
         membersCount: members.length,
+        teamCode: team.team_code || '',
+        questionnaire, // Add questionnaire data
       },
     });
   } catch (error: any) {

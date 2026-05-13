@@ -7,14 +7,26 @@ import { Button } from '@/components/ui/button';
 import { LogOut, Menu } from 'lucide-react';
 import { authHelpers } from '@/lib/appwrite';
 import { toast } from 'sonner';
+import { useEffect, useState } from 'react';
+import Image from 'next/image';
 
 export function Header() {
   const router = useRouter();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const user = await authHelpers.getCurrentUser();
+      setIsLoggedIn(!!user);
+    };
+    checkAuth();
+  }, []);
 
   const handleLogout = async () => {
     try {
       await authHelpers.logout();
       toast.success('Logged out successfully');
+      setIsLoggedIn(false);
       router.push('/auth/login');
     } catch (error) {
       console.error('Logout error:', error);
@@ -43,18 +55,32 @@ export function Header() {
           <nav className="hidden md:flex items-center space-x-1">
           </nav>
 
-          <div className="flex items-center space-x-2">
+          {/* Centered Logo */}
+          <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+            <div className="relative h-12 w-48 overflow-hidden select-none">
+              <Image
+                src="/logo.jpeg"
+                alt="Logo"
+                fill
+                className="object-contain" // Use object-contain to fit long horizontal logo
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
             <Button variant="ghost" size="icon" className="md:hidden">
               <Menu className="h-5 w-5" />
             </Button>
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={handleLogout}
-              title="Logout"
-            >
-              <LogOut className="h-5 w-5" />
-            </Button>
+            {isLoggedIn && (
+              <Button
+                variant="ghost"
+                onClick={handleLogout}
+                className="flex items-center gap-2"
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="hidden md:inline">Logout</span>
+              </Button>
+            )}
           </div>
         </div>
       </div>

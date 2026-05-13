@@ -8,11 +8,20 @@ import { ID } from 'node-appwrite';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { leads } = body; // Array of { collegeName, campusLeadName, email }
+    const { leads } = body; // Array of { collegeName, campusLeadName, email, district }
     
     if (!Array.isArray(leads) || leads.length === 0) {
       return NextResponse.json(
         { error: 'Invalid leads data' },
+        { status: 400 }
+      );
+    }
+
+    // Validate that all leads have district field
+    const missingDistrict = leads.filter(lead => !lead.district);
+    if (missingDistrict.length > 0) {
+      return NextResponse.json(
+        { error: 'All institutions must have a district specified' },
         { status: 400 }
       );
     }
@@ -37,6 +46,7 @@ export async function POST(request: NextRequest) {
               name: lead.collegeName,
               code: lead.collegeName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 50).toUpperCase(),
               email: lead.email,
+              district: lead.district,
               is_nominated_locked: false,
               campusLeadId: userResult.userId,
               campusLeadName: lead.campusLeadName,

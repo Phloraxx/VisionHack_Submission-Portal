@@ -9,22 +9,35 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { institutionId, teamLeads } = body; // Array of { name, email }
-    
+
     if (!institutionId || !Array.isArray(teamLeads) || teamLeads.length === 0) {
       return NextResponse.json(
         { error: 'Invalid request data' },
         { status: 400 }
       );
     }
-    
-    // Validate maximum 5 team leads
-    if (teamLeads.length > 5) {
-      return NextResponse.json(
-        { error: 'Maximum 5 team leads allowed per institution' },
-        { status: 400 }
-      );
+
+    // Validate maximum 5 team leads - REMOVED for unlimited invites
+    // if (teamLeads.length > 5) {
+    //   return NextResponse.json(
+    //     { error: 'Maximum 5 team leads allowed per institution' },
+    //     { status: 400 }
+    //   );
+    // }
+
+    // Check Event Configuration
+    const configDocs = await serverDatabases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.CONFIG
+    );
+
+    const registrationConfig = configDocs.documents.find((d: any) => d.key === 'registration_open');
+    const isRegistrationOpen = registrationConfig ? registrationConfig.value_bool : false;
+
+    if (!isRegistrationOpen) {
+      return NextResponse.json({ error: 'Team registration is currently closed.' }, { status: 403 });
     }
-    
+
     // Get institution details
     let institution;
     try {
@@ -39,19 +52,27 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
-    
+
     // Step 1: Create team lead accounts
     console.log(`Creating ${teamLeads.length} team lead accounts for ${institution.name}...`);
     const userResults = await createTeamLeads(teamLeads, institutionId);
-    
+
+    // Generate a random 4-digit code function
+    const generateTeamCode = () => {
+      // 1000 to 9999
+      return Math.floor(1000 + Math.random() * 9000).toString();
+    };
+
     // Step 2: Create team documents in database
     const teamDocs = [];
     for (let i = 0; i < teamLeads.length; i++) {
       const lead = teamLeads[i];
       const userResult = userResults[i];
-      
+
       if (userResult.success) {
         try {
+          const teamCode = generateTeamCode();
+
           const doc = await serverDatabases.createDocument(
             DATABASE_ID,
             COLLECTIONS.TEAMS,
@@ -60,14 +81,15 @@ export async function POST(request: NextRequest) {
               name: '', // To be filled by team lead
               leader_user_id: userResult.userId,
               institution_id: institutionId,
-              status: 'registered',
+              status: 'waitlisted', // Default status is now waitlisted until approved by Campus Lead
               institutionName: institution.name,
               teamLeadId: userResult.userId,
               teamLeadName: lead.name,
               teamLeadEmail: lead.email,
               teamName: '',
               membersCount: 0,
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              team_code: teamCode // Add unique code
             }
           );
           teamDocs.push(doc);
@@ -76,22 +98,23 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
-    // Step 3: Update institution's shortlisted count
+
+    // Step 3: Update institution's registered count
     try {
+      const currentRegistered = institution.teamsRegistered || 0;
       await serverDatabases.updateDocument(
         DATABASE_ID,
         COLLECTIONS.INSTITUTIONS,
         institutionId,
         {
-          teamsShortlisted: teamDocs.length,
+          teamsRegistered: currentRegistered + teamDocs.length,
           lastUpdated: new Date().toISOString()
         }
       );
     } catch (error) {
       console.error('Failed to update institution:', error);
     }
-    
+
     // Step 4: Send emails to all successful accounts
     const emailParams = userResults
       .filter(result => result.success)
@@ -103,10 +126,10 @@ export async function POST(request: NextRequest) {
         role: 'team_lead' as const,
         institutionName: institution.name
       }));
-    
+
     console.log(`Sending ${emailParams.length} emails...`);
     const emailsSent = await bulkSendEmails(emailParams);
-    
+
     return NextResponse.json({
       success: true,
       accountsCreated: userResults.filter(r => r.success).length,
