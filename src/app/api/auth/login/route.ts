@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Login error:', error);
     return NextResponse.json(
-      { error: error.message || 'Authentication failed' },
+      { error: 'Authentication failed. Please check your credentials.' },
       { status: 401 }
     );
   }

@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error in bulk create campus leads:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create campus leads' },
+      { error: 'Failed to create campus leads. Please check the data and try again.' },
       { status: 500 }
     );
   }

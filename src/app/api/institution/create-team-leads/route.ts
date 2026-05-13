@@ -63,41 +63,40 @@ export async function POST(request: NextRequest) {
       return Math.floor(1000 + Math.random() * 9000).toString();
     };
 
-    // Step 2: Create team documents in database
-    const teamDocs = [];
-    for (let i = 0; i < teamLeads.length; i++) {
-      const lead = teamLeads[i];
+    // Step 2: Create team documents in database concurrently
+    const teamPromises = teamLeads.map(async (lead, i) => {
       const userResult = userResults[i];
+      if (!userResult.success) return null;
 
-      if (userResult.success) {
-        try {
-          const teamCode = generateTeamCode();
-
-          const doc = await serverDatabases.createDocument(
-            DATABASE_ID,
-            COLLECTIONS.TEAMS,
-            ID.unique(),
-            {
-              name: '', // To be filled by team lead
-              leader_user_id: userResult.userId,
-              institution_id: institutionId,
-              status: 'waitlisted', // Default status is now waitlisted until approved by Campus Lead
-              institutionName: institution.name,
-              teamLeadId: userResult.userId,
-              teamLeadName: lead.name,
-              teamLeadEmail: lead.email,
-              teamName: '',
-              membersCount: 0,
-              createdAt: new Date().toISOString(),
-              team_code: teamCode // Add unique code
-            }
-          );
-          teamDocs.push(doc);
-        } catch (error) {
-          console.error(`Failed to create team doc for ${lead.name}:`, error);
-        }
+      try {
+        const teamCode = generateTeamCode();
+        return await serverDatabases.createDocument(
+          DATABASE_ID,
+          COLLECTIONS.TEAMS,
+          ID.unique(),
+          {
+            name: '', // To be filled by team lead
+            leader_user_id: userResult.userId,
+            institution_id: institutionId,
+            status: 'waitlisted', // Default status is now waitlisted until approved by Campus Lead
+            institutionName: institution.name,
+            teamLeadId: userResult.userId,
+            teamLeadName: lead.name,
+            teamLeadEmail: lead.email,
+            teamName: '',
+            membersCount: 0,
+            createdAt: new Date().toISOString(),
+            team_code: teamCode // Add unique code
+          }
+        );
+      } catch (error) {
+        console.error(`Failed to create team doc for ${lead.name}:`, error);
+        return null;
       }
-    }
+    });
+
+    const teamResults = await Promise.all(teamPromises);
+    const teamDocs = teamResults.filter((doc): doc is any => doc !== null);
 
     // Step 3: Update institution's registered count
     try {
@@ -146,7 +145,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error in create team leads:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create team leads' },
+      { error: 'Failed to create team leads. Please check the data and try again.' },
       { status: 500 }
     );
   }
