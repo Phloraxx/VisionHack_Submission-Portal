@@ -420,6 +420,7 @@ export default function InstitutionDashboard() {
                         variant="ghost"
                         size="sm"
                         onClick={() => removeTeamLeadField(index)}
+                        aria-label={`Remove team lead ${index + 1}`}
                       >
                         <Trash2 className="h-4 w-4 text-red-600" />
                       </Button>
@@ -572,8 +573,18 @@ export default function InstitutionDashboard() {
                   return (
                     <div key={team.$id} className="border rounded-lg bg-white hover:shadow-md transition-all">
                       <div
-                        className="p-4 cursor-pointer"
+                        className="p-4 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-t-lg"
                         onClick={() => toggleTeamExpansion(team.$id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleTeamExpansion(team.$id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        aria-controls={`team-content-${team.$id}`}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -634,7 +645,7 @@ export default function InstitutionDashboard() {
                       </div>
 
                       {isExpanded && (
-                        <div className="px-4 pb-4 space-y-4 border-t bg-gray-50">
+                        <div id={`team-content-${team.$id}`} className="px-4 pb-4 space-y-4 border-t bg-gray-50">
                           {/* Team Details */}
                           <div className="pt-4 space-y-3">
                             <h5 className="font-semibold text-gray-900">Team Details</h5>
