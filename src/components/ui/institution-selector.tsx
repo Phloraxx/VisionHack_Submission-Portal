@@ -87,6 +87,10 @@ export function InstitutionSelector({
         <Input
           ref={inputRef}
           id="institutionSearch"
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
+          aria-controls="institution-listbox"
           placeholder={
             selectedInst
               ? `${selectedInst.name} (${selectedInst.district})`
@@ -112,7 +116,11 @@ export function InstitutionSelector({
 
         {/* Dropdown */}
         {isOpen && !disabled && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto">
+          <div
+            id="institution-listbox"
+            role="listbox"
+            className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto"
+          >
             {institutionsByDistrict.length > 0 ? (
               institutionsByDistrict.map(([district, insts]) => (
                 <div key={district}>
@@ -123,8 +131,10 @@ export function InstitutionSelector({
                     <button
                       key={inst.id}
                       type="button"
+                      role="option"
+                      aria-selected={selectedInstitution === inst.id}
                       onClick={() => handleSelect(inst.id)}
-                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center justify-between transition-colors ${
+                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 flex items-center justify-between transition-colors ${
                         selectedInstitution === inst.id ? "bg-blue-50" : ""
                       }`}
                     >
