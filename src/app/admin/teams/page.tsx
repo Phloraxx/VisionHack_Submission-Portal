@@ -698,6 +698,7 @@ export default function AdminTeamsPage() {
                                           className="h-7 w-7 p-0"
                                           aria-label="Edit member"
                                           onClick={() => handleEditMember(member)}
+                                          aria-label={`Edit ${member.fullName}`}
                                         >
                                           <Edit2 className="h-3 w-3" />
                                         </Button>
@@ -707,6 +708,7 @@ export default function AdminTeamsPage() {
                                           className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                                           aria-label="Delete member"
                                           onClick={() => handleDeleteMember(member.id, member.fullName)}
+                                          aria-label={`Delete ${member.fullName}`}
                                         >
                                           <Trash2 className="h-3 w-3" />
                                         </Button>
