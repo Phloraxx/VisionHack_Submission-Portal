@@ -203,10 +203,12 @@ export default function RegisterPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => router.push("/")}
+            asChild
           >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Login
+            <Link href="/">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Login
+            </Link>
           </Button>
         </div>
       </div>
