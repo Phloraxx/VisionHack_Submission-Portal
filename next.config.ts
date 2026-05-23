@@ -47,7 +47,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/shipyard/:path*",
-        destination: `${process.env.NEXT_PUBLIC_SHIPYARD_URL || "http://shipyard.mulearnscet.in"}/:path*`,
+        destination: `${process.env.NEXT_PUBLIC_SHIPYARD_URL || "https://shipyard.mulearnscet.in"}/:path*`,
       },
     ];
   },
