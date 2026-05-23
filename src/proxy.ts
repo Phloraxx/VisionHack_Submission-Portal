@@ -33,8 +33,11 @@ export async function proxy(request: NextRequest) {
     statusText: response.statusText,
   });
 
+  const skipHeaders = new Set(["content-encoding", "content-length", "transfer-encoding"]);
   response.headers.forEach((value, key) => {
-    res.headers.set(key, value);
+    if (!skipHeaders.has(key.toLowerCase())) {
+      res.headers.set(key, value);
+    }
   });
 
   return res;
