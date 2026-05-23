@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 const API_KEY = "shipyard-api-key-change-in-prod";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (!pathname.startsWith("/shipyard")) {
