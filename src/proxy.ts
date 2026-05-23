@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const API_KEY = "shipyard-api-key-change-in-prod";
-
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
@@ -10,12 +8,20 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const base = process.env.NEXT_PUBLIC_SHIPYARD_URL || "https://shipyard.mulearnscet.in";
+  const apiKey = process.env.SHIPYARD_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ message: "Server misconfiguration: missing SHIPYARD_API_KEY" }, { status: 500 });
+  }
+
+  const base = process.env.NEXT_PUBLIC_SHIPYARD_URL;
+  if (!base) {
+    return NextResponse.json({ message: "Server misconfiguration: missing NEXT_PUBLIC_SHIPYARD_URL" }, { status: 500 });
+  }
   const targetPath = pathname.replace(/^\/shipyard/, "") || "/";
   const url = `${base}${targetPath}${search}`;
 
   const headers = new Headers(request.headers);
-  headers.set("x-api-key", API_KEY);
+  headers.set("x-api-key", apiKey);
   headers.delete("host");
 
   const body = request.method !== "GET" && request.method !== "HEAD"
