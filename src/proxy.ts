@@ -25,7 +25,7 @@ export async function proxy(request: NextRequest) {
   headers.delete("host");
 
   const body = request.method !== "GET" && request.method !== "HEAD"
-    ? await request.text()
+    ? await request.blob()
     : undefined;
 
   const response = await fetch(url, {
