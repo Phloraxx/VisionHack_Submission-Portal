@@ -1,0 +1,12 @@
+node_modules/
+.react-router/
+build/
+.env
+.env.local
+.dev.vars
+.slim/deepwork/
+.codegraph/
+.wrangler/
+.playwright-mcp/
+.reasonix/
+*.tsbuildinfo
