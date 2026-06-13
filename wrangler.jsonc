@@ -1,0 +1,14 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "visionhack-submission-portal",
+	"compatibility_date": "2025-02-24",
+	"main": "./worker/app.ts",
+	"assets": {},
+	"vars": {
+		"POCKETBASE_URL": "https://vision-hack-pocketbase-24c926-144-24-114-90.sslip.io",
+		"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,https://visionhack.mulearn.org"
+	}
+	// ⚠️ SECRETS: POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD must be
+	// set via `wrangler secret put` or a .dev.vars file — NEVER commit them.
+	// See .env.example for local dev setup.
+}
