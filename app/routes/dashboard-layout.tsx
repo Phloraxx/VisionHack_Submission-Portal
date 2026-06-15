@@ -90,7 +90,7 @@ export default function DashboardLayout() {
 
       {/* Sidebar — fixed position, full height, scrolls independently */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-sidebar transition-transform duration-200 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-sidebar transition-transform duration-200 lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
