@@ -3,7 +3,6 @@ import { useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
-import { validateOrigin } from "~/lib/csrf.server";
 import {
   STATUS_LABELS,
   STATUS_COLORS,
