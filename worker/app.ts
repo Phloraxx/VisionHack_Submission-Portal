@@ -27,6 +27,7 @@ export default {
       POCKETBASE_URL: env.POCKETBASE_URL as string,
       POCKETBASE_SUPER_TOKEN: env.POCKETBASE_SUPER_TOKEN as string,
       ALLOWED_ORIGINS: env.ALLOWED_ORIGINS as string,
+      APP_URL: env.APP_URL as string,
     });
 
     return requestHandler(request, {

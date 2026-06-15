@@ -9,6 +9,9 @@
 		"POCKETBASE_URL": "http://vision-hack-pocketbase-gz1pzq-3a236c-144-24-114-90.sslip.io",
 		"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,https://visionhack.mulearn.org"
 	}
+	// To enable Sentry error tracking, set the secret at deploy time:
+	//   wrangler secret put SENTRY_DSN
+	// The integration in app/lib/action.server.ts is a no-op without it.
 	// ⚠️ SECRETS: POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD must be
 	// set via `wrangler secret put` or a .dev.vars file — NEVER commit them.
 	// See .env.example for local dev setup.
