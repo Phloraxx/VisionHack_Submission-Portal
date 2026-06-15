@@ -169,20 +169,28 @@ const CONFIG_RULES = {
 	viewRule: '@request.auth.id != ""',
 } as const;
 
-/** Allow authenticated users to read, create, and update data */
-const AUTHED_READ_RULES = {
+/** Allow authenticated users to read, create, update, and delete data */
+const AUTHED_READ_WRITE_RULES = {
 	listRule: '@request.auth.id != ""',
 	viewRule: '@request.auth.id != ""',
 	createRule: '@request.auth.id != ""',
 	updateRule: '@request.auth.id != ""',
+	deleteRule: '@request.auth.id != ""',
 } as const;
 
-async function ensureAuthReadRules(token: string, collectionName: string): Promise<void> {
+/** Allow authenticated users to read data only (no write, no delete) */
+const AUTHED_READ_ONLY_RULES = {
+	listRule: '@request.auth.id != ""',
+	viewRule: '@request.auth.id != ""',
+} as const;
+
+async function ensureAuthenticatedAccess(token: string, collectionName: string, rules = AUTHED_READ_WRITE_RULES): Promise<void> {
 	const existing = await getCollection(token, collectionName);
 	if (!existing) return;
 	if (!existing.listRule || !existing.viewRule) {
-		console.log(`  📝 Setting authenticated read rules on «${collectionName}»…`);
-		await updateCollection(token, collectionName, AUTHED_READ_RULES as any);
+		const label = rules === AUTHED_READ_ONLY_RULES ? "read-only" : "read-write";
+		console.log(`  📝 Setting authenticated ${label} rules on «${collectionName}»…`);
+		await updateCollection(token, collectionName, rules as any);
 	}
 }
 
@@ -264,6 +272,17 @@ function arraysEqualIgnoreOrder(a: string[], b: string[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Constants for file upload restrictions
+// ---------------------------------------------------------------------------
+
+const ALLOWED_MIME_TYPES = [
+	"application/pdf",
+	"application/vnd.ms-powerpoint",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+];
+const MAX_FILE_SIZE = 10485760; // 10 MB
+
+// ---------------------------------------------------------------------------
 // Collection builders
 // ---------------------------------------------------------------------------
 
@@ -289,7 +308,7 @@ async function ensureTeamsCollection(
 					type: "text",
 					required: true,
 					min: null,
-					max: null,
+					max: 100,
 					pattern: "",
 				},
 				{
@@ -369,8 +388,8 @@ async function ensureTeamsCollection(
 					type: "file",
 					required: false,
 					maxSelect: 1,
-					maxSize: 0,
-					mimeTypes: [],
+					maxSize: MAX_FILE_SIZE,
+					mimeTypes: ALLOWED_MIME_TYPES,
 				},
 			],
 			...NO_RULES,
@@ -391,6 +410,12 @@ async function ensureTeamsCollection(
 	if (nameIdx >= 0 && fields[nameIdx].required !== true) {
 		console.log("  📝 Making «name» required…");
 		fields[nameIdx].required = true;
+		changed = true;
+	}
+	// Fix max length on name field — app enforces 100 chars
+	if (nameIdx >= 0 && fields[nameIdx].max !== 100) {
+		console.log("  📝 Setting «name» max length to 100…");
+		fields[nameIdx].max = 100;
 		changed = true;
 	}
 	if (teamNameIdx >= 0 && fields[teamNameIdx].required !== false) {
@@ -464,6 +489,34 @@ async function ensureTeamsCollection(
 			changed = true;
 		} else {
 			console.log("  ✅ «status_changed_at» field already correct");
+		}
+	}
+
+	// --- Fix the `submission_file` field (MIME types + maxSize) ---
+	const fileIdx = fields.findIndex((f: any) => f.name === "submission_file");
+	if (fileIdx >= 0) {
+		const sf = fields[fileIdx];
+		let fileChanged = false;
+
+		// Check mimeTypes — empty array means all types accepted
+		const currentMimes: string[] = sf.mimeTypes ?? [];
+		if (currentMimes.length === 0 || !arraysEqualIgnoreOrder(currentMimes, ALLOWED_MIME_TYPES)) {
+			console.log("  📝 Restricting «submission_file» MIME types…");
+			sf.mimeTypes = ALLOWED_MIME_TYPES;
+			fileChanged = true;
+		}
+
+		// Check maxSize — 0 means unlimited
+		if (sf.maxSize === 0 || sf.maxSize > MAX_FILE_SIZE) {
+			console.log("  📝 Setting «submission_file» max size to 10 MB…");
+			sf.maxSize = MAX_FILE_SIZE;
+			fileChanged = true;
+		}
+
+		if (fileChanged) {
+			changed = true;
+		} else {
+			console.log("  ✅ «submission_file» field already restricted");
 		}
 	}
 
@@ -874,6 +927,42 @@ async function ensureRateLimiting(token: string): Promise<void> {
 	}
 }
 
+/**
+ * Protect the built-in `users` auth collection against privilege escalation.
+ *
+ * The default PocketBase `updateRule` for users is `id = @request.auth.id`,
+ * which lets any authenticated user modify ALL fields on their own record —
+ * including the `role` field. This allows self-escalation to "admin".
+ *
+ * This function updates the rule to block setting the `role` field from
+ * regular user updates. Superuser operations (via createSuperuserClient())
+ * bypass API rules entirely, so admin/coordinator flows still work.
+ *
+ * New updateRule:  id = @request.auth.id && @request.body.role:isset = false
+ */
+async function ensureUsersCollection(token: string): Promise<void> {
+	console.log("\n🔧 Protecting users collection against self-role-escalation…");
+
+	const existing = await getCollection(token, "users");
+	if (!existing) {
+		console.log("  ⚠️  users collection not found — skipping");
+		return;
+	}
+
+	const desiredRule = 'id = @request.auth.id && @request.body.role:isset = false';
+
+	if (existing.updateRule === desiredRule) {
+		console.log("  ✅ Users collection already protected");
+		return;
+	}
+
+	console.log(`  📝 Updating users updateRule to prevent self-role changes…`);
+	await updateCollection(token, "users", {
+		updateRule: desiredRule,
+	} as any);
+	console.log("  ✅ Users collection updateRule updated");
+}
+
 async function main(): Promise<void> {
 	console.log("╔══════════════════════════════════════════════╗");
 	console.log("║       PocketBase Collection Setup Script     ║");
@@ -896,13 +985,16 @@ async function main(): Promise<void> {
 	await ensureQuestionnaireResponsesCollection(token, refreshedIds);
 	await ensureConfigCollection(token);
 
-	// Ensure authenticated users can read all data collections
+	// Ensure authenticated users have appropriate access to data collections
 	console.log("\n🔧 Ensuring API rules…");
-	await ensureAuthReadRules(token, "teams");
-	await ensureAuthReadRules(token, "members");
-	await ensureAuthReadRules(token, "institutions");
-	await ensureAuthReadRules(token, "questionnaire_responses");
-	console.log("  ✅ All collections have authenticated read rules");
+	await ensureAuthenticatedAccess(token, "teams", AUTHED_READ_WRITE_RULES);
+	await ensureAuthenticatedAccess(token, "members", AUTHED_READ_WRITE_RULES);
+	await ensureAuthenticatedAccess(token, "institutions", AUTHED_READ_ONLY_RULES);
+	await ensureAuthenticatedAccess(token, "questionnaire_responses", AUTHED_READ_WRITE_RULES);
+	console.log("  ✅ All collections have appropriate authenticated access rules");
+
+	// Protect users collection against self-role-escalation
+	await ensureUsersCollection(token);
 
 	// Ensure rate limiting is enabled
 	await ensureRateLimiting(token);
