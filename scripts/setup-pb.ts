@@ -169,28 +169,142 @@ const CONFIG_RULES = {
 	viewRule: '@request.auth.id != ""',
 } as const;
 
-/** Allow authenticated users to read, create, update, and delete data */
-const AUTHED_READ_WRITE_RULES = {
-	listRule: '@request.auth.id != ""',
-	viewRule: '@request.auth.id != ""',
-	createRule: '@request.auth.id != ""',
-	updateRule: '@request.auth.id != ""',
-	deleteRule: '@request.auth.id != ""',
+// ---------------------------------------------------------------------------
+// Role-scoped rules — close IDOR on cross-team reads.
+//
+// All app code uses createSuperuserClient() for writes and the user's own
+// client for reads, so the rules below restrict *direct* PB REST access
+// (i.e. from a leaked JWT or a developer mistake) to the minimum each role
+// legitimately needs.
+//
+// Roles: admin (everything) | coordinator (read all) | institution (read
+// own institution's teams) | lead (read/write own team).
+// ---------------------------------------------------------------------------
+
+/** Team rules — close cross-team data leak. */
+const TEAMS_RULES = {
+	// Admin sees everything; institution sees its own; lead sees its own.
+	// Coordinator is read-only across all teams.
+	listRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'(institutionId ?= @request.auth.institutionId && @request.auth.role = "institution") || ' +
+		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead")',
+	viewRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'(institutionId ?= @request.auth.institutionId && @request.auth.role = "institution") || ' +
+		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead")',
+	// Only admin/institution create teams (admin for direct creation,
+	// institution via the invite flow which then assigns a leader).
+	createRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "institution" || ' +
+		'@request.auth.role = "lead"',
+	// Lead can update only their own team and only while the status
+	// transition is legal. Admin can update anything. Institution can
+	// update teams within their institution (shortlist/unshortlist).
+	updateRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "institution" || ' +
+		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead")',
+	// Only admin can delete teams.
+	deleteRule: '@request.auth.role = "admin"',
 } as const;
 
-/** Allow authenticated users to read data only (no write, no delete) */
-const AUTHED_READ_ONLY_RULES = {
-	listRule: '@request.auth.id != ""',
-	viewRule: '@request.auth.id != ""',
+/** Member rules — members are scoped to the parent team. */
+const MEMBERS_RULES = {
+	listRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'@request.auth.role = "institution" || ' +
+		'teamId.leaderUserId ?= @request.auth.id',
+	viewRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'@request.auth.role = "institution" || ' +
+		'teamId.leaderUserId ?= @request.auth.id',
+	createRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "institution" || ' +
+		'teamId.leaderUserId ?= @request.auth.id',
+	updateRule:
+		'@request.auth.role = "admin" || ' +
+		'teamId.leaderUserId ?= @request.auth.id',
+	deleteRule:
+		'@request.auth.role = "admin" || ' +
+		'teamId.leaderUserId ?= @request.auth.id',
 } as const;
 
-async function ensureAuthenticatedAccess(token: string, collectionName: string, rules = AUTHED_READ_WRITE_RULES): Promise<void> {
+/** Questionnaire responses — scoped to the user or admin. */
+const QUESTIONNAIRE_RULES = {
+	listRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'userId ?= @request.auth.id',
+	viewRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'userId ?= @request.auth.id',
+	createRule: 'userId ?= @request.auth.id || @request.auth.role = "admin"',
+	updateRule:
+		'userId ?= @request.auth.id || @request.auth.role = "admin"',
+	deleteRule: '@request.auth.role = "admin"',
+} as const;
+
+/** Institution rules — every authed user can see all institutions
+ *  (needed for the institution picker and the team listing), but only
+ *  admin can mutate. */
+const INSTITUTIONS_RULES = {
+	listRule: '@request.auth.id != ""',
+	viewRule: '@request.auth.id != ""',
+	createRule: '@request.auth.role = "admin"',
+	updateRule: '@request.auth.role = "admin"',
+	deleteRule: '@request.auth.role = "admin"',
+} as const;
+
+/** Users rules — every authed user can see their own record and
+ *  institution/team leads' records (needed for joins), but only admin
+ *  can mutate. */
+const USERS_RULES = {
+	listRule:
+		'id = @request.auth.id || ' +
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'@request.auth.role = "institution"',
+	viewRule:
+		'id = @request.auth.id || ' +
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'@request.auth.role = "institution"',
+	createRule: '@request.auth.role = "admin"',
+	updateRule:
+		'id = @request.auth.id && @request.body.role:isset = false && ' +
+		'@request.body.institutionId:isset = false',
+	deleteRule: '@request.auth.role = "admin"',
+} as const;
+
+async function ensureAuthenticatedAccess(
+	token: string,
+	collectionName: string,
+	rules: Record<string, unknown>,
+	label: string,
+): Promise<void> {
 	const existing = await getCollection(token, collectionName);
 	if (!existing) return;
-	if (!existing.listRule || !existing.viewRule) {
-		const label = rules === AUTHED_READ_ONLY_RULES ? "read-only" : "read-write";
-		console.log(`  📝 Setting authenticated ${label} rules on «${collectionName}»…`);
+	const desired = JSON.stringify(rules);
+	const current = JSON.stringify({
+		listRule: existing.listRule,
+		viewRule: existing.viewRule,
+		createRule: existing.createRule,
+		updateRule: existing.updateRule,
+		deleteRule: existing.deleteRule,
+	});
+	if (current !== desired) {
+		console.log(`  📝 Applying ${label} rules to «${collectionName}»…`);
 		await updateCollection(token, collectionName, rules as any);
+	} else {
+		console.log(`  ✅ «${collectionName}» rules already match`);
 	}
 }
 
@@ -334,8 +448,8 @@ async function ensureTeamsCollection(
 					type: "text",
 					required: false,
 					min: null,
-					max: null,
-					pattern: "",
+					max: 12,
+					pattern: "^[A-Z0-9]+$",
 				},
 				{
 					name: "status",
@@ -353,18 +467,29 @@ async function ensureTeamsCollection(
 					],
 				},
 				{
+					// Plain date — the app owns the value on every status
+					// transition. Using autodate here caused the field to
+					// move on unrelated updates when a future schema bump
+					// forgot to keep `onUpdate: false`.
 					name: "status_changed_at",
-					type: "autodate",
+					type: "date",
 					required: false,
-					onCreate: true,
-					onUpdate: false,
+				},
+				{
+					// Denormalized flag so we don't need to join
+					// questionnaire_responses on every read. Set by the
+					// questionnaire action; cleared (never, in current
+					// flow) only by an admin override.
+					name: "questionnaire_completed",
+					type: "bool",
+					required: false,
 				},
 				{
 					name: "idea_title",
 					type: "text",
 					required: false,
 					min: null,
-					max: null,
+					max: 200,
 					pattern: "",
 				},
 				{
@@ -372,7 +497,7 @@ async function ensureTeamsCollection(
 					type: "text",
 					required: false,
 					min: null,
-					max: null,
+					max: 5000,
 					pattern: "",
 				},
 				{
@@ -380,7 +505,7 @@ async function ensureTeamsCollection(
 					type: "text",
 					required: false,
 					min: null,
-					max: null,
+					max: 500,
 					pattern: "",
 				},
 				{
@@ -390,7 +515,16 @@ async function ensureTeamsCollection(
 					maxSelect: 1,
 					maxSize: MAX_FILE_SIZE,
 					mimeTypes: ALLOWED_MIME_TYPES,
+					protected: true,
 				},
+			],
+			// Add indexes on the two hot filter columns so per-institution
+			// and per-lead queries are not full scans. PocketBase stores
+			// these as SQL indexes when listed in `indexes`.
+			indexes: [
+				"CREATE INDEX idx_teams_institution ON teams (institutionId)",
+				"CREATE INDEX idx_teams_leader ON teams (leaderUserId)",
+				"CREATE INDEX idx_teams_status ON teams (status)",
 			],
 			...NO_RULES,
 		});
@@ -418,10 +552,22 @@ async function ensureTeamsCollection(
 		fields[nameIdx].max = 100;
 		changed = true;
 	}
-	if (teamNameIdx >= 0 && fields[teamNameIdx].required !== false) {
-		console.log("  📝 Making «teamName» non-required…");
-		fields[teamNameIdx].required = false;
+	if (teamNameIdx >= 0) {
+		// Drop the dead legacy column.
+		console.log("  🗑️  Removing dead field «teamName»…");
+		fields.splice(teamNameIdx, 1);
 		changed = true;
+	}
+
+	// --- Tighten `teamCode` ---
+	const teamCodeIdx = fields.findIndex((f: any) => f.name === "teamCode");
+	if (teamCodeIdx >= 0) {
+		const tc = fields[teamCodeIdx];
+		if (tc.max !== 12 || tc.pattern !== "^[A-Z0-9]+$") {
+			console.log("  📝 Tightening «teamCode» pattern + max…");
+			fields[teamCodeIdx] = { ...tc, max: 12, pattern: "^[A-Z0-9]+$" };
+			changed = true;
+		}
 	}
 
 	// --- Fix the `status` field ---
@@ -466,33 +612,52 @@ async function ensureTeamsCollection(
 		changed = true;
 	}
 
-	// --- Add/fix `status_changed_at` field ---
+	// --- Add `questionnaire_completed` (denormalized) ---
+	const qcIdx = fields.findIndex(
+		(f: any) => f.name === "questionnaire_completed",
+	);
+	if (qcIdx < 0) {
+		console.log("  ➕ Adding «questionnaire_completed» bool field…");
+		fields.push({ name: "questionnaire_completed", type: "bool", required: false });
+		changed = true;
+	}
+
+	// --- Convert `status_changed_at` from autodate to plain date ---
+	// The app owns the value; autodate was a footgun if `onUpdate` ever
+	// got flipped on a future migration.
 	const statusChangedAtIdx = fields.findIndex(
 		(f: any) => f.name === "status_changed_at",
 	);
 	if (statusChangedAtIdx < 0) {
-		console.log("  ➕ Adding «status_changed_at» field…");
-		fields.push({
-			name: "status_changed_at",
-			type: "autodate",
-			required: false,
-			onCreate: true,
-			onUpdate: false,
-		});
+		console.log("  ➕ Adding «status_changed_at» date field…");
+		fields.push({ name: "status_changed_at", type: "date", required: false });
 		changed = true;
-	} else {
-		// Fix onUpdate: must be false so only explicit status changes update the timestamp
-		const sca = fields[statusChangedAtIdx];
-		if (sca.onUpdate !== false) {
-			console.log("  📝 Fixing «status_changed_at» onUpdate: true → false…");
-			fields[statusChangedAtIdx] = { ...sca, onUpdate: false };
+	} else if (fields[statusChangedAtIdx].type === "autodate") {
+		console.log("  📝 Converting «status_changed_at» autodate → date…");
+		fields[statusChangedAtIdx] = {
+			name: "status_changed_at",
+			type: "date",
+			required: false,
+		};
+		changed = true;
+	}
+
+	// --- Tighten `idea_title`/`idea_desc`/`idea_tech_stack` max lengths ---
+	const textLimits: Record<string, number> = {
+		idea_title: 200,
+		idea_desc: 5000,
+		idea_tech_stack: 500,
+	};
+	for (const [name, max] of Object.entries(textLimits)) {
+		const idx = fields.findIndex((f: any) => f.name === name);
+		if (idx >= 0 && fields[idx].max !== max) {
+			console.log(`  📝 Setting «${name}» max to ${max}…`);
+			fields[idx].max = max;
 			changed = true;
-		} else {
-			console.log("  ✅ «status_changed_at» field already correct");
 		}
 	}
 
-	// --- Fix the `submission_file` field (MIME types + maxSize) ---
+	// --- Fix the `submission_file` field (MIME types + maxSize + protected) ---
 	const fileIdx = fields.findIndex((f: any) => f.name === "submission_file");
 	if (fileIdx >= 0) {
 		const sf = fields[fileIdx];
@@ -513,6 +678,14 @@ async function ensureTeamsCollection(
 			fileChanged = true;
 		}
 
+		// protected: true forces downloads to go through the /api/files
+		// proxy (which is the only way to enforce ownership checks).
+		if (sf.protected !== true) {
+			console.log("  📝 Marking «submission_file» as protected…");
+			sf.protected = true;
+			fileChanged = true;
+		}
+
 		if (fileChanged) {
 			changed = true;
 		} else {
@@ -521,7 +694,15 @@ async function ensureTeamsCollection(
 	}
 
 	if (changed) {
-		await updateCollection(token, "teams", { fields });
+		// Apply field changes AND indexes in the same PATCH.
+		await updateCollection(token, "teams", {
+			fields,
+			indexes: [
+				"CREATE INDEX idx_teams_institution ON teams (institutionId)",
+				"CREATE INDEX idx_teams_leader ON teams (leaderUserId)",
+				"CREATE INDEX idx_teams_status ON teams (status)",
+			],
+		} as any);
 	} else {
 		console.log("  ✅ No changes needed for «teams» collection");
 	}
@@ -541,14 +722,32 @@ async function ensureInstitutionsCollection(
 		const fields = existing.fields ?? [];
 		let changed = false;
 
-		// Make legacy required fields optional (app doesn't populate these directly)
-		for (const legacyField of ["campusLeadName", "campusLeadEmail"]) {
-			const idx = fields.findIndex((f: any) => f.name === legacyField);
-			if (idx >= 0 && fields[idx].required === true) {
-				console.log(`  📝 Making «${legacyField}» non-required…`);
-				fields[idx].required = false;
+		// Drop dead legacy columns. They were never populated by the app
+		// (the join goes user.institutionId) and the institution.campusLeadId
+		// relation is the only real link.
+		for (const deadField of ["campusLeadName", "campusLeadEmail"]) {
+			const idx = fields.findIndex((f: any) => f.name === deadField);
+			if (idx >= 0) {
+				console.log(`  🗑️  Removing dead field «${deadField}»…`);
+				fields.splice(idx, 1);
 				changed = true;
 			}
+		}
+
+		// Make sure campusLeadId relation still exists and is optional
+		const hasLeadId = fields.some((f: any) => f.name === "campusLeadId");
+		if (!hasLeadId) {
+			console.log("  ➕ Adding «campusLeadId» relation field…");
+			fields.push({
+				name: "campusLeadId",
+				type: "relation",
+				required: false,
+				collectionId: usersId ?? "",
+				cascadeDelete: false,
+				maxSelect: 1,
+				minSelect: null,
+			});
+			changed = true;
 		}
 
 		// Ensure maxTeams field exists
@@ -559,11 +758,27 @@ async function ensureInstitutionsCollection(
 			changed = true;
 		}
 
-		// Ensure status field exists
-		const hasStatus = fields.some((f: any) => f.name === "status");
-		if (!hasStatus) {
-			console.log("  ➕ Adding «status» field…");
-			fields.push({ name: "status", type: "text", required: false, min: null, max: null, pattern: "" });
+		// Ensure status field exists and is a select (not free text)
+		const statusIdx = fields.findIndex((f: any) => f.name === "status");
+		if (statusIdx < 0) {
+			console.log("  ➕ Adding «status» select field…");
+			fields.push({
+				name: "status",
+				type: "select",
+				required: false,
+				maxSelect: 1,
+				values: ["active", "suspended"],
+			});
+			changed = true;
+		} else if (fields[statusIdx].type !== "select") {
+			console.log("  📝 Converting «status» to select with fixed values…");
+			fields[statusIdx] = {
+				name: "status",
+				type: "select",
+				required: false,
+				maxSelect: 1,
+				values: ["active", "suspended"],
+			};
 			changed = true;
 		}
 
@@ -584,7 +799,7 @@ async function ensureInstitutionsCollection(
 				type: "text",
 				required: true,
 				min: null,
-				max: null,
+				max: 100,
 				pattern: "",
 			},
 			{
@@ -592,7 +807,7 @@ async function ensureInstitutionsCollection(
 				type: "text",
 				required: false,
 				min: null,
-				max: null,
+				max: 100,
 				pattern: "",
 			},
 			{
@@ -600,8 +815,8 @@ async function ensureInstitutionsCollection(
 				type: "text",
 				required: true,
 				min: null,
-				max: null,
-				pattern: "",
+				max: 12,
+				pattern: "^[A-Z0-9]+$",
 			},
 			{
 				name: "campusLeadId",
@@ -616,17 +831,16 @@ async function ensureInstitutionsCollection(
 				name: "maxTeams",
 				type: "number",
 				required: false,
-				min: null,
+				min: 0,
 				max: null,
-				onlyInt: false,
+				onlyInt: true,
 			},
 			{
 				name: "status",
-				type: "text",
+				type: "select",
 				required: false,
-				min: null,
-				max: null,
-				pattern: "",
+				maxSelect: 1,
+				values: ["active", "suspended"],
 			},
 		],
 		...NO_RULES,
@@ -871,18 +1085,91 @@ async function ensureQuestionnaireResponsesCollection(
 			},
 			{ name: "age", type: "number", required: false, min: null, max: null, onlyInt: false },
 			{ name: "gender", type: "select", required: false, maxSelect: 1, values: ["Male", "Female", "Other"] },
-			{ name: "education", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "college_name", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "district", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "skills", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "interests", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "challenges", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "experience", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "motivation", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "team_experience", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "expectations", type: "text", required: false, min: null, max: null, pattern: "" },
-			{ name: "additional_info", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "education", type: "text", required: false, min: null, max: 200, pattern: "" },
+			{ name: "college_name", type: "text", required: false, min: null, max: 200, pattern: "" },
+			{ name: "district", type: "text", required: false, min: null, max: 100, pattern: "" },
+			{ name: "skills", type: "text", required: false, min: null, max: 1000, pattern: "" },
+			{ name: "interests", type: "text", required: false, min: null, max: 1000, pattern: "" },
+			{ name: "challenges", type: "text", required: false, min: null, max: 2000, pattern: "" },
+			{ name: "experience", type: "text", required: false, min: null, max: 2000, pattern: "" },
+			{ name: "motivation", type: "text", required: false, min: null, max: 2000, pattern: "" },
+			{ name: "team_experience", type: "text", required: false, min: null, max: 2000, pattern: "" },
+			{ name: "expectations", type: "text", required: false, min: null, max: 2000, pattern: "" },
+			{ name: "additional_info", type: "text", required: false, min: null, max: 2000, pattern: "" },
 		],
+		indexes: [
+			"CREATE INDEX idx_qr_team ON questionnaire_responses (teamId)",
+			"CREATE INDEX idx_qr_user ON questionnaire_responses (userId)",
+		],
+		...NO_RULES,
+	});
+}
+
+async function ensureEmailOutboxCollection(
+	token: string,
+	collectionIds: Map<string, string>,
+): Promise<void> {
+	console.log("\n🔧 Ensuring «email_outbox» collection…");
+
+	const usersId = collectionIds.get("users");
+	const existing = await getCollection(token, "email_outbox");
+
+	if (existing) {
+		const fields = existing.fields ?? [];
+		let changed = false;
+		// Ensure status is a select (idempotent migration)
+		const statusIdx = fields.findIndex((f: any) => f.name === "status");
+		if (statusIdx >= 0 && fields[statusIdx].type !== "select") {
+			fields[statusIdx] = {
+				name: "status",
+				type: "select",
+				required: true,
+				maxSelect: 1,
+				values: ["pending", "sent", "failed"],
+			};
+			changed = true;
+		}
+		// Ensure next_attempt_at date field exists (for retry backoff)
+		if (!fields.some((f: any) => f.name === "next_attempt_at")) {
+			fields.push({
+				name: "next_attempt_at",
+				type: "date",
+				required: false,
+			});
+			changed = true;
+		}
+		if (changed) {
+			await updateCollection(token, "email_outbox", { fields });
+		} else {
+			console.log("  ✅ «email_outbox» collection already correct");
+		}
+		return;
+	}
+
+	await createCollection(token, {
+		name: "email_outbox",
+		type: "base",
+		fields: [
+			{ name: "to", type: "email", required: true },
+			{ name: "subject", type: "text", required: true, max: 200 },
+			{ name: "html", type: "text", required: true, max: 65535 },
+			{
+				name: "status",
+				type: "select",
+				required: true,
+				maxSelect: 1,
+				values: ["pending", "sent", "failed"],
+			},
+			{ name: "attempts", type: "number", required: false, min: 0, onlyInt: true },
+			{ name: "last_error", type: "text", required: false, max: 2000 },
+			{ name: "next_attempt_at", type: "date", required: false },
+			{ name: "sent_at", type: "date", required: false },
+		],
+		indexes: [
+			"CREATE INDEX idx_outbox_status ON email_outbox (status)",
+		],
+		// Only the server (superuser) can read/write; authed users have
+		// no direct access.
 		...NO_RULES,
 	});
 }
@@ -928,20 +1215,19 @@ async function ensureRateLimiting(token: string): Promise<void> {
 }
 
 /**
- * Protect the built-in `users` auth collection against privilege escalation.
+ * Lock down the built-in `users` auth collection.
  *
- * The default PocketBase `updateRule` for users is `id = @request.auth.id`,
- * which lets any authenticated user modify ALL fields on their own record —
- * including the `role` field. This allows self-escalation to "admin".
- *
- * This function updates the rule to block setting the `role` field from
- * regular user updates. Superuser operations (via createSuperuserClient())
- * bypass API rules entirely, so admin/coordinator flows still work.
- *
- * New updateRule:  id = @request.auth.id && @request.body.role:isset = false
+ * 1. Apply the role-scoped read rules (USERS_RULES) so direct PB access
+ *    from a leaked JWT cannot list every user.
+ * 2. Make `role` a `select` field with the four known values — a free-text
+ *    `role` field accepts any string and is a privilege-escalation surface.
+ * 3. Update the rule to block setting the `role` or `institutionId`
+ *    fields from regular user updates. Superuser operations (via
+ *    createSuperuserClient()) bypass API rules entirely, so admin flows
+ *    still work.
  */
 async function ensureUsersCollection(token: string): Promise<void> {
-	console.log("\n🔧 Protecting users collection against self-role-escalation…");
+	console.log("\n🔧 Locking down users collection…");
 
 	const existing = await getCollection(token, "users");
 	if (!existing) {
@@ -949,18 +1235,78 @@ async function ensureUsersCollection(token: string): Promise<void> {
 		return;
 	}
 
-	const desiredRule = 'id = @request.auth.id && @request.body.role:isset = false';
+	const fields = existing.fields ?? [];
+	let fieldsChanged = false;
 
-	if (existing.updateRule === desiredRule) {
-		console.log("  ✅ Users collection already protected");
+	// Convert `role` to a select with the four known values.
+	const roleIdx = fields.findIndex((f: any) => f.name === "role");
+	const correctRoleValues = ["admin", "coordinator", "institution", "lead"];
+	if (roleIdx >= 0) {
+		const rf = fields[roleIdx];
+		const currentVals: string[] = rf.values ?? [];
+		if (
+			rf.type !== "select" ||
+			rf.maxSelect !== 1 ||
+			!arraysEqualIgnoreOrder(currentVals, correctRoleValues)
+		) {
+			console.log("  📝 Converting «role» to constrained select…");
+			fields[roleIdx] = {
+				name: "role",
+				type: "select",
+				required: true,
+				maxSelect: 1,
+				values: correctRoleValues,
+			};
+			fieldsChanged = true;
+		}
+	} else {
+		console.log("  ➕ Adding «role» select field…");
+		fields.push({
+			name: "role",
+			type: "select",
+			required: true,
+			maxSelect: 1,
+			values: correctRoleValues,
+		});
+		fieldsChanged = true;
+	}
+
+	// Tighten `institutionId` (relation to institutions) if present — it
+	// already exists by default in PocketBase auth but should be optional
+	// (admin/coordinator users don't have one).
+	const instRelIdx = fields.findIndex((f: any) => f.name === "institutionId");
+	if (instRelIdx >= 0 && fields[instRelIdx].required === true) {
+		console.log("  📝 Making «institutionId» non-required…");
+		fields[instRelIdx].required = false;
+		fieldsChanged = true;
+	}
+
+	const desiredUpdateRule =
+		'id = @request.auth.id && ' +
+		'@request.body.role:isset = false && ' +
+		'@request.body.institutionId:isset = false';
+
+	const rulesChanged =
+		existing.listRule !== USERS_RULES.listRule ||
+		existing.viewRule !== USERS_RULES.viewRule ||
+		existing.updateRule !== desiredUpdateRule ||
+		existing.createRule !== USERS_RULES.createRule ||
+		existing.deleteRule !== USERS_RULES.deleteRule;
+
+	if (!fieldsChanged && !rulesChanged) {
+		console.log("  ✅ Users collection already locked down");
 		return;
 	}
 
-	console.log(`  📝 Updating users updateRule to prevent self-role changes…`);
 	await updateCollection(token, "users", {
-		updateRule: desiredRule,
+		...(fieldsChanged ? { fields } : {}),
+		listRule: USERS_RULES.listRule,
+		viewRule: USERS_RULES.viewRule,
+		createRule: USERS_RULES.createRule,
+		updateRule: desiredUpdateRule,
+		deleteRule: USERS_RULES.deleteRule,
 	} as any);
-	console.log("  ✅ Users collection updateRule updated");
+	console.log("  ✅ Users collection locked down");
 }
 
 async function main(): Promise<void> {
@@ -985,19 +1331,27 @@ async function main(): Promise<void> {
 	await ensureQuestionnaireResponsesCollection(token, refreshedIds);
 	await ensureConfigCollection(token);
 
-	// Ensure authenticated users have appropriate access to data collections
-	console.log("\n🔧 Ensuring API rules…");
-	await ensureAuthenticatedAccess(token, "teams", AUTHED_READ_WRITE_RULES);
-	await ensureAuthenticatedAccess(token, "members", AUTHED_READ_WRITE_RULES);
-	await ensureAuthenticatedAccess(token, "institutions", AUTHED_READ_ONLY_RULES);
-	await ensureAuthenticatedAccess(token, "questionnaire_responses", AUTHED_READ_WRITE_RULES);
-	console.log("  ✅ All collections have appropriate authenticated access rules");
+	// Apply role-scoped API rules (closes cross-team IDOR on direct PB access).
+	console.log("\n🔧 Applying role-scoped API rules…");
+	await ensureAuthenticatedAccess(token, "teams", TEAMS_RULES, "team-scoped");
+	await ensureAuthenticatedAccess(token, "members", MEMBERS_RULES, "member-scoped");
+	await ensureAuthenticatedAccess(token, "institutions", INSTITUTIONS_RULES, "institution");
+	await ensureAuthenticatedAccess(
+		token,
+		"questionnaire_responses",
+		QUESTIONNAIRE_RULES,
+		"questionnaire",
+	);
+	console.log("  ✅ All collections have role-scoped access rules");
 
-	// Protect users collection against self-role-escalation
+	// Protect users collection against self-role-escalation AND apply read scope
 	await ensureUsersCollection(token);
 
 	// Ensure rate limiting is enabled
 	await ensureRateLimiting(token);
+
+	// Email outbox
+	await ensureEmailOutboxCollection(token, refreshedIds);
 
 	console.log("\n" + "=".repeat(50));
 	console.log("✅ PocketBase setup complete!");
