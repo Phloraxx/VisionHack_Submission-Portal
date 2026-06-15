@@ -79,7 +79,7 @@ export default function DashboardLayout() {
   const items = navItems[user.role] ?? [];
 
   return (
-    <div className="flex min-h-screen bg-muted/20">
+    <div className="flex h-screen overflow-hidden bg-muted/20">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
@@ -88,9 +88,9 @@ export default function DashboardLayout() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar — fixed position, full height, scrolls independently */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-sidebar transition-transform duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-sidebar transition-transform duration-200 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -184,8 +184,8 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <div className="flex flex-1 flex-col">
+      {/* Main content — scrollable, offset for fixed sidebar */}
+      <div className="flex flex-1 flex-col lg:pl-64">
         {/* Top header (mobile) */}
         <header className="flex h-14 items-center gap-3 border-b bg-background px-4 lg:hidden">
           <button
@@ -203,7 +203,7 @@ export default function DashboardLayout() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
           {/* Thin loading bar for client-side navigations */}
           <div
             className={`fixed inset-x-0 top-0 z-50 h-0.5 bg-primary transition-opacity duration-300 ${
