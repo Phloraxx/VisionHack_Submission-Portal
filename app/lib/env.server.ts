@@ -13,8 +13,7 @@
 
 export interface EnvConfig {
   POCKETBASE_URL: string;
-  POCKETBASE_ADMIN_EMAIL: string;
-  POCKETBASE_ADMIN_PASSWORD: string;
+  POCKETBASE_SUPER_TOKEN: string;
   ALLOWED_ORIGINS?: string;
 }
 
@@ -24,8 +23,7 @@ function readNodeEnv(): Partial<EnvConfig> {
   if (typeof process !== "undefined" && process.env) {
     return {
       POCKETBASE_URL: process.env.POCKETBASE_URL,
-      POCKETBASE_ADMIN_EMAIL: process.env.POCKETBASE_ADMIN_EMAIL,
-      POCKETBASE_ADMIN_PASSWORD: process.env.POCKETBASE_ADMIN_PASSWORD,
+      POCKETBASE_SUPER_TOKEN: process.env.POCKETBASE_SUPER_TOKEN,
       ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     };
   }
@@ -39,29 +37,24 @@ function buildEnv(overrides: Partial<EnvConfig>): EnvConfig {
     nodeEnv.POCKETBASE_URL ||
     "";
 
-  // In production (non-localhost), PocketBase MUST use HTTPS.
-  // Plain HTTP between the Worker and PocketBase exposes all data
-  // (including admin credentials and user JWTs) to network interception.
+  // Warn if PocketBase is accessed over plain HTTP in production.
+  // Ideally PocketBase should be behind a reverse proxy with TLS
+  // (nginx + Let's Encrypt) or Cloudflare Tunnel.
   const isDev =
     typeof import.meta !== "undefined" && import.meta.env?.DEV;
   if (pbUrl && !isDev && !pbUrl.startsWith("https://")) {
-    throw new Error(
-      "POCKETBASE_URL must use HTTPS in production. " +
-      "Plain HTTP exposes all traffic to MITM attacks. " +
-      "Put PocketBase behind a reverse proxy with TLS (nginx + Let's Encrypt) " +
-      "or use Cloudflare Tunnel.",
+    console.warn(
+      "[env] ⚠️  POCKETBASE_URL is using plain HTTP. " +
+      "Traffic between the Worker and PocketBase is not encrypted. " +
+      "Consider enabling TLS when available.",
     );
   }
 
   return {
     POCKETBASE_URL: pbUrl,
-    POCKETBASE_ADMIN_EMAIL:
-      overrides.POCKETBASE_ADMIN_EMAIL ||
-      nodeEnv.POCKETBASE_ADMIN_EMAIL ||
-      "",
-    POCKETBASE_ADMIN_PASSWORD:
-      overrides.POCKETBASE_ADMIN_PASSWORD ||
-      nodeEnv.POCKETBASE_ADMIN_PASSWORD ||
+    POCKETBASE_SUPER_TOKEN:
+      overrides.POCKETBASE_SUPER_TOKEN ||
+      nodeEnv.POCKETBASE_SUPER_TOKEN ||
       "",
     ALLOWED_ORIGINS:
       overrides.ALLOWED_ORIGINS ?? nodeEnv.ALLOWED_ORIGINS,

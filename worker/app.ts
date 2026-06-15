@@ -25,8 +25,7 @@ export default {
     // Safe to call on every request — subsequent calls are no-ops.
     initEnv({
       POCKETBASE_URL: env.POCKETBASE_URL as string,
-      POCKETBASE_ADMIN_EMAIL: env.POCKETBASE_ADMIN_EMAIL as string,
-      POCKETBASE_ADMIN_PASSWORD: env.POCKETBASE_ADMIN_PASSWORD as string,
+      POCKETBASE_SUPER_TOKEN: env.POCKETBASE_SUPER_TOKEN as string,
       ALLOWED_ORIGINS: env.ALLOWED_ORIGINS as string,
     });
 

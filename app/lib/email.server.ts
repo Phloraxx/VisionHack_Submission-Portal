@@ -1,18 +1,11 @@
 import { getEnv } from "./env.server";
 
 // ---------------------------------------------------------------------------
-// PocketBase mail hook endpoint
+// PocketBase mail hook — uses superuser token from env
 // ---------------------------------------------------------------------------
-// Sends email via PocketBase's SMTP using the custom hook at
-// POST /api/send-invite (deployed in pb_hooks/ on the PocketBase server).
-//
-// The hook uses PocketBase's own mail client, so SMTP is configured
-// once in the PocketBase Admin UI (Settings → Mail). No external
-// email service needed.
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+// Sends email via PocketBase's custom hook at POST /api/send-invite.
+// Authenticates using the pre-generated POCKETBASE_SUPER_TOKEN env var —
+// no email/password exchange needed.
 
 export interface SendEmailOptions {
   to: string;
@@ -24,17 +17,6 @@ export interface SendEmailResult {
   sent: boolean;
 }
 
-/**
- * Send a custom email via PocketBase's SMTP hook.
- *
- * Authenticates as PocketBase superuser (required by the hook) and
- * calls `POST /api/send-invite`. Note: this authenticates on every
- * call — if bulk sending is added, cache the superuser token for the
- * request lifetime.
- *
- * Returns `{ sent: true }` on success.
- * Returns `{ sent: false }` on failure — the caller should handle the error.
- */
 export async function sendEmail({
   to,
   subject,
@@ -44,34 +26,11 @@ export async function sendEmail({
   const pbUrl = env.POCKETBASE_URL.replace(/\/+$/, "");
 
   try {
-    // Authenticate as superuser (one call per sendEmail invocation).
-    // If bulk sending is ever added, cache the token for the request
-    // lifetime to avoid re-authenticating for every email.
-    const authResp = await fetch(
-      `${pbUrl}/api/collections/_superusers/auth-with-password`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          identity: env.POCKETBASE_ADMIN_EMAIL,
-          password: env.POCKETBASE_ADMIN_PASSWORD,
-        }),
-      },
-    );
-
-    if (!authResp.ok) {
-      console.error("[email] Superuser auth failed");
-      return { sent: false };
-    }
-
-    const { token } = (await authResp.json()) as { token: string };
-
-    // Call the custom mail hook
     const mailResp = await fetch(`${pbUrl}/api/send-invite`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${env.POCKETBASE_SUPER_TOKEN}`,
       },
       body: JSON.stringify({ to, subject, html }),
     });
