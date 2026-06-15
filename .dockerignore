@@ -1,0 +1,10 @@
+node_modules
+.env
+.dev.vars
+.git
+.wrangler
+.cf-cache
+build
+*.tsbuildinfo
+.history
+*.log
