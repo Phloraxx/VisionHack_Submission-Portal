@@ -83,6 +83,9 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           <code>{stack}</code>
         </pre>
       )}
+      <p className="mt-8 text-xs text-muted-foreground">
+        If this error persists, please contact the VisionHack support team.
+      </p>
     </main>
   );
 }
