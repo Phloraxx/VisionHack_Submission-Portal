@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Button } from "~/components/ui/button";
 import {
   Users,
@@ -41,9 +42,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .collection("teams")
     .getFullList<TeamRecord>({
       filter: pb.filter('leaderUserId = {:userId}', { userId: user.id }),
+      expand: "institutionId",
     });
 
   const team = teams.length > 0 ? teams[0] : null;
+
+  // Fetch institution name and campus lead contact
+  let institutionName = "";
+  let campusLeadName = "";
+  let campusLeadEmail = "";
+  if (team) {
+    try {
+      const inst = await pb.collection("institutions").getOne(team.institutionId);
+      institutionName = (inst as any).name || "";
+      if ((inst as any).campusLeadId) {
+        const lead = await pb.collection("users").getOne((inst as any).campusLeadId);
+        campusLeadName = (lead as any).name || "";
+        campusLeadEmail = (lead as any).email || "";
+      }
+    } catch { /* ignore fetch errors */ }
+  }
 
   // Check if the questionnaire has been submitted
   let questionnaireCompleted = false;
@@ -63,6 +81,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     user,
     team,
+    institutionName,
+    campusLeadName,
+    campusLeadEmail,
     questionnaireCompleted,
     registrationOpen: config.registration_open ?? false,
     questionnaireOpen: config.questionnaire_open ?? false,
@@ -164,6 +185,9 @@ export default function LeadDashboard() {
   const {
     user,
     team,
+    institutionName,
+    campusLeadName,
+    campusLeadEmail,
     questionnaireCompleted,
     registrationOpen,
     questionnaireOpen,
@@ -172,6 +196,9 @@ export default function LeadDashboard() {
   } = useLoaderData() as {
     user: { id: string; name: string; email: string };
     team: TeamRecord | null;
+    institutionName: string;
+    campusLeadName: string;
+    campusLeadEmail: string;
     questionnaireCompleted: boolean;
     registrationOpen: boolean;
     questionnaireOpen: boolean;
@@ -327,6 +354,25 @@ export default function LeadDashboard() {
               </span>
             </div>
           )}
+          {institutionName && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Institution</span>
+              <span className="text-sm font-medium">{institutionName}</span>
+            </div>
+          )}
+          {campusLeadName && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-sm text-muted-foreground">Campus Lead</span>
+              <span className="text-sm font-medium">
+                {campusLeadName}
+                {campusLeadEmail && (
+                  <span className="block text-xs text-muted-foreground text-right">
+                    {campusLeadEmail}
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
 
           {team && (
             <div className="flex items-center justify-between pt-1">
@@ -397,14 +443,14 @@ export default function LeadDashboard() {
       </Card>
 
       {/* Quick Action Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3 stagger-cards">
         {cards.map((card) => {
           const Icon = card.icon;
           const SI = stateIcon[card.state];
           return (
             <Card
               key={card.href}
-              className={`relative border ${stateClass[card.state]} transition-shadow hover:shadow-sm`}
+              className={`relative border ${stateClass[card.state]} card-hover`}
             >
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-sm font-medium">
@@ -445,6 +491,55 @@ export default function LeadDashboard() {
             </Card>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div className="space-y-8">
+      <div className="space-y-1">
+        <Skeleton className="h-7 w-44" />
+        <Skeleton className="h-4 w-48" />
+      </div>
+
+      {/* Step indicator */}
+      <Skeleton className="h-16 w-full rounded-lg" />
+
+      {/* Phase timeline */}
+      <Skeleton className="h-12 w-full rounded-lg" />
+
+      {/* Status card + progress */}
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-4 w-48" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Skeleton className="h-2 w-full rounded-full" />
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-4 w-12" />
+            <Skeleton className="h-6 w-20 rounded-full" />
+          </div>
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-4 w-24" />
+        </CardContent>
+      </Card>
+
+      {/* Action cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader>
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-3 w-full" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-full rounded-lg" />
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );

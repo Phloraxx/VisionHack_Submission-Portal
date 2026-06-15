@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Mail, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
+import { PageTransition } from "~/components/shared/page-transition";
 
 export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
@@ -48,6 +49,7 @@ export default function ForgotPassword() {
 
   if (actionData?.sent) {
     return (
+      <PageTransition>
       <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
         <Card size="sm" className="w-full max-w-sm">
           <CardContent className="py-8 text-center">
@@ -67,10 +69,12 @@ export default function ForgotPassword() {
           </CardContent>
         </Card>
       </div>
+      </PageTransition>
     );
   }
 
   return (
+    <PageTransition>
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card size="sm" className="w-full max-w-sm">
         <CardHeader>
@@ -82,7 +86,7 @@ export default function ForgotPassword() {
         <CardContent>
           <Form method="post" className="space-y-4">
             {actionData?.error && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive animate-in fade-in slide-in-from-top-2 duration-200">
                 {actionData.error}
               </div>
             )}
@@ -120,5 +124,6 @@ export default function ForgotPassword() {
         </CardContent>
       </Card>
     </div>
+    </PageTransition>
   );
 }

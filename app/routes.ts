@@ -22,6 +22,7 @@ export default [
 
     // Institution routes
     route("institution/dashboard", "routes/institution/dashboard.tsx"),
+    route("institution/teams/:teamId", "routes/institution/team-detail.tsx"),
 
     // Lead routes
     route("lead/dashboard", "routes/lead/dashboard.tsx"),

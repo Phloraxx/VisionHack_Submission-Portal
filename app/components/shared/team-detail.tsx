@@ -13,6 +13,7 @@ import {
 } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Textarea } from "~/components/ui/textarea";
 import { Separator } from "~/components/ui/separator";
 import {
   ArrowLeft,
@@ -420,6 +421,37 @@ export default function TeamDetail({
               )}
             </CardContent>
           </Card>
+
+          {/* Review Notes — visible to admin & coordinator */}
+          {validTransitions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Review Notes</CardTitle>
+                <CardDescription>
+                  Add internal notes about this submission. Only visible to admins and coordinators.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="save-notes" />
+                  <Textarea
+                    name="notes"
+                    defaultValue={(team as any).notes || ""}
+                    placeholder="Write your review notes here..."
+                    className="min-h-[100px] mb-3"
+                  />
+                  <Button type="submit" size="sm">
+                    Save Notes
+                  </Button>
+                </Form>
+                {(team as any).reviewed_by && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Last reviewed by: {(team as any).reviewed_by}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Institution & Lead */}
           <Card>
