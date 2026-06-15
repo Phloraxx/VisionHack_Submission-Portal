@@ -1,0 +1,918 @@
+#!/usr/bin/env node
+/**
+ * PocketBase Collection Setup Script
+ *
+ * Connects to a PocketBase instance as superuser and ensures ALL required
+ * collections exist with the correct schema. Creates collections that don't
+ * exist, fixes existing ones, and seeds the `config` collection.
+ *
+ * Usage: npx tsx scripts/setup-pb.ts
+ *
+ * Environment variables (or use .env file):
+ *   POCKETBASE_URL            – Base URL of the PocketBase instance
+ *   POCKETBASE_ADMIN_EMAIL    – Superuser email
+ *   POCKETBASE_ADMIN_PASSWORD – Superuser password
+ *
+ * Compatible with PocketBase v0.23+ API format (flat `fields` array, PATCH for updates).
+ */
+
+import { readFileSync, existsSync } from "node:fs";
+import path from "node:path";
+
+// ---------------------------------------------------------------------------
+// Env loader (lightweight — no dotenv dependency)
+// ---------------------------------------------------------------------------
+
+const __dirname = path.dirname(path.resolve(process.argv[1] ?? "."));
+
+function loadEnv(): void {
+	const envPath = path.resolve(__dirname, "..", ".env");
+	if (!existsSync(envPath)) return;
+
+	const content = readFileSync(envPath, "utf-8");
+	for (const raw of content.split("\n")) {
+		const line = raw.trim();
+		if (!line || line.startsWith("#")) continue;
+		const eqIdx = line.indexOf("=");
+		if (eqIdx <= 0) continue;
+		const key = line.slice(0, eqIdx).trim();
+		const val = line.slice(eqIdx + 1).trim();
+		if (!process.env[key]) {
+			process.env[key] = val;
+		}
+	}
+}
+
+loadEnv();
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+const PB_URL = process.env.POCKETBASE_URL;
+if (!PB_URL) {
+	throw new Error(
+		"POCKETBASE_URL environment variable is required. Set it in the environment or in a .env file.",
+	);
+}
+
+const PB_ADMIN_EMAIL = process.env.POCKETBASE_ADMIN_EMAIL;
+if (!PB_ADMIN_EMAIL) {
+	throw new Error(
+		"POCKETBASE_ADMIN_EMAIL environment variable is required. Set it in the environment or in a .env file.",
+	);
+}
+
+const PB_ADMIN_PASSWORD = process.env.POCKETBASE_ADMIN_PASSWORD;
+if (!PB_ADMIN_PASSWORD) {
+	throw new Error(
+		"POCKETBASE_ADMIN_PASSWORD environment variable is required. Set it in the environment or in a .env file.",
+	);
+}
+
+const API_BASE = `${PB_URL.replace(/\/+$/, "")}/api`;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async function pbFetch(
+	pathname: string,
+	options: RequestInit = {},
+): Promise<{ status: number; ok: boolean; data: any }> {
+	const url = `${API_BASE}${pathname}`;
+	const resp = await fetch(url, {
+		...options,
+		headers: {
+			"Content-Type": "application/json",
+			...(options.headers ?? {}),
+		},
+	});
+	const text = await resp.text();
+	let data: any;
+	try {
+		data = JSON.parse(text);
+	} catch {
+		data = text;
+	}
+	return { status: resp.status, ok: resp.ok, data };
+}
+
+async function superuserAuth(): Promise<string> {
+	console.log("🔐 Authenticating as superuser…");
+	const { ok, data } = await pbFetch(
+		"/collections/_superusers/auth-with-password",
+		{
+			method: "POST",
+			body: JSON.stringify({
+				identity: PB_ADMIN_EMAIL,
+				password: PB_ADMIN_PASSWORD,
+			}),
+		},
+	);
+	if (!ok) {
+		throw new Error(`Authentication failed: ${JSON.stringify(data)}`);
+	}
+	console.log(`✅ Authenticated as ${data.record?.email ?? PB_ADMIN_EMAIL}`);
+	return data.token as string;
+}
+
+function auth(token: string): Record<string, string> {
+	return { Authorization: `Bearer ${token}` };
+}
+
+async function getCollection(
+	token: string,
+	name: string,
+): Promise<any | null> {
+	const { status, ok, data } = await pbFetch(`/collections/${name}`, {
+		headers: auth(token),
+	});
+	if (ok) return data;
+	if (status === 404) return null;
+	throw new Error(
+		`Failed to fetch collection "${name}": ${JSON.stringify(data)}`,
+	);
+}
+
+/** Fetch all collections and return a Map of name → id */
+async function getCollectionIdMap(
+	token: string,
+): Promise<Map<string, string>> {
+	const { ok, data } = await pbFetch("/collections", {
+		headers: auth(token),
+	});
+	if (!ok || !data?.items) {
+		throw new Error(
+			`Failed to list collections: ${JSON.stringify(data)}`,
+		);
+	}
+	const map = new Map<string, string>();
+	for (const c of data.items) {
+		map.set(c.name, c.id);
+	}
+	return map;
+}
+
+/** Shorthand for "no public access on any rule" — server-side access only */
+const NO_RULES = {
+	listRule: null,
+	viewRule: null,
+	createRule: null,
+	updateRule: null,
+	deleteRule: null,
+} as const;
+
+/** Allow authenticated users to read config feature flags */
+const CONFIG_RULES = {
+	listRule: '@request.auth.id != ""',
+	viewRule: '@request.auth.id != ""',
+} as const;
+
+/** Allow authenticated users to read, create, and update data */
+const AUTHED_READ_RULES = {
+	listRule: '@request.auth.id != ""',
+	viewRule: '@request.auth.id != ""',
+	createRule: '@request.auth.id != ""',
+	updateRule: '@request.auth.id != ""',
+} as const;
+
+async function ensureAuthReadRules(token: string, collectionName: string): Promise<void> {
+	const existing = await getCollection(token, collectionName);
+	if (!existing) return;
+	if (!existing.listRule || !existing.viewRule) {
+		console.log(`  📝 Setting authenticated read rules on «${collectionName}»…`);
+		await updateCollection(token, collectionName, AUTHED_READ_RULES as any);
+	}
+}
+
+async function createCollection(
+	token: string,
+	collection: Record<string, unknown>,
+): Promise<any> {
+	const name = String(collection.name);
+	console.log(`  ➕ Creating collection "${name}"…`);
+	const { ok, data } = await pbFetch("/collections", {
+		method: "POST",
+		headers: auth(token),
+		body: JSON.stringify(collection),
+	});
+	if (!ok) {
+		throw new Error(
+			`Failed to create collection "${name}": ${JSON.stringify(data)}`,
+		);
+	}
+	console.log(`  ✅ Collection "${name}" created (id: ${data.id})`);
+	return data;
+}
+
+async function updateCollection(
+	token: string,
+	name: string,
+	collection: Record<string, unknown>,
+): Promise<any> {
+	console.log(`  🔄 Updating collection "${name}"…`);
+	const { ok, data } = await pbFetch(`/collections/${name}`, {
+		method: "PATCH",
+		headers: auth(token),
+		body: JSON.stringify(collection),
+	});
+	if (!ok) {
+		throw new Error(
+			`Failed to update collection "${name}": ${JSON.stringify(data)}`,
+		);
+	}
+	console.log(`  ✅ Collection "${name}" updated`);
+	return data;
+}
+
+async function createRecord(
+	token: string,
+	collection: string,
+	record: Record<string, unknown>,
+): Promise<any | null> {
+	const { ok, data } = await pbFetch(
+		`/collections/${collection}/records`,
+		{
+			method: "POST",
+			headers: auth(token),
+			body: JSON.stringify(record),
+		},
+	);
+	if (!ok) {
+		console.log(
+			`  ⚠️  Could not create record: ${JSON.stringify(data)}`,
+		);
+		return null;
+	}
+	return data;
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((r) => setTimeout(r, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Helper: check if two string arrays have the same elements (order-agnostic)
+// ---------------------------------------------------------------------------
+
+function arraysEqualIgnoreOrder(a: string[], b: string[]): boolean {
+	if (a.length !== b.length) return false;
+	const sortedA = [...a].sort();
+	const sortedB = [...b].sort();
+	return sortedA.every((v, i) => v === sortedB[i]);
+}
+
+// ---------------------------------------------------------------------------
+// Collection builders
+// ---------------------------------------------------------------------------
+
+async function ensureTeamsCollection(
+	token: string,
+	collectionIds: Map<string, string>,
+): Promise<void> {
+	console.log("\n🔧 Ensuring «teams» collection…");
+
+	const existing = await getCollection(token, "teams");
+
+	if (!existing) {
+		// Create from scratch
+		const instId = collectionIds.get("institutions");
+		const usersId = collectionIds.get("users");
+
+		await createCollection(token, {
+			name: "teams",
+			type: "base",
+			fields: [
+				{
+					name: "name",
+					type: "text",
+					required: true,
+					min: null,
+					max: null,
+					pattern: "",
+				},
+				{
+					name: "institutionId",
+					type: "relation",
+					required: true,
+					collectionId: instId ?? "",
+					cascadeDelete: false,
+					maxSelect: 1,
+					minSelect: null,
+				},
+				{
+					name: "leaderUserId",
+					type: "relation",
+					required: true,
+					collectionId: usersId ?? "",
+					cascadeDelete: false,
+					maxSelect: 1,
+					minSelect: null,
+				},
+				{
+					name: "teamCode",
+					type: "text",
+					required: false,
+					min: null,
+					max: null,
+					pattern: "",
+				},
+				{
+					name: "status",
+					type: "select",
+					required: true,
+					maxSelect: 1,
+					values: [
+						"invited",
+						"registered",
+						"shortlisted",
+						"submitted",
+						"selected",
+						"rejected",
+						"withdrawn",
+					],
+				},
+				{
+					name: "status_changed_at",
+					type: "autodate",
+					required: false,
+					onCreate: true,
+					onUpdate: false,
+				},
+				{
+					name: "idea_title",
+					type: "text",
+					required: false,
+					min: null,
+					max: null,
+					pattern: "",
+				},
+				{
+					name: "idea_desc",
+					type: "text",
+					required: false,
+					min: null,
+					max: null,
+					pattern: "",
+				},
+				{
+					name: "idea_tech_stack",
+					type: "text",
+					required: false,
+					min: null,
+					max: null,
+					pattern: "",
+				},
+				{
+					name: "submission_file",
+					type: "file",
+					required: false,
+					maxSelect: 1,
+					maxSize: 0,
+					mimeTypes: [],
+				},
+			],
+			...NO_RULES,
+		});
+		return;
+	}
+
+	// Existing collection — fix fields
+	const fields = existing.fields ?? [];
+	let changed = false;
+
+	// --- Fix the `name` vs `teamName` field ---
+	// App uses `name`; legacy schemas use `teamName` as required.
+	// Make `name` required and `teamName` non-required.
+	const nameIdx = fields.findIndex((f: any) => f.name === "name");
+	const teamNameIdx = fields.findIndex((f: any) => f.name === "teamName");
+
+	if (nameIdx >= 0 && fields[nameIdx].required !== true) {
+		console.log("  📝 Making «name» required…");
+		fields[nameIdx].required = true;
+		changed = true;
+	}
+	if (teamNameIdx >= 0 && fields[teamNameIdx].required !== false) {
+		console.log("  📝 Making «teamName» non-required…");
+		fields[teamNameIdx].required = false;
+		changed = true;
+	}
+
+	// --- Fix the `status` field ---
+	const statusIdx = fields.findIndex((f: any) => f.name === "status");
+	const correctStatusValues = [
+		"invited",
+		"registered",
+		"shortlisted",
+		"submitted",
+		"selected",
+		"rejected",
+		"withdrawn",
+	];
+
+	if (statusIdx >= 0) {
+		const sf = fields[statusIdx];
+		const currentVals: string[] = sf.values ?? [];
+
+		if (
+			sf.maxSelect !== 1 ||
+			!arraysEqualIgnoreOrder(currentVals, correctStatusValues)
+		) {
+			console.log("  📝 Updating «status» field select values…");
+			fields[statusIdx] = {
+				...sf,
+				maxSelect: 1,
+				values: correctStatusValues,
+			};
+			changed = true;
+		} else {
+			console.log("  ✅ «status» field already correct");
+		}
+	} else {
+		console.log("  ➕ Adding missing «status» field…");
+		fields.push({
+			name: "status",
+			type: "select",
+			required: true,
+			maxSelect: 1,
+			values: correctStatusValues,
+		});
+		changed = true;
+	}
+
+	// --- Add/fix `status_changed_at` field ---
+	const statusChangedAtIdx = fields.findIndex(
+		(f: any) => f.name === "status_changed_at",
+	);
+	if (statusChangedAtIdx < 0) {
+		console.log("  ➕ Adding «status_changed_at» field…");
+		fields.push({
+			name: "status_changed_at",
+			type: "autodate",
+			required: false,
+			onCreate: true,
+			onUpdate: false,
+		});
+		changed = true;
+	} else {
+		// Fix onUpdate: must be false so only explicit status changes update the timestamp
+		const sca = fields[statusChangedAtIdx];
+		if (sca.onUpdate !== false) {
+			console.log("  📝 Fixing «status_changed_at» onUpdate: true → false…");
+			fields[statusChangedAtIdx] = { ...sca, onUpdate: false };
+			changed = true;
+		} else {
+			console.log("  ✅ «status_changed_at» field already correct");
+		}
+	}
+
+	if (changed) {
+		await updateCollection(token, "teams", { fields });
+	} else {
+		console.log("  ✅ No changes needed for «teams» collection");
+	}
+}
+
+async function ensureInstitutionsCollection(
+	token: string,
+	collectionIds: Map<string, string>,
+): Promise<void> {
+	console.log("\n🔧 Ensuring «institutions» collection…");
+
+	const existing = await getCollection(token, "institutions");
+	const usersId = collectionIds.get("users");
+
+	if (existing) {
+		// Fix existing collection — ensure fields match what the app expects
+		const fields = existing.fields ?? [];
+		let changed = false;
+
+		// Make legacy required fields optional (app doesn't populate these directly)
+		for (const legacyField of ["campusLeadName", "campusLeadEmail"]) {
+			const idx = fields.findIndex((f: any) => f.name === legacyField);
+			if (idx >= 0 && fields[idx].required === true) {
+				console.log(`  📝 Making «${legacyField}» non-required…`);
+				fields[idx].required = false;
+				changed = true;
+			}
+		}
+
+		// Ensure maxTeams field exists
+		const hasMaxTeams = fields.some((f: any) => f.name === "maxTeams");
+		if (!hasMaxTeams) {
+			console.log("  ➕ Adding «maxTeams» field…");
+			fields.push({ name: "maxTeams", type: "number", required: false, min: null, max: null, onlyInt: false });
+			changed = true;
+		}
+
+		// Ensure status field exists
+		const hasStatus = fields.some((f: any) => f.name === "status");
+		if (!hasStatus) {
+			console.log("  ➕ Adding «status» field…");
+			fields.push({ name: "status", type: "text", required: false, min: null, max: null, pattern: "" });
+			changed = true;
+		}
+
+		if (changed) {
+			await updateCollection(token, "institutions", { fields });
+		} else {
+			console.log("  ✅ «institutions» collection already correct");
+		}
+		return;
+	}
+
+	await createCollection(token, {
+		name: "institutions",
+		type: "base",
+		fields: [
+			{
+				name: "name",
+				type: "text",
+				required: true,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "district",
+				type: "text",
+				required: false,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "code",
+				type: "text",
+				required: true,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "campusLeadId",
+				type: "relation",
+				required: false,
+				collectionId: usersId ?? "",
+				cascadeDelete: false,
+				maxSelect: 1,
+				minSelect: null,
+			},
+			{
+				name: "maxTeams",
+				type: "number",
+				required: false,
+				min: null,
+				max: null,
+				onlyInt: false,
+			},
+			{
+				name: "status",
+				type: "text",
+				required: false,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+		],
+		...NO_RULES,
+	});
+}
+
+async function ensureMembersCollection(
+	token: string,
+	collectionIds: Map<string, string>,
+): Promise<void> {
+	console.log("\n🔧 Ensuring «members» collection…");
+
+	const existing = await getCollection(token, "members");
+	if (existing) {
+		console.log(
+			"  ✅ «members» collection already exists — skipping creation",
+		);
+		return;
+	}
+
+	const teamsId = collectionIds.get("teams");
+
+	await createCollection(token, {
+		name: "members",
+		type: "base",
+		fields: [
+			{
+				name: "teamId",
+				type: "relation",
+				required: true,
+				collectionId: teamsId ?? "",
+				cascadeDelete: true,
+				maxSelect: 1,
+				minSelect: null,
+			},
+			{
+				name: "fullName",
+				type: "text",
+				required: true,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "email",
+				type: "text",
+				required: true,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "phone",
+				type: "text",
+				required: false,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "gender",
+				type: "text",
+				required: false,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "role",
+				type: "text",
+				required: false,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+		],
+		...NO_RULES,
+	});
+}
+
+async function ensureConfigCollection(token: string): Promise<void> {
+	console.log("\n🔧 Ensuring «config» collection…");
+
+	const existing = await getCollection(token, "config");
+
+	if (existing) {
+		// Check if the `value` bool field needs the `required` flag fixed
+		const fields = existing.fields ?? [];
+		const valueField = fields.find((f: any) => f.name === "value");
+		if (valueField && valueField.required !== false) {
+			console.log(
+				'  📝 Fixing «value» bool field (changing required: true → required: false so false values can be saved)…',
+			);
+			valueField.required = false;
+			await updateCollection(token, "config", { fields });
+		} else {
+			console.log("  ✅ «config» collection already exists with correct schema");
+		}
+
+		// Ensure config allows authenticated reads
+		if (!existing.listRule || !existing.viewRule) {
+			console.log("  📝 Updating config API rules (allowing authenticated reads)…");
+			await updateCollection(token, "config", CONFIG_RULES as any);
+		}
+
+		// Check if records need seeding
+		const { ok, data } = await pbFetch("/collections/config/records", {
+			headers: auth(token),
+		});
+		if (ok && data?.totalItems === 0) {
+			await seedConfigRecords(token);
+		} else if (ok) {
+			console.log(`  ✅ Config already has ${data.totalItems} records`);
+		}
+		return;
+	}
+
+	await createCollection(token, {
+		name: "config",
+		type: "base",
+		fields: [
+			{
+				name: "key",
+				type: "text",
+				required: true,
+				min: null,
+				max: null,
+				pattern: "",
+			},
+			{
+				name: "value",
+				type: "bool",
+				required: false, // required:true prevents saving `false` values
+			},
+		],
+		...CONFIG_RULES,
+	});
+
+	// Seed initial config entries
+	await seedConfigRecords(token);
+}
+
+async function seedConfigRecords(token: string): Promise<void> {
+	console.log("  🌱 Seeding config records…");
+	const seeds = [
+		{ key: "registration_open", value: false },
+		{ key: "questionnaire_open", value: false },
+		{ key: "nomination_open", value: false },
+		{ key: "submission_open", value: false },
+	];
+	for (const seed of seeds) {
+		await createRecord(token, "config", seed);
+		await sleep(50);
+	}
+	// Verify seeding
+	const { ok, data } = await pbFetch("/collections/config/records", {
+		headers: auth(token),
+	});
+	if (ok && data?.items) {
+		console.log(
+			`  ✅ Config collection seeded (${data.items.length} records total)`,
+		);
+	}
+}
+
+async function ensureQuestionnaireResponsesCollection(
+	token: string,
+	collectionIds: Map<string, string>,
+): Promise<void> {
+	console.log("\n🔧 Ensuring «questionnaire_responses» collection…");
+
+	const existing = await getCollection(token, "questionnaire_responses");
+	const teamsId = collectionIds.get("teams");
+	const usersId = collectionIds.get("users");
+
+	if (!teamsId || !usersId) {
+		throw new Error(
+			"Cannot resolve collection IDs for relations (teams or users missing).",
+		);
+	}
+
+	if (existing) {
+		// Fix existing collection — ensure all fields the form sends are present
+		const fields = existing.fields ?? [];
+		let changed = false;
+
+		const expectedFields = [
+			{ name: "age", type: "number", required: false, min: null, max: null, onlyInt: false },
+			{ name: "gender", type: "select", required: false, maxSelect: 1, values: ["Male", "Female", "Other"] },
+			{ name: "education", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "college_name", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "district", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "skills", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "interests", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "challenges", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "experience", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "motivation", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "team_experience", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "expectations", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "additional_info", type: "text", required: false, min: null, max: null, pattern: "" },
+		];
+
+		for (const ef of expectedFields) {
+			const exists = fields.some((f: any) => f.name === ef.name);
+			if (!exists) {
+				console.log(`  ➕ Adding missing «${ef.name}» field…`);
+				fields.push(ef);
+				changed = true;
+			}
+		}
+
+		if (changed) {
+			await updateCollection(token, "questionnaire_responses", { fields });
+		} else {
+			console.log("  ✅ «questionnaire_responses» collection already has all expected fields");
+		}
+		return;
+	}
+
+	// Create from scratch with all fields matching the questionnaire form
+	await createCollection(token, {
+		name: "questionnaire_responses",
+		type: "base",
+		fields: [
+			{
+				name: "teamId",
+				type: "relation",
+				required: true,
+				collectionId: teamsId,
+				cascadeDelete: true,
+				maxSelect: 1,
+				minSelect: null,
+			},
+			{
+				name: "userId",
+				type: "relation",
+				required: true,
+				collectionId: usersId,
+				cascadeDelete: false,
+				maxSelect: 1,
+				minSelect: null,
+			},
+			{ name: "age", type: "number", required: false, min: null, max: null, onlyInt: false },
+			{ name: "gender", type: "select", required: false, maxSelect: 1, values: ["Male", "Female", "Other"] },
+			{ name: "education", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "college_name", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "district", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "skills", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "interests", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "challenges", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "experience", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "motivation", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "team_experience", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "expectations", type: "text", required: false, min: null, max: null, pattern: "" },
+			{ name: "additional_info", type: "text", required: false, min: null, max: null, pattern: "" },
+		],
+		...NO_RULES,
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+async function ensureRateLimiting(token: string): Promise<void> {
+	console.log("\n🔧 Configuring rate limiting…");
+	const { ok, data } = await pbFetch("/api/settings", { headers: auth(token) });
+	if (!ok) {
+		console.log("  ⚠️  Could not read settings");
+		return;
+	}
+
+	if (data?.rateLimits?.enabled) {
+		console.log("  ✅ Rate limiting already enabled");
+		return;
+	}
+
+	const { ok: patchOk } = await pbFetch("/api/settings", {
+		method: "PATCH",
+		headers: auth(token),
+		body: JSON.stringify({
+			rateLimits: {
+				enabled: true,
+				rules: [
+					{ label: "*:auth", duration: 60, maxRequests: 10 },
+					{ label: "*:create", duration: 60, maxRequests: 30 },
+					{ label: "/api/files", duration: 60, maxRequests: 10 },
+					{ label: "/api/", duration: 60, maxRequests: 300 },
+				],
+			},
+		}),
+	});
+
+	if (patchOk) {
+		console.log("  ✅ Rate limiting enabled (10 auth/min, 30 create/min, 10 files/min, 300 api/min)");
+	} else {
+		console.log("  ⚠️  Could not enable rate limiting");
+	}
+}
+
+async function main(): Promise<void> {
+	console.log("╔══════════════════════════════════════════════╗");
+	console.log("║       PocketBase Collection Setup Script     ║");
+	console.log("╚══════════════════════════════════════════════╝");
+	console.log(`📍 URL:   ${PB_URL}`);
+	console.log(`📧 Admin: ${PB_ADMIN_EMAIL}`);
+	console.log("─".repeat(50));
+
+	const token = await superuserAuth();
+
+	// Build collection name → ID map for relation fields
+	const collectionIds = await getCollectionIdMap(token);
+
+	// Order matters: base collections first, then those with relations
+	await ensureInstitutionsCollection(token, collectionIds);
+	// Refresh IDs after creating institutions
+	const refreshedIds = await getCollectionIdMap(token);
+	await ensureTeamsCollection(token, refreshedIds);
+	await ensureMembersCollection(token, refreshedIds);
+	await ensureQuestionnaireResponsesCollection(token, refreshedIds);
+	await ensureConfigCollection(token);
+
+	// Ensure authenticated users can read all data collections
+	console.log("\n🔧 Ensuring API rules…");
+	await ensureAuthReadRules(token, "teams");
+	await ensureAuthReadRules(token, "members");
+	await ensureAuthReadRules(token, "institutions");
+	await ensureAuthReadRules(token, "questionnaire_responses");
+	console.log("  ✅ All collections have authenticated read rules");
+
+	// Ensure rate limiting is enabled
+	await ensureRateLimiting(token);
+
+	console.log("\n" + "=".repeat(50));
+	console.log("✅ PocketBase setup complete!");
+	console.log("=".repeat(50));
+}
+
+main().catch((err) => {
+	console.error("\n❌ Setup failed:", err.message);
+	process.exit(1);
+});
