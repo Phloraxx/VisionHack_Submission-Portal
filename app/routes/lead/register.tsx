@@ -8,7 +8,7 @@ import {
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { validateOrigin } from "~/lib/csrf.server";
-import { isOpen } from "~/lib/config.server";
+import { getConfig } from "~/lib/config.server";
 import type { TeamStatus, TeamRecord, MemberRecord } from "~/lib/types";
 import { canTransition } from "~/lib/types";
 import {
@@ -89,7 +89,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       });
   }
 
-  const registrationOpen = await isOpen(pb, "registration_open");
+  const flags = await getConfig(pb);
+  const registrationOpen = flags.registration_open ?? false;
 
   return {
     user,
@@ -107,7 +108,8 @@ export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
   const { pb, user } = await requireRole(request, ["lead"]);
 
-  const registrationOpen = await isOpen(pb, "registration_open");
+  const flags = await getConfig(pb);
+  const registrationOpen = flags.registration_open ?? false;
   if (!registrationOpen) {
     return Response.json(
       { error: "Registration is currently closed" },

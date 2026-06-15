@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { useLoaderData, Form, useNavigation, useActionData } from "react-router";
+import { useLoaderData, Form, useNavigation, useActionData, Link } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { validateOrigin } from "~/lib/csrf.server";
-import { isOpen } from "~/lib/config.server";
+import { getConfig } from "~/lib/config.server";
 import { sendEmail } from "~/lib/email.server";
 import {
   STATUS_LABELS,
@@ -18,6 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -101,7 +102,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     membersByTeam[m.teamId].push(m);
   }
 
-  const config = await isOpen(pb, "nomination_open");
+  const flags = await getConfig(pb);
+  const config = flags.nomination_open ?? false;
 
   return {
     user,
@@ -140,6 +142,17 @@ export async function action({ request }: ActionFunctionArgs) {
 
       if (!name || !email) {
         return Response.json({ error: "Name and email are required" }, { status: 400 });
+      }
+
+      // Enforce max teams limit
+      const existingTeamsCount = await pb
+        .collection("teams")
+        .getFullList({ filter: pb.filter('institutionId = {:instId}', { instId: institution.id }) });
+      if (existingTeamsCount.length >= (institution.maxTeams || 5)) {
+        return Response.json(
+          { error: `This institution has reached its maximum of ${institution.maxTeams || 5} teams.` },
+          { status: 400 },
+        );
       }
 
       // Check if a user with this email already exists
@@ -240,7 +253,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     case "shortlist": {
       const teamId = formData.get("teamId") as string;
-      const nominationOpen = await isOpen(pb, "nomination_open");
+      const flags = await getConfig(pb);
+      const nominationOpen = flags.nomination_open ?? false;
       if (!nominationOpen) {
         return Response.json({ error: "Shortlisting is currently closed" }, { status: 403 });
       }
@@ -262,7 +276,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     case "unshortlist": {
       const teamId = formData.get("teamId") as string;
-      const nominationOpen = await isOpen(pb, "nomination_open");
+      const flags = await getConfig(pb);
+      const nominationOpen = flags.nomination_open ?? false;
       if (!nominationOpen) {
         return Response.json({ error: "Shortlisting is currently closed" }, { status: 403 });
       }
@@ -367,7 +382,7 @@ export default function InstitutionDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3 stagger-cards">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -564,7 +579,7 @@ export default function InstitutionDashboard() {
                 return (
                   <div
                     key={team.id}
-                    className="rounded-lg border bg-card transition-shadow hover:shadow-sm"
+                    className="rounded-lg border bg-card card-hover"
                   >
                     <div
                       className="flex cursor-pointer items-start justify-between p-4"
@@ -726,6 +741,14 @@ export default function InstitutionDashboard() {
                             </div>
                           )}
                         </div>
+                        <div className="mt-2 pt-2 border-t">
+                          <Link
+                            to={`/institution/teams/${team.id}`}
+                            className="text-xs font-medium text-primary hover:underline"
+                          >
+                            View full details →
+                          </Link>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -756,6 +779,70 @@ export default function InstitutionDashboard() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div className="space-y-8">
+      <div className="space-y-1">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-4 w-64" />
+        <Skeleton className="h-4 w-32" />
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader>
+              <Skeleton className="h-4 w-24" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-12" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Invite form */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-4 w-48" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-28" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Team list */}
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-4 w-56" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-lg" />
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -27,30 +27,3 @@ export async function getConfig(
   }
   return config;
 }
-
-/**
- * Fetch a single feature-flag by its `key` from the `config` collection.
- *
- * Returns `false` when the key is not found (safe default — features are
- * off by default). Uses PocketBase's filter syntax to query by key.
- *
- * ```ts
- * const open = await isOpen(pb, "registration_open");
- * if (!open) throw new Response("Registration closed", { status: 403 });
- * ```
- */
-export async function isOpen(
-  pb: PocketBase,
-  key: string,
-): Promise<boolean> {
-  try {
-    const record = await pb
-      .collection("config")
-      .getFirstListItem<{ value: boolean }>(
-        pb.filter("key = {:key}", { key }),
-      );
-    return record.value;
-  } catch {
-    return false;
-  }
-}

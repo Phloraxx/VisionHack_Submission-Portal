@@ -8,7 +8,7 @@ import {
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { validateOrigin } from "~/lib/csrf.server";
-import { isOpen } from "~/lib/config.server";
+import { getConfig } from "~/lib/config.server";
 import type { TeamStatus, TeamRecord } from "~/lib/types";
 import {
   Card,
@@ -112,7 +112,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  const questionnaireOpen = await isOpen(pb, "questionnaire_open");
+  const flags = await getConfig(pb);
+  const questionnaireOpen = flags.questionnaire_open ?? false;
 
   return {
     user,
@@ -130,7 +131,8 @@ export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
   const { pb, user } = await requireRole(request, ["lead"]);
 
-  const questionnaireOpen = await isOpen(pb, "questionnaire_open");
+  const flags = await getConfig(pb);
+  const questionnaireOpen = flags.questionnaire_open ?? false;
   if (!questionnaireOpen) {
     return Response.json(
       { error: "Questionnaire is currently closed" },
@@ -157,14 +159,14 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!district?.trim()) fieldErrors.district = "District is required";
   else if (district.length > 100) fieldErrors.district = "District name too long";
 
-  const skills = formData.get("skills") as string;
-  const interests = formData.get("interests") as string;
-  const challenges = formData.get("challenges") as string;
-  const experience = formData.get("experience") as string;
-  const motivation = formData.get("motivation") as string;
-  const team_experience = formData.get("team_experience") as string;
-  const expectations = formData.get("expectations") as string;
-  const additional_info = formData.get("additional_info") as string;
+  const skills = (formData.get("skills") as string) ?? "";
+  const interests = (formData.get("interests") as string) ?? "";
+  const challenges = (formData.get("challenges") as string) ?? "";
+  const experience = (formData.get("experience") as string) ?? "";
+  const motivation = (formData.get("motivation") as string) ?? "";
+  const team_experience = (formData.get("team_experience") as string) ?? "";
+  const expectations = (formData.get("expectations") as string) ?? "";
+  const additional_info = (formData.get("additional_info") as string) ?? "";
 
   // Length limits for textarea fields (max 5000 chars each)
   const MAX_TEXT = 5000;
@@ -374,7 +376,7 @@ export default function LeadQuestionnaire() {
       <Form method="post" className="space-y-6">
         {/* Section 1: Personal Info */}
         {currentSection === "personal" && (
-          <Card>
+          <Card key="personal" className="animate-in slide-in-from-right-4 fade-in duration-300">
             <CardHeader>
               <CardTitle>Personal Info</CardTitle>
               <CardDescription>
@@ -517,7 +519,7 @@ export default function LeadQuestionnaire() {
 
         {/* Section 2: Skills & Interests */}
         {currentSection === "skills" && (
-          <Card>
+          <Card key="skills" className="animate-in slide-in-from-right-4 fade-in duration-300">
             <CardHeader>
               <CardTitle>Skills &amp; Interests</CardTitle>
               <CardDescription>
@@ -566,7 +568,7 @@ export default function LeadQuestionnaire() {
 
         {/* Section 3: Motivation */}
         {currentSection === "motivation" && (
-          <Card>
+          <Card key="motivation" className="animate-in slide-in-from-right-4 fade-in duration-300">
             <CardHeader>
               <CardTitle>Motivation</CardTitle>
               <CardDescription>

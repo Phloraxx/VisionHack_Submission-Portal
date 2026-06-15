@@ -8,7 +8,7 @@ import {
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { validateOrigin } from "~/lib/csrf.server";
-import { isOpen } from "~/lib/config.server";
+import { getConfig } from "~/lib/config.server";
 import { canTransition } from "~/lib/types";
 import type { TeamStatus, Role, TeamRecord } from "~/lib/types";
 import {
@@ -115,7 +115,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
 
   const team = teams.length > 0 ? teams[0] : null;
-  const submissionOpen = await isOpen(pb, "submission_open");
+  const flags = await getConfig(pb);
+  const submissionOpen = flags.submission_open ?? false;
 
   return {
     user,
@@ -132,7 +133,8 @@ export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
   const { pb, user } = await requireRole(request, ["lead"]);
 
-  const submissionOpen = await isOpen(pb, "submission_open");
+  const flags = await getConfig(pb);
+  const submissionOpen = flags.submission_open ?? false;
   if (!submissionOpen) {
     return Response.json(
       { error: "Submissions are currently closed" },
