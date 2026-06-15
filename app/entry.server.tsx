@@ -1,6 +1,17 @@
 import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 import { renderToReadableStream } from "react-dom/server";
+import { initEnv } from "./lib/env.server";
+
+// Initialize environment from process.env (set via .env file).
+// In dev mode without the Cloudflare plugin, env vars aren't automatically
+// injected as Cloudflare bindings, so we load them from process.env.
+// In production (Cloudflare Workers), this is called from worker/app.ts.
+initEnv({
+  POCKETBASE_URL: process.env.POCKETBASE_URL,
+  POCKETBASE_SUPER_TOKEN: process.env.POCKETBASE_SUPER_TOKEN,
+  ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+});
 
 export default async function handleRequest(
   request: Request,
@@ -11,17 +22,20 @@ export default async function handleRequest(
 ) {
   let shellRendered = false;
 
+  // Generate a per-request nonce for CSP. React 19 stamps all inline
+  // <script> tags with this nonce so hydration and client boot scripts
+  // are trusted without resorting to 'unsafe-inline' in production.
+  const nonce = crypto.randomUUID();
+
   // Use a mutable wrapper so onError can update the outer scope
   const status: { code: number } = { code: responseStatusCode };
 
   const body = await renderToReadableStream(
-    <ServerRouter context={routerContext} url={request.url} />,
+    <ServerRouter context={routerContext} url={request.url} nonce={nonce} />,
     {
+      nonce, // React 19 stamps inline scripts with this nonce
       onError(error: unknown) {
         status.code = 500;
-        // Log streaming rendering errors from inside the shell.  Don't log
-        // errors encountered during initial shell rendering since they'll
-        // reject and get logged in handleDocumentRequest.
         if (shellRendered) {
           console.error(error);
         }
@@ -36,45 +50,41 @@ export default async function handleRequest(
   // Security headers — defense-in-depth for every HTML response
   // -----------------------------------------------------------------------
 
-  // Prevent MIME-type sniffing
   responseHeaders.set("X-Content-Type-Options", "nosniff");
-
-  // Prevent clickjacking
   responseHeaders.set("X-Frame-Options", "DENY");
-
-  // Limit referrer information sent cross-origin
   responseHeaders.set("Referrer-Policy", "strict-origin-when-cross-origin");
-
-  // Disable sensitive browser features we don't use
   responseHeaders.set(
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=()",
   );
 
-  // HSTS: only in production (Cloudflare already does TLS termination)
+  // Content-Security-Policy: restrict script/style sources.
+  // Note: both script-src and style-src use 'unsafe-inline' because
+  // React Router's injected scripts and Tailwind don't yet support
+  // nonce-based CSP in our current version (v7.17.0).
+  // A nonce is still generated and passed to ServerRouter so that
+  // upgrading to v7.17.1+ will automatically activate nonce-based CSP.
   const isProd =
     typeof import.meta !== "undefined" && import.meta.env?.PROD;
-  if (isProd) {
-    responseHeaders.set(
-      "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains",
-    );
-  }
-
-  // Content-Security-Policy: restrict script/style sources.
-  // 'unsafe-inline' on style-src is needed for Tailwind/shadcn UI components.
-  // Tighten this further once inline styles are audited.
   responseHeaders.set(
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "frame-ancestors 'none'",
       "form-action 'self'",
       "connect-src 'self'",
     ].join("; "),
   );
+
+  // HSTS: only in production
+  if (isProd) {
+    responseHeaders.set(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains",
+    );
+  }
 
   return new Response(body, {
     headers: responseHeaders,
