@@ -111,11 +111,6 @@ function scheduleCleanup(): void {
       }
     }
   }, CLEANUP_INTERVAL_MS);
-
-  // Allow the interval to be garbage-collected if the isolate is evicted.
-  if (typeof globalThis !== "undefined") {
-    // Cloudflare Workers: setInterval is safe; it's cleared on isolate teardown.
-  }
 }
 
 scheduleCleanup();

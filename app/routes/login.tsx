@@ -1,16 +1,13 @@
 import {
   Form,
   useActionData,
-  useLoaderData,
-  redirect,
   useNavigation,
   Link,
+  redirect,
 } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { getAuthFromCookie, login, setAuthCookie, ROLE_DASHBOARD_MAP } from "~/lib/auth.server";
 import { createAuthenticatedClient } from "~/lib/pocketbase.server";
-import { getConfig } from "~/lib/config.server";
-import { createPocketBaseClient } from "~/lib/pocketbase.server";
 import { validateOrigin } from "~/lib/csrf.server";
 import { checkLoginRateLimit } from "~/lib/rate-limit.server";
 import type { UserRecord } from "~/lib/types";
@@ -18,6 +15,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "~/com
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { PageTransition } from "~/components/shared/page-transition";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // If already authenticated, redirect to dashboard
@@ -34,18 +32,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       // Invalid token — proceed to login
     }
   }
-
-  // Check if registration is open
-  const pb = createPocketBaseClient();
-  let registrationOpen = false;
-  try {
-    const config = await getConfig(pb);
-    registrationOpen = config.registration_open === true;
-  } catch {
-    // Default to closed
-  }
-
-  return { registrationOpen };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -96,10 +82,10 @@ export function meta() {
 export default function Login() {
   const actionData = useActionData<{ error?: string }>();
   const navigation = useNavigation();
-  const loaderData = useLoaderData() as { registrationOpen: boolean };
   const isSubmitting = navigation.state === "submitting";
 
   return (
+    <PageTransition>
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card size="sm" className="w-full max-w-sm">
         <CardHeader>
@@ -111,7 +97,7 @@ export default function Login() {
         <CardContent>
           <Form method="post" className="space-y-4">
             {actionData?.error && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive animate-in fade-in slide-in-from-top-2 duration-200">
                 {actionData.error}
               </div>
             )}
@@ -156,5 +142,6 @@ export default function Login() {
         </CardContent>
       </Card>
     </div>
+    </PageTransition>
   );
 }

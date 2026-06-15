@@ -72,10 +72,10 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         </h1>
         <p className="mb-8 text-muted-foreground">{details}</p>
         <a
-          href="/"
+          href="/login"
           className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80 transition-colors"
         >
-          Go home
+          Go to Login
         </a>
       </div>
       {stack && (
