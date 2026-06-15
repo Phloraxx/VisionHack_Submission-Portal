@@ -2,6 +2,15 @@
 @import "tw-animate-css";
 @import "@fontsource-variable/geist";
 
+/* =========================================================================
+   VISIONHACK OPERATING CONSOLE — DESIGN TOKENS
+   -----------------------------------------------------------------------
+   Brand hue: μLearn amber (oklch hue ~55, warm).
+   Surface: dark-leaning chrome with warm-tinted neutrals.
+   Edge language: 1px borders carry the depth, not shadows.
+   Motion: 3-beat entrance, sharp-out easing, stagger with jitter.
+   ========================================================================= */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -34,131 +43,606 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: 'Geist Variable', 'Geist', ui-sans-serif, system-ui, sans-serif,
-    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
+  /* Semantic roles */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius: 6px;
+
+  --font-sans: 'Geist Variable', 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 @layer base {
+  /* ------------------------------------------------------------------
+     LIGHT MODE — paper-warm neutrals, brand reserved for action
+     ------------------------------------------------------------------ */
   :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    /* Surface: warm paper (very subtle amber chroma) */
+    --background: oklch(0.985 0.005 75);
+    --foreground: oklch(0.18 0.012 60);
+
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.18 0.012 60);
+
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --popover-foreground: oklch(0.18 0.012 60);
+
+    /* Brand: μLearn amber, reserved for primary action + identity */
+    --primary: oklch(0.62 0.165 50);
+    --primary-foreground: oklch(0.99 0.005 75);
+
+    --secondary: oklch(0.96 0.008 70);
+    --secondary-foreground: oklch(0.22 0.015 60);
+
+    --muted: oklch(0.955 0.008 70);
+    --muted-foreground: oklch(0.48 0.015 60);
+
+    --accent: oklch(0.95 0.012 70);
+    --accent-foreground: oklch(0.22 0.015 60);
+
+    --destructive: oklch(0.55 0.21 27);
+    --border: oklch(0.9 0.008 70);
+    --input: oklch(0.92 0.008 70);
+    --ring: oklch(0.62 0.165 50);
+
+    /* Charts: ordered hue progression for data viz */
+    --chart-1: oklch(0.62 0.165 50);
+    --chart-2: oklch(0.55 0.13 230);
+    --chart-3: oklch(0.5 0.13 165);
+    --chart-4: oklch(0.55 0.15 300);
+    --chart-5: oklch(0.5 0.02 270);
+
+    /* Sidebar */
+    --sidebar: oklch(0.18 0.012 60);
+    --sidebar-foreground: oklch(0.95 0.008 70);
+    --sidebar-primary: oklch(0.72 0.18 55);
+    --sidebar-primary-foreground: oklch(0.15 0.012 60);
+    --sidebar-accent: oklch(0.25 0.012 60);
+    --sidebar-accent-foreground: oklch(0.97 0.005 75);
+    --sidebar-border: oklch(0.28 0.012 60);
+    --sidebar-ring: oklch(0.72 0.18 55);
+
+    /* Semantic role colors — intensity-based, not status-by-hue */
+    --success: oklch(0.55 0.14 150);
+    --success-foreground: oklch(0.99 0.005 150);
+    --warning: oklch(0.7 0.15 75);
+    --warning-foreground: oklch(0.2 0.02 75);
+    --info: oklch(0.55 0.13 230);
+    --info-foreground: oklch(0.99 0.005 230);
+    --danger: oklch(0.55 0.21 27);
+    --danger-foreground: oklch(0.99 0.005 27);
   }
 
+  /* ------------------------------------------------------------------
+     DARK MODE — chrome-warm, instrument-panel feel
+     ------------------------------------------------------------------ */
   .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --background: oklch(0.16 0.008 60);
+    --foreground: oklch(0.95 0.006 70);
+
+    --card: oklch(0.2 0.008 60);
+    --card-foreground: oklch(0.95 0.006 70);
+
+    --popover: oklch(0.22 0.008 60);
+    --popover-foreground: oklch(0.95 0.006 70);
+
+    --primary: oklch(0.74 0.175 55);
+    --primary-foreground: oklch(0.15 0.012 60);
+
+    --secondary: oklch(0.26 0.01 60);
+    --secondary-foreground: oklch(0.95 0.006 70);
+
+    --muted: oklch(0.24 0.008 60);
+    --muted-foreground: oklch(0.68 0.012 70);
+
+    --accent: oklch(0.28 0.012 60);
+    --accent-foreground: oklch(0.97 0.005 75);
+
+    --destructive: oklch(0.62 0.2 27);
+    --border: oklch(0.3 0.01 60);
+    --input: oklch(0.28 0.01 60);
+    --ring: oklch(0.74 0.175 55);
+
+    --chart-1: oklch(0.74 0.175 55);
+    --chart-2: oklch(0.7 0.13 230);
+    --chart-3: oklch(0.7 0.13 165);
+    --chart-4: oklch(0.7 0.15 300);
+    --chart-5: oklch(0.7 0.02 270);
+
+    --sidebar: oklch(0.12 0.008 60);
+    --sidebar-foreground: oklch(0.95 0.006 70);
+    --sidebar-primary: oklch(0.74 0.175 55);
+    --sidebar-primary-foreground: oklch(0.12 0.008 60);
+    --sidebar-accent: oklch(0.2 0.01 60);
+    --sidebar-accent-foreground: oklch(0.97 0.005 75);
+    --sidebar-border: oklch(0.24 0.01 60);
+    --sidebar-ring: oklch(0.74 0.175 55);
+
+    --success: oklch(0.7 0.14 150);
+    --success-foreground: oklch(0.12 0.012 150);
+    --warning: oklch(0.78 0.15 75);
+    --warning-foreground: oklch(0.15 0.02 75);
+    --info: oklch(0.7 0.13 230);
+    --info-foreground: oklch(0.12 0.012 230);
+    --danger: oklch(0.7 0.2 27);
+    --danger-foreground: oklch(0.12 0.012 27);
   }
 
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply bg-background text-foreground;
+  *,
+  *::before,
+  *::after {
+    border-color: var(--border);
   }
 
   html {
-    @apply font-sans;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+  }
+
+  /* Focus rings — the keyboard user's reality */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Numerics in tabular contexts */
+  .tabular-nums,
+  [data-tabular] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Touch sizing — apply to interactive controls on coarse pointers */
+  @media (pointer: coarse) {
+    .vh-touch {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    .vh-touch-row {
+      min-height: 56px;
+    }
   }
 }
 
-button:not(:disabled),
-[role="button"]:not(:disabled) {
-  cursor: pointer;
+/* =========================================================================
+   MOTION SYSTEM
+   -----------------------------------------------------------------------
+   - 3-beat entrance: opacity 0 + scale 0.96 → 1.01 → 1
+   - Stagger cascade with jitter
+   - Sharp-out easing (no bounce)
+   - Exits run at ~70% of entrance duration
+   - prefers-reduced-motion respected
+   ========================================================================= */
+
+/* Easing tokens — the system's single source of truth.
+ * Keep these aligned with /references/motion.md timing table:
+ *   vh-ease-out   — quart-ish, sharp arrival
+ *   vh-ease-in    — used for exits only
+ *   vh-ease-glide — balanced for spatial transitions (drawer, accordion)
+ */
+:root {
+  --vh-ease-out:   cubic-bezier(0.16, 1, 0.3, 1);
+  --vh-ease-in:    cubic-bezier(0.7, 0, 0.84, 0);
+  --vh-ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Staggered card reveal — apply to grid containers, children get sequential delay */
+/* ---- Keyframes ---- */
+
+@keyframes vh-beat-in {
+  0%   { opacity: 0; transform: scale(0.96); }
+  60%  { opacity: 1; transform: scale(1.01); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes vh-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes vh-slide-in-right {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes vh-slide-in-left {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes vh-pop-in {
+  0%   { opacity: 0; transform: scale(0.94); }
+  60%  { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes vh-pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+@keyframes vh-progress {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes vh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes vh-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes vh-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-4px); }
+  40%      { transform: translateX(4px); }
+  60%      { transform: translateX(-3px); }
+  80%      { transform: translateX(3px); }
+}
+
+@keyframes vh-press {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+
+@keyframes vh-focus-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--ring), 0 0 0 4px transparent; }
+  50%      { box-shadow: 0 0 0 2px var(--ring), 0 0 0 6px color-mix(in oklch, var(--ring), transparent 70%); }
+}
+
+/* ---- Composite utilities ---- */
+
 .stagger-cards > * {
-  animation: fade-slide-in 0.4s ease-out both;
+  animation: vh-beat-in 360ms var(--vh-ease-out) both;
 }
-.stagger-cards > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-cards > *:nth-child(1) { animation-delay: 20ms; }
 .stagger-cards > *:nth-child(2) { animation-delay: 60ms; }
-.stagger-cards > *:nth-child(3) { animation-delay: 120ms; }
-.stagger-cards > *:nth-child(4) { animation-delay: 180ms; }
-.stagger-cards > *:nth-child(5) { animation-delay: 240ms; }
-.stagger-cards > *:nth-child(6) { animation-delay: 300ms; }
-.stagger-cards > *:nth-child(7) { animation-delay: 360ms; }
-.stagger-cards > *:nth-child(8) { animation-delay: 420ms; }
+.stagger-cards > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-cards > *:nth-child(4) { animation-delay: 140ms; }
+.stagger-cards > *:nth-child(5) { animation-delay: 180ms; }
+.stagger-cards > *:nth-child(6) { animation-delay: 220ms; }
+.stagger-cards > *:nth-child(7) { animation-delay: 260ms; }
+.stagger-cards > *:nth-child(8) { animation-delay: 300ms; }
+.stagger-cards > *:nth-child(n+9) { animation-delay: 340ms; }
 
-@keyframes fade-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Card hover lift — subtle scale + shadow on interactive cards */
+/* Card lift — used on interactive surfaces only */
 .card-hover {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 180ms var(--vh-ease-out),
+    border-color 180ms var(--vh-ease-out),
+    background-color 180ms var(--vh-ease-out);
 }
 .card-hover:hover {
-  transform: scale(1.01);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: color-mix(in oklch, var(--border), var(--foreground) 25%);
+}
+.card-hover:active {
+  transform: scale(0.99);
+}
+
+/* Loading bar — sharp, deliberate */
+.loading-bar-fill {
+  animation: vh-progress 700ms var(--vh-ease-out) infinite;
+}
+
+/* Live status dot — used for "open phase" indicators */
+.live-dot {
+  animation: vh-pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* Page-level entrance */
+.page-enter {
+  animation: vh-fade-in 320ms var(--vh-ease-out) both;
+}
+
+/* Slide-in for panels and sidebars */
+.panel-enter {
+  animation: vh-slide-in-right 240ms var(--vh-ease-out) both;
+}
+.panel-enter-left {
+  animation: vh-slide-in-left 240ms var(--vh-ease-out) both;
+}
+
+/* Pop-in for confirmation dialogs / inline alerts */
+.pop-in {
+  animation: vh-pop-in 220ms var(--vh-ease-out) both;
+}
+
+/* System spinner — used in place of Tailwind's animate-spin
+ * so all motion vocabulary stays consistent and we own the timing. */
+.vh-spin {
+  animation: vh-spin 800ms linear infinite;
+}
+
+/* Skeleton shimmer — applied to the Skeleton primitive's
+ * background to add horizontal motion without affecting layout. */
+.vh-skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    color-mix(in oklch, var(--muted), var(--foreground) 8%) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: vh-shimmer 1.6s linear infinite;
+}
+
+/* Press feedback — apply to interactive controls on tap */
+.vh-press {
+  transition: transform 120ms var(--vh-ease-out);
+}
+.vh-press:active {
+  transform: scale(0.97);
+}
+
+/* Error shake — apply to a form / alert after a failed submit */
+.vh-shake {
+  animation: vh-shake 320ms var(--vh-ease-out) both;
+}
+
+/* Focus ring with subtle pulse — opt-in for primary CTAs */
+.vh-focus-pulse:focus-visible {
+  animation: vh-focus-pulse 1.6s var(--vh-ease-out) infinite;
+}
+
+/* Drawer slide — used on the dashboard sidebar */
+.drawer-slide {
+  transition: transform 320ms var(--vh-ease-glide);
+}
+
+/* Reduced motion: kill animations, preserve final state.
+ * Reduced version must still communicate functional signals
+ * (focus, progress, loading, confirmation) — see /references/motion.md. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .live-dot {
+    animation: none;
+    opacity: 1;
+  }
+  .loading-bar-fill {
+    animation: none;
+    transform: translateX(0);
+  }
+  .vh-skeleton {
+    animation: none;
+    background-image: none;
+  }
+  .vh-spin {
+    animation-duration: 2.4s !important;
+    opacity: 0.7;
+  }
+  .vh-shake,
+  .vh-focus-pulse {
+    animation: none;
+  }
+  .vh-press:active,
+  .card-hover:active {
+    transform: none;
+  }
+}
+
+/* =========================================================================
+   UTILITY PRIMITIVES
+   -----------------------------------------------------------------------
+   - .vh-mono: monospace numerics
+   - .vh-pill: status pill base
+   - .vh-divider: hairline divider with brand tint
+   - .vh-grid-line: subtle grid backdrop (used on hero panels)
+   ========================================================================= */
+
+.vh-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.vh-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1;
+  border: 1px solid currentColor;
+  border-color: color-mix(in oklch, currentColor, transparent 80%);
+}
+
+.vh-divider {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklch, var(--border), transparent 30%),
+    transparent
+  );
+}
+
+.vh-grid-bg {
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--border), transparent 70%) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--border), transparent 70%) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Brand signal: a 1px line that gradients brand to transparent */
+.vh-brand-line {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    var(--primary),
+    color-mix(in oklch, var(--primary), transparent 100%)
+  );
+}
+
+/* Brand wash: large soft brand-tinted area on a positioned element.
+ * Apply to a div with `absolute inset-0` and one of the modifier classes
+ * (`.vh-wash-tl`, `.vh-wash-tr`, `.vh-wash-bl`, `.vh-wash-br`) to
+ * place the glow in a specific corner.
+ */
+.vh-wash-tl { background: radial-gradient(ellipse at top left, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%); }
+.vh-wash-tr { background: radial-gradient(ellipse at top right, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%); }
+.vh-wash-bl { background: radial-gradient(ellipse at bottom left, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%); }
+.vh-wash-br { background: radial-gradient(ellipse at bottom right, color-mix(in oklch, var(--primary), transparent 88%), transparent 60%); }
+
+/* =========================================================================
+   SAFE AREA + DYNAMIC VIEWPORT HELPERS
+   -----------------------------------------------------------------------
+   Use these on fixed bars and full-bleed surfaces so the layout respects
+   iOS notches, Android camera cutouts, and dynamic browser chrome.
+
+   IMPORTANT: these classes SET the padding property absolutely. Place them
+   only on elements whose padding is solely the safe-area inset (e.g. a
+   dedicated spacer div). Do NOT combine with Tailwind padding utilities on
+   the same element; the safe-area value will win and wipe the layout padding.
+
+   Use the -add variants when you need safe-area on top of existing padding.
+   ========================================================================= */
+
+.vh-safe-top    { padding-top:    env(safe-area-inset-top); }
+.vh-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.vh-safe-left   { padding-left:   env(safe-area-inset-left); }
+.vh-safe-right  { padding-right:  env(safe-area-inset-right); }
+
+/* Additive variants: safe-area inset added on top of existing layout padding.
+   Use when the same element also carries Tailwind padding utilities. */
+.vh-safe-top-add    { padding-top:    calc(var(--_pt, 0px) + env(safe-area-inset-top)); }
+.vh-safe-bottom-add { padding-bottom: calc(var(--_pb, 0px) + env(safe-area-inset-bottom)); }
+.vh-safe-left-add   { padding-left:   calc(var(--_pl, 0px) + env(safe-area-inset-left)); }
+.vh-safe-right-add  { padding-right:  calc(var(--_pr, 0px) + env(safe-area-inset-right)); }
+
+.vh-h-screen-dynamic { height: 100vh; height: 100dvh; }
+.vh-min-h-screen-dynamic { min-height: 100vh; min-height: 100dvh; }
+
+/* Container queries — let a component respond to its own width,
+ * not the viewport. Pair with @container on parents. */
+@container vh-card (max-width: 320px) {
+  .vh-card-narrow [data-card-meta] { display: none; }
+}
+@container vh-card (max-width: 240px) {
+  .vh-card-narrow [data-card-code] { display: none; }
+}
+
+/* AnimatedGrid cell pulse — keyframes here to avoid inline <style> CSP violations */
+@keyframes vh-grid-pulse {
+  0%, 100% { opacity: 0; }
+  35%, 65%  { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vh-gc { animation: none !important; opacity: 0 !important; }
+}
+
+/* Force light-mode tokens on any element with data-theme="light".
+   Used on the login identity panel so it reads light regardless of
+   the user's dark/light OS preference. */
+[data-theme="light"] {
+  --background:    oklch(0.985 0.005 75);
+  --foreground:    oklch(0.18 0.012 60);
+  --card:          oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.012 60);
+  --primary:       oklch(0.62 0.165 50);
+  --primary-foreground: oklch(0.99 0.005 75);
+  --muted:         oklch(0.955 0.008 70);
+  --muted-foreground: oklch(0.48 0.015 60);
+  --border:        oklch(0.9 0.008 70);
+  --input:         oklch(0.92 0.008 70);
+  --ring:          oklch(0.62 0.165 50);
+  --success:       oklch(0.55 0.14 150);
+  --warning:       oklch(0.7 0.15 75);
+  --info:          oklch(0.55 0.13 230);
+  --danger:        oklch(0.55 0.21 27);
+  color-scheme: light;
+}
+
+/* Force warm-dark tokens on data-theme="dark".
+   Used on the login form panel — stays dark regardless of OS preference. */
+[data-theme="dark"] {
+  --background:    oklch(0.26 0.012 60);
+  --foreground:    oklch(0.95 0.006 70);
+  --card:          oklch(0.30 0.012 60);
+  --card-foreground: oklch(0.95 0.006 70);
+  --primary:       oklch(0.74 0.175 55);
+  --primary-foreground: oklch(0.15 0.012 60);
+  --muted:         oklch(0.32 0.010 60);
+  --muted-foreground: oklch(0.68 0.012 70);
+  --border:        oklch(0.36 0.012 60);
+  --input:         oklch(0.32 0.012 60);
+  --ring:          oklch(0.74 0.175 55);
+  --sidebar:       oklch(0.26 0.012 60);
+  --sidebar-foreground: oklch(0.95 0.006 70);
+  --sidebar-primary: oklch(0.74 0.175 55);
+  --sidebar-primary-foreground: oklch(0.15 0.012 60);
+  --sidebar-accent: oklch(0.31 0.014 60);
+  --sidebar-accent-foreground: oklch(0.97 0.005 75);
+  --sidebar-border: oklch(0.42 0.014 60);
+  --sidebar-ring:  oklch(0.74 0.175 55);
+  --success:       oklch(0.7 0.14 150);
+  --warning:       oklch(0.78 0.15 75);
+  --info:          oklch(0.7 0.13 230);
+  --danger:        oklch(0.7 0.2 27);
+  color-scheme: dark;
+}
+
+/* Dark login panel — placeholder text contrast */
+[data-theme="dark"] input::placeholder {
+  color: oklch(0.58 0.010 65);
+  opacity: 1;
+}
+
+/* Dark login panel — force visible input fields regardless of Tailwind dark: variants */
+[data-theme="dark"] input[data-slot="input"] {
+  background-color: #f5f0e8 !important;
+  border-color: #d4c9b8 !important;
+  color: #1a1714 !important;
+}
+[data-theme="dark"] input[data-slot="input"]::placeholder {
+  color: #8c8070 !important;
+  opacity: 1;
+}
+[data-theme="dark"] input[data-slot="input"]:focus-visible {
+  border-color: #c2820c !important;
+  box-shadow: 0 0 0 3px rgba(194, 130, 12, 0.25) !important;
+  outline: none !important;
+}
+
+/* Icons inside inputs on dark login panel — must be dark to show on light input bg */
+[data-theme="dark"] .relative > svg.lucide {
+  color: #8c8070 !important;
 }
