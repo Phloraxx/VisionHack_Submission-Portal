@@ -204,19 +204,27 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-          {/* Thin loading bar for client-side navigations */}
+          {/* Loading bar for client-side navigations */}
           <div
-            className={`fixed inset-x-0 top-0 z-50 h-0.5 bg-primary transition-opacity duration-300 ${
+            className={`fixed inset-x-0 top-0 z-50 h-1 bg-primary/10 transition-opacity duration-300 ${
               isNavigating ? "opacity-100" : "opacity-0"
             }`}
           >
-            {isNavigating && (
-              <div className="h-full w-full animate-[loading-bar_1.5s_ease-in-out_infinite] bg-primary-foreground/30" />
-            )}
+            <div
+              className={`h-full w-full bg-primary transition-all duration-500 ease-in-out ${
+                isNavigating ? "w-2/3" : "w-0"
+              }`}
+            />
           </div>
-          <PageTransition>
-          <Outlet />
-          </PageTransition>
+          <div
+            className={`transition-opacity duration-200 ${
+              isNavigating ? "opacity-60" : "opacity-100"
+            }`}
+          >
+            <PageTransition key={location.pathname}>
+              <Outlet />
+            </PageTransition>
+          </div>
         </main>
       </div>
     </div>

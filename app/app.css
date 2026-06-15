@@ -130,13 +130,6 @@ button:not(:disabled),
   cursor: pointer;
 }
 
-/* Navigation loading bar — animated shimmer */
-@keyframes loading-bar {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
-}
-
 /* Staggered card reveal — apply to grid containers, children get sequential delay */
 .stagger-cards > * {
   animation: fade-slide-in 0.4s ease-out both;
