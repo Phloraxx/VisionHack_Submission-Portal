@@ -24,7 +24,7 @@
 
 ## PocketBase Instance
 
-- **URL:** `http://vision-hack-pocketbase-24c926-144-24-114-90.sslip.io/`
+- **URL:** `http://vision-hack-pocketbase-gz1pzq-3a236c-144-24-114-90.sslip.io/`
 - **Admin credentials:** stored in `.env` (`POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD`)
 - A `scripts/setup-pb.ts` script creates all 5 collections (institutions, teams, members, config, questionnaire_responses) from scratch, configures permissions, and seeds config rows. Run once at project setup. The script is idempotent — safe to run multiple times.
 
