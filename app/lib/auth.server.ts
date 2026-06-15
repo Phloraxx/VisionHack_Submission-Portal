@@ -4,9 +4,10 @@ import {
   createPocketBaseClient,
 } from "./pocketbase.server";
 import { getEnv } from "./env.server";
+import { cookieParse } from "pocketbase";
 import type { Role, UserRecord } from "./types";
 
-const COOKIE_NAME = "__Host-pb_jwt";
+const COOKIE_NAME = "pb_jwt";
 const COOKIE_MAX_AGE = 432000; // 5 days in seconds
 const COOKIE_PATH = "/";
 
@@ -22,28 +23,12 @@ export const ROLE_DASHBOARD_MAP: Record<Role, string> = {
 // Cookie helpers
 // ---------------------------------------------------------------------------
 
-function parseCookies(request: Request): Record<string, string> {
-  const cookieHeader = request.headers.get("Cookie");
-  if (!cookieHeader) return {};
-
-  const cookies: Record<string, string> = {};
-  for (const cookie of cookieHeader.split(";")) {
-    const eqIdx = cookie.indexOf("=");
-    if (eqIdx > 0) {
-      const name = cookie.slice(0, eqIdx).trim();
-      const value = cookie.slice(eqIdx + 1).trim();
-      if (name) cookies[name] = value;
-    }
-  }
-  return cookies;
-}
-
 /**
  * Extract the `pb_jwt` token from the request's Cookie header.
  * Returns `null` when no token is present.
  */
 export function getAuthFromCookie(request: Request): string | null {
-  const cookies = parseCookies(request);
+  const cookies = cookieParse(request.headers.get("Cookie") || "");
   return cookies[COOKIE_NAME] ?? null;
 }
 

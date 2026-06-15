@@ -10,9 +10,9 @@ import { resetEnv } from "../env.server";
 // getAuthFromCookie
 // ---------------------------------------------------------------------------
 describe("getAuthFromCookie", () => {
-  it("extracts __Host-pb_jwt from a simple cookie header", () => {
+  it("extracts pb_jwt from a simple cookie header", () => {
     const request = new Request("http://localhost", {
-      headers: { Cookie: "__Host-pb_jwt=abc123" },
+      headers: { Cookie: "pb_jwt=abc123" },
     });
     expect(getAuthFromCookie(request)).toBe("abc123");
   });
@@ -22,14 +22,14 @@ describe("getAuthFromCookie", () => {
     expect(getAuthFromCookie(request)).toBeNull();
   });
 
-  it("extracts __Host-pb_jwt from a multi-cookie header", () => {
+  it("extracts pb_jwt from a multi-cookie header", () => {
     const request = new Request("http://localhost", {
-      headers: { Cookie: "other=value; __Host-pb_jwt=token456" },
+      headers: { Cookie: "other=value; pb_jwt=token456" },
     });
     expect(getAuthFromCookie(request)).toBe("token456");
   });
 
-  it("returns null when __Host-pb_jwt cookie is not present", () => {
+  it("returns null when pb_jwt cookie is not present", () => {
     const request = new Request("http://localhost", {
       headers: { Cookie: "other=value" },
     });
@@ -50,7 +50,7 @@ describe("getAuthFromCookie", () => {
 describe("setAuthCookie", () => {
   it("returns a Set-Cookie header string with the token", () => {
     const result = setAuthCookie("abc123");
-    expect(result).toContain("__Host-pb_jwt=abc123");
+    expect(result).toContain("pb_jwt=abc123");
     expect(result).toContain("HttpOnly");
     expect(result).toContain("SameSite=Lax");
     expect(result).toContain("Path=/");
@@ -83,7 +83,7 @@ describe("setAuthCookie", () => {
 describe("clearAuthCookie", () => {
   it("returns a Set-Cookie header that clears the pb_jwt cookie", () => {
     const result = clearAuthCookie();
-    expect(result).toContain("__Host-pb_jwt=");
+    expect(result).toContain("pb_jwt=");
     expect(result).toContain("Max-Age=0");
     expect(result).toContain("HttpOnly");
     expect(result).toContain("SameSite=Lax");
@@ -93,7 +93,7 @@ describe("clearAuthCookie", () => {
   it("has an empty token value and Max-Age of 0", () => {
     const result = clearAuthCookie();
     const parts = result.split("; ");
-    expect(parts[0]).toBe("__Host-pb_jwt=");
+    expect(parts[0]).toBe("pb_jwt=");
     expect(parts).toContain("Max-Age=0");
   });
 
