@@ -10,4 +10,10 @@ build/
 .playwright-mcp/
 .reasonix/
 *.tsbuildinfo
-C:UsersdrvijDesktopMuLearn
+
+# Logs
+*.log
+
+# One-off / ad-hoc scripts (only setup-pb.ts and tests/ are tracked)
+scripts/*.mjs
+scripts/*.ps1
