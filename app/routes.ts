@@ -35,5 +35,6 @@ export default [
   // Resource routes (API)
   route("api/auth/logout", "routes/api/auth/logout.ts"),
   route("api/institutions", "routes/api/institutions.ts"),
+  route("api/export/csv", "routes/api/export/csv.ts"),
   route("api/files/:collection/:recordId/:filename", "routes/api/files.ts"),
 ] satisfies RouteConfig;
