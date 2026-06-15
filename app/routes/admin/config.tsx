@@ -1,17 +1,17 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { validateOrigin } from "~/lib/csrf.server";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Switch } from "~/components/ui/switch";
+import { toast } from "sonner";
 import {
   UserPlus,
   FileText,
   ShieldCheck,
   Upload,
-  Info,
+  Loader2,
 } from "lucide-react";
 
 interface ConfigRecord {
@@ -23,33 +23,37 @@ interface ConfigRecord {
 const FEATURE_FLAGS = [
   {
     key: "registration_open",
-    label: "Team Registration",
-    description: "Allow Campus Leads to invite new Team Leads.",
+    label: "Registration",
+    description: "Campus leads can invite team leads",
     Icon: UserPlus,
+    step: 1,
   },
   {
     key: "questionnaire_open",
     label: "Questionnaire",
-    description: "Allow Teams to submit or edit their questionnaire.",
+    description: "Teams can submit their questionnaire",
     Icon: FileText,
+    step: 2,
   },
   {
     key: "nomination_open",
-    label: "Team Nomination (Approval)",
-    description: "Allow Campus Leads to Approve (Shortlist) teams.",
+    label: "Nomination",
+    description: "Campus leads can shortlist teams",
     Icon: ShieldCheck,
+    step: 3,
   },
   {
     key: "submission_open",
-    label: "Idea Submission",
-    description: "Allow Team Leads to submit their ideas.",
+    label: "Submission",
+    description: "Teams can submit their ideas",
     Icon: Upload,
+    step: 4,
   },
 ];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const configs = await pb
     .collection("config")
@@ -66,7 +70,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
   await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const formData = await request.formData();
   const key = formData.get("key") as string;
@@ -101,8 +105,17 @@ export default function AdminConfig() {
     configMap: Record<string, boolean>;
   };
 
-  // Refs for programmatic form submission from Switch onChange
   const formRefs = useRef<Record<string, HTMLFormElement | null>>({});
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  const handleToggle = (key: string, label: string, checked: boolean) => {
+    setToggling(key);
+    toast.success(`${label} ${checked ? "enabled" : "disabled"}`, {
+      duration: 1500,
+    });
+    formRefs.current[key]?.requestSubmit();
+    setTimeout(() => setToggling(null), 600);
+  };
 
   return (
     <div>
@@ -111,63 +124,55 @@ export default function AdminConfig() {
           Event Configuration
         </h1>
         <p className="mt-1 text-muted-foreground">
-          Toggle event phases: registration, questionnaire, nomination, and submissions. Changes are saved immediately.
+          Toggle phases on or off. Changes are saved immediately.
         </p>
       </div>
 
-      <div className="grid gap-6 max-w-3xl">
+      <div className="max-w-lg space-y-1">
         {FEATURE_FLAGS.map((flag) => {
           const Icon = flag.Icon;
           const isEnabled = configMap[flag.key] === true;
+          const isLoading = toggling === flag.key;
 
           return (
-            <Card
+            <div
               key={flag.key}
-              className={`border-l-4 transition-all ${
-                isEnabled ? "border-l-green-500" : "border-l-gray-300"
-              }`}
+              className="flex items-center justify-between rounded-lg px-4 py-3 transition-colors hover:bg-muted/50"
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="space-y-1">
-                  <CardTitle className="text-base flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
                     <Icon className="h-4 w-4" />
-                    {flag.label}
-                  </CardTitle>
-                  <CardDescription>{flag.description}</CardDescription>
+                  )}
                 </div>
-
-                <Form
-                  method="post"
-                  ref={(el) => { formRefs.current[flag.key] = el; }}
-                >
-                  <input type="hidden" name="key" value={flag.key} />
-                  <input
-                    type="hidden"
-                    name="value"
-                    value={String(!isEnabled)}
-                  />
-                  <Switch
-                    checked={isEnabled}
-                    onCheckedChange={() => {
-                      // Submit the form when the switch is toggled
-                      formRefs.current[flag.key]?.requestSubmit();
-                    }}
-                    aria-label={`Toggle ${flag.label}`}
-                  />
-                </Form>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xs text-muted-foreground mt-2 flex items-start gap-2 bg-muted/50 p-3 rounded-md">
-                  <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  <p>
-                    <strong>Enabled:</strong> Feature is active and accessible to
-                    users.
-                    <br />
-                    <strong>Disabled:</strong> Feature is locked for all users.
+                <div>
+                  <p className="text-sm font-medium">{flag.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {flag.description}
                   </p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+
+              <Form
+                method="post"
+                ref={(el) => {
+                  formRefs.current[flag.key] = el;
+                }}
+              >
+                <input type="hidden" name="key" value={flag.key} />
+                <input type="hidden" name="value" value={String(!isEnabled)} />
+                <Switch
+                  checked={isEnabled}
+                  onCheckedChange={(checked) =>
+                    handleToggle(flag.key, flag.label, checked)
+                  }
+                  disabled={isLoading}
+                  aria-label={`Toggle ${flag.label}`}
+                />
+              </Form>
+            </div>
           );
         })}
       </div>

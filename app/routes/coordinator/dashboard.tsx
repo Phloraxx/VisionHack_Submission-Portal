@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -61,7 +62,7 @@ interface InstitutionRecord {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["coordinator"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const teams = await pb.collection("teams").getFullList<TeamWithExpand>({
     expand: "institutionId,leaderUserId",
@@ -250,7 +251,7 @@ export default function CoordinatorDashboard() {
       </Card>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-6">
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-6 stagger-cards">
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-xs text-muted-foreground">Total Teams</p>
@@ -390,7 +391,7 @@ export default function CoordinatorDashboard() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 stagger-cards">
             {filteredTeams.map((team) => {
               const colors = STATUS_COLORS[team.status];
               const inst = team.expand?.institutionId;
@@ -400,7 +401,7 @@ export default function CoordinatorDashboard() {
                   to={`/coordinator/teams/${team.id}`}
                   className="block"
                 >
-                  <Card className="h-full transition-shadow hover:shadow-md cursor-pointer">
+                  <Card className="h-full card-hover cursor-pointer">
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between mb-2">
                         <Badge
@@ -504,6 +505,67 @@ export default function CoordinatorDashboard() {
           </div>
         )
       )}
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div>
+      <div className="mb-8">
+        <Skeleton className="h-7 w-52" />
+        <Skeleton className="mt-1 h-4 w-72" />
+      </div>
+
+      {/* District filter */}
+      <Card className="mb-6">
+        <CardContent className="pt-4">
+          <Skeleton className="h-10 w-48 rounded-lg" />
+        </CardContent>
+      </Card>
+
+      {/* Stat cards */}
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="pt-4 text-center">
+              <Skeleton className="mx-auto h-3 w-16" />
+              <Skeleton className="mx-auto mt-1 h-6 w-10" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* View mode + filters */}
+      <Card className="mb-6">
+        <CardContent className="pt-4 space-y-4">
+          <Skeleton className="h-8 w-40" />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Team cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between mb-2">
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+              <Skeleton className="h-5 w-full" />
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-3 w-24" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

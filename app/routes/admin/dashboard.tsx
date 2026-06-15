@@ -5,6 +5,7 @@ import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { STATUS_LABELS, STATUS_COLORS } from "~/lib/team-status";
 import type { TeamStatus } from "~/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
 import {
   Users,
   Building2,
@@ -17,7 +18,7 @@ import {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const teams = await pb.collection("teams").getFullList<{
     id: string;
@@ -96,7 +97,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8 stagger-cards">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Teams</CardTitle>
@@ -204,12 +205,12 @@ export default function AdminDashboard() {
       {/* Quick Action Cards */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-cards">
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (
               <Link key={action.href} to={action.href}>
-                <Card className="h-full transition-shadow hover:shadow-md cursor-pointer">
+                <Card className="h-full card-hover cursor-pointer">
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-medium">
@@ -232,6 +233,67 @@ export default function AdminDashboard() {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div>
+      <div className="mb-8">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="mt-1 h-4 w-72" />
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-4 rounded" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-16" />
+              <Skeleton className="mt-1 h-3 w-32" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Pipeline bar */}
+      <Card className="mb-8">
+        <CardHeader>
+          <Skeleton className="h-5 w-28" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Skeleton className="h-8 w-full rounded-lg" />
+          <div className="flex flex-wrap gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-5 w-20" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick actions */}
+      <Skeleton className="mb-3 h-6 w-28" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} className="h-full">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-5 w-5 rounded" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="mt-3 h-4 w-12" />
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );

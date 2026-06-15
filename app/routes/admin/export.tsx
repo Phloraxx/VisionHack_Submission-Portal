@@ -41,7 +41,7 @@ interface TeamExport extends TeamRecord {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const teams = await pb
     .collection("teams")
@@ -90,7 +90,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
   await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const formData = await request.formData();
   const filterStatus = formData.get("filterStatus") as string;

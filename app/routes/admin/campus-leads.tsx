@@ -9,6 +9,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { validateOrigin } from "~/lib/csrf.server";
+import { generateSecurePassword } from "~/lib/password";
 import type { InstitutionRecord } from "~/lib/types";
 import {
   Card,
@@ -27,7 +28,26 @@ import {
   XCircle,
   Building2,
   MapPin,
+  Upload,
 } from "lucide-react";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Parse a single CSV line, handling quoted fields with commas */
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') { inQuotes = !inQuotes; continue; }
+    if (ch === "," && !inQuotes) { result.push(current); current = ""; continue; }
+    current += ch;
+  }
+  result.push(current);
+  return result;
+}
 
 // ---------------------------------------------------------------------------
 // Loader
@@ -35,7 +55,7 @@ import {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const institutions = await pb.collection("institutions").getFullList<{
     id: string;
@@ -65,7 +85,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
   const { user } = await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -146,6 +166,69 @@ export async function action({ request }: ActionFunctionArgs) {
         error: err.message || "Failed to create campus lead",
       };
     }
+  }
+
+  if (intent === "bulk-create") {
+    const csvFile = formData.get("csvFile") as File | null;
+    if (!csvFile || csvFile.size === 0) {
+      return { success: false, error: "Please upload a CSV file" };
+    }
+
+    const text = await csvFile.text();
+    const lines = text.trim().split("\n");
+    if (lines.length < 2) {
+      return { success: false, error: "CSV must have a header row and at least one data row" };
+    }
+
+    const results: Array<{ row: number; name: string; status: string; error?: string }> = [];
+    let created = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      // Parse CSV: Name,District,Code,LeadName,LeadEmail,Password
+      const cols = parseCsvLine(lines[i]);
+      if (cols.length < 5) continue;
+
+      const [instName, district, code, leadName, leadEmail, leadPassword] = cols;
+      const password = (leadPassword || "").trim() || generateSecurePassword();
+      const rowNum = i + 1;
+
+      try {
+        // Check duplicate code
+        const exists = await pb.collection("institutions")
+          .getFirstListItem(pb.filter('code = {:code}', { code: code.trim() }))
+          .catch(() => null);
+        if (exists) {
+          results.push({ row: rowNum, name: instName.trim(), status: "skipped", error: "Code already exists" });
+          continue;
+        }
+
+        // Create user
+        const campusLead = await pb.collection("users").create({
+          email: leadEmail.trim().toLowerCase(),
+          password,
+          passwordConfirm: password,
+          name: leadName.trim(),
+          role: "institution",
+        });
+
+        // Create institution
+        await pb.collection("institutions").create({
+          name: instName.trim(),
+          district: district.trim(),
+          code: code.trim(),
+          campusLeadId: campusLead.id,
+          maxTeams: 5,
+          status: "active",
+        });
+
+        created++;
+        results.push({ row: rowNum, name: instName.trim(), status: "created" });
+      } catch (err: any) {
+        results.push({ row: rowNum, name: instName?.trim() || "unknown", status: "failed", error: err.message });
+      }
+    }
+
+    return { success: true, type: "bulk", created, total: results.length, results };
   }
 
   return { success: false, error: "Invalid intent" };
@@ -272,6 +355,58 @@ export default function AdminCampusLeads() {
 
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? "Creating..." : "Create Campus Lead"}
+              </Button>
+            </Form>
+          </CardContent>
+        </Card>
+
+        {/* ========== Bulk CSV Upload ========== */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Upload className="h-4 w-4" />
+              Bulk Import via CSV
+            </CardTitle>
+            <CardDescription>
+              Upload a CSV file with columns: Name, District, Code, Lead Name, Lead Email, Password (optional — auto-generated if blank)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form method="post" encType="multipart/form-data" className="space-y-4">
+              <input type="hidden" name="intent" value="bulk-create" />
+              <div className="rounded-lg border-2 border-dashed border-border p-6 text-center transition-colors hover:bg-muted/50">
+                <Upload className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+                <p className="text-sm font-medium">Click to upload CSV</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  .csv format — first row is header
+                </p>
+                <Input
+                  type="file"
+                  name="csvFile"
+                  accept=".csv"
+                  className="mt-3"
+                  required
+                />
+              </div>
+
+              {actionData?.success && actionData.type === "bulk" && (
+                <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                  <CheckCircle className="mr-1.5 inline h-4 w-4" />
+                  Created {actionData.created} of {actionData.total} entries.
+                  {actionData.results?.filter((r: any) => r.status === "skipped").length > 0 && (
+                    <span> {actionData.results.filter((r: any) => r.status === "skipped").length} skipped (duplicate codes).</span>
+                  )}
+                </div>
+              )}
+              {actionData?.error && actionData.type === "bulk" && (
+                <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                  <XCircle className="mr-1.5 inline h-4 w-4" />
+                  {actionData.error}
+                </div>
+              )}
+
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? "Importing..." : "Upload & Import"}
               </Button>
             </Form>
           </CardContent>

@@ -7,6 +7,7 @@ import {
   useLocation,
   isRouteErrorResponse,
   useRouteError,
+  useNavigation,
   data,
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
@@ -14,6 +15,8 @@ import { requireAuth, getAuthFromCookie, setAuthCookie } from "~/lib/auth.server
 import type { UserRecord, Role } from "~/lib/types";
 import { Button } from "~/components/ui/button";
 import { LoadingSpinner } from "~/components/shared/loading-spinner";
+import { Skeleton } from "~/components/ui/skeleton";
+import { PageTransition } from "~/components/shared/page-transition";
 import {
   LayoutDashboard,
   University,
@@ -71,6 +74,8 @@ export default function DashboardLayout() {
   const { user } = useLoaderData() as { user: UserRecord };
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigation = useNavigation();
+  const isNavigating = navigation.state === "loading";
   const items = navItems[user.role] ?? [];
 
   return (
@@ -199,7 +204,19 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main className="flex-1 p-4 md:p-6 lg:p-8">
+          {/* Thin loading bar for client-side navigations */}
+          <div
+            className={`fixed inset-x-0 top-0 z-50 h-0.5 bg-primary transition-opacity duration-300 ${
+              isNavigating ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            {isNavigating && (
+              <div className="h-full w-full animate-[loading-bar_1.5s_ease-in-out_infinite] bg-primary-foreground/30" />
+            )}
+          </div>
+          <PageTransition>
           <Outlet />
+          </PageTransition>
         </main>
       </div>
     </div>
@@ -212,8 +229,43 @@ export default function DashboardLayout() {
 
 export function HydrateFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/20">
-      <LoadingSpinner size="lg" label="Loading your dashboard…" />
+    <div className="flex min-h-screen bg-muted/20">
+      {/* Skeleton sidebar — mirrors the real sidebar structure */}
+      <aside className="flex w-64 flex-col border-r bg-sidebar">
+        {/* Logo area */}
+        <div className="flex h-14 items-center gap-2 border-b px-4">
+          <Skeleton className="h-7 w-7 rounded-lg" />
+          <Skeleton className="h-4 w-20" />
+        </div>
+        {/* Nav items */}
+        <nav className="flex-1 space-y-1 p-3">
+          <Skeleton className="mb-2 h-3 w-12" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full rounded-lg" />
+          ))}
+        </nav>
+        {/* User pill */}
+        <div className="border-t p-3">
+          <div className="flex items-center gap-3 rounded-lg px-3 py-2">
+            <Skeleton className="h-8 w-8 rounded-full" />
+            <div className="flex-1 space-y-1">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-3 w-32" />
+            </div>
+          </div>
+          <Skeleton className="mt-2 h-9 w-full rounded-lg" />
+        </div>
+      </aside>
+
+      {/* Content area — child routes provide their own HydrateFallback */}
+      <div className="flex flex-1 flex-col">
+        <header className="flex h-14 items-center border-b bg-background px-4">
+          <Skeleton className="h-4 w-24" />
+        </header>
+        <main className="flex-1 p-4 md:p-6 lg:p-8">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

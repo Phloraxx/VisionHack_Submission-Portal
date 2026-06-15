@@ -25,6 +25,7 @@ import {
 } from "~/components/ui/select";
 import { Button } from "~/components/ui/button";
 import { Search, ExternalLink, Users, CalendarIcon } from "lucide-react";
+import { Skeleton } from "~/components/ui/skeleton";
 
 interface TeamWithExpand {
   id: string;
@@ -46,7 +47,7 @@ interface MemberCountRecord {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
 
   const teams = await pb.collection("teams").getFullList<TeamWithExpand>({
     expand: "institutionId,leaderUserId",
@@ -112,7 +113,7 @@ export default function AdminTeams() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6 stagger-cards">
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-sm text-muted-foreground">Total Teams</p>
@@ -188,7 +189,7 @@ export default function AdminTeams() {
       </Card>
 
       {/* Teams List */}
-      <div className="space-y-3">
+      <div className="space-y-3 stagger-cards">
         {filteredTeams.map((team) => {
           const colors = STATUS_COLORS[team.status];
           return (
@@ -197,7 +198,7 @@ export default function AdminTeams() {
               to={`/admin/teams/${team.id}`}
               className="block"
             >
-              <Card className="transition-shadow hover:shadow-md cursor-pointer">
+              <Card className="card-hover cursor-pointer">
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">
@@ -256,6 +257,57 @@ export default function AdminTeams() {
             </CardContent>
           </Card>
         )}
+      </div>
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div>
+      <div className="mb-8">
+        <Skeleton className="h-7 w-36" />
+        <Skeleton className="mt-1 h-4 w-64" />
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="pt-4 text-center">
+              <Skeleton className="mx-auto h-4 w-20" />
+              <Skeleton className="mx-auto mt-1 h-8 w-12" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Search & filters */}
+      <Card className="mb-6">
+        <CardContent className="pt-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Team cards */}
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Card key={i} className="transition-shadow">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-3 w-64" />
+                </div>
+                <Skeleton className="ml-4 h-6 w-20 rounded-full" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );

@@ -3,9 +3,12 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { validateOrigin } from "~/lib/csrf.server";
+import { sendEmail } from "~/lib/email.server";
+import { escapeHtml } from "~/lib/utils";
 import {
   canTransitionTo,
   getValidTransitions,
+  STATUS_LABELS,
 } from "~/lib/team-status";
 import type { TeamStatus, TeamRecord, MemberRecord } from "~/lib/types";
 import {
@@ -50,7 +53,7 @@ interface LoaderData {
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const role = detectRole(request.url);
   const { user } = await requireRole(request, [role]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
   const teamId = params.teamId as string;
 
   const team = await pb.collection("teams").getOne<
@@ -99,7 +102,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   validateOrigin(request);
   const role = detectRole(request.url);
   const { user } = await requireRole(request, [role]);
-  const pb = await createSuperuserClient();
+  const pb = createSuperuserClient();
   const teamId = params.teamId as string;
 
   const formData = await request.formData();
@@ -121,7 +124,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
       status_changed_at: new Date().toISOString(),
     });
 
+    // Send notification email to team lead about status change
+    try {
+      const updatedTeam = await pb.collection("teams").getOne(teamId, { expand: "leaderUserId" });
+      const leadUser = (updatedTeam as any).expand?.leaderUserId;
+      if (leadUser?.email) {
+        await sendStatusChangeEmail(
+          leadUser.email,
+          leadUser.name || "Team Lead",
+          (updatedTeam as any).name,
+          toStatus,
+        );
+      }
+    } catch { /* email failure is non-blocking */ }
+
     return Response.json({ success: true, newStatus: toStatus });
+  }
+
+  if (intent === "save-notes") {
+    const notes = formData.get("notes") as string;
+    await pb.collection("teams").update(teamId, {
+      notes: notes || "",
+      reviewed_by: user.name || user.email,
+    });
+    return Response.json({ success: true });
   }
 
   return Response.json({ success: false, error: "Invalid intent" });
@@ -183,4 +209,29 @@ export default function TeamDetailPage() {
       }
     />
   );
+}
+
+async function sendStatusChangeEmail(
+  to: string,
+  leadName: string,
+  teamName: string,
+  newStatus: string,
+) {
+  const statusLabel = STATUS_LABELS[newStatus as keyof typeof STATUS_LABELS] || newStatus;
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+      <h1 style="font-size: 18px; margin: 0 0 16px;">Team Status Update — VisionHack 2026</h1>
+      <p>Hello <strong>${escapeHtml(leadName)}</strong>,</p>
+      <p>The status of your team <strong>${escapeHtml(teamName)}</strong> has been updated to <strong>${escapeHtml(statusLabel)}</strong>.</p>
+      <p style="margin: 16px 0;">
+        <a href="https://visionhack.mulearn.org/lead/dashboard"
+           style="display: inline-block; background: #18181b; color: #fff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-size: 14px;">
+          Check Your Dashboard
+        </a>
+      </p>
+      <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 24px 0;" />
+      <p style="margin: 0; font-size: 12px; color: #71717a;">VisionHack Team</p>
+    </div>
+  `.trim();
+  await sendEmail({ to, subject: `Team "${teamName}" status: ${statusLabel}`, html });
 }
