@@ -2,17 +2,23 @@ import { canTransition } from "./types";
 import type { TeamStatus, Role } from "./types";
 
 /**
- * Team status labels, colors, and transition helpers.
+ * Team status labels, semantic tokens, and transition helpers.
  *
- * Re-exports the state machine from types.ts and adds presentation
- * helpers (Tailwind color classes, human-readable labels) consumed
- * by UI components across all dashboards.
+ * The new system uses semantic role colors (warning / info / success / danger)
+ * rather than seven unique hues. This keeps the brand accent (μLearn amber)
+ * free to carry identity rather than be buried inside status semantics.
+ *
+ *  - invited     → neutral   (waiting on action)
+ *  - registered  → info      (acknowledged, in motion)
+ *  - shortlisted → brand     (selected for next round — uses the brand hue
+ *                             because it's the only positive system signal)
+ *  - submitted   → info-deep (work is in review)
+ *  - selected    → success   (final outcome: yes)
+ *  - rejected    → danger    (final outcome: no)
+ *  - withdrawn   → neutral   (out of the system)
  */
 export { canTransition as canTransitionTo } from "./types";
 
-/**
- * Return all valid next statuses for a given current status and role.
- */
 export function getValidTransitions(
   currentStatus: TeamStatus,
   role: Role,
@@ -26,66 +32,70 @@ export function getValidTransitions(
     "rejected",
     "withdrawn",
   ];
-
   return allStatuses.filter((next) =>
     canTransition(currentStatus, next, role),
   );
 }
 
-/**
- * Human-readable labels for each team status.
- */
 export const STATUS_LABELS: Record<TeamStatus, string> = {
   invited: "Invited",
   registered: "Registered",
   shortlisted: "Shortlisted",
   submitted: "Submitted",
   selected: "Selected",
-  rejected: "Rejected",
+  rejected: "Not selected",
   withdrawn: "Withdrawn",
 };
 
 /**
- * Tailwind color classes for status badges.
- * Note: `cssVar` removed — use Tailwind border classes instead of inline styles.
+ * Semantic CSS class tokens for each status.
+ *
+ * The "soft" variant is for surfaces (low-contrast wash).
+ * The "solid" variant is for high-contrast indicators (badges, dots).
  */
-export const STATUS_COLORS: Record<
-  TeamStatus,
-  { bg: string; text: string; dot: string }
-> = {
+export interface StatusToken {
+  /** Tailwind utility classes for the soft/pill surface variant. */
+  pill: string;
+  /** Single class for the dot indicator. */
+  dot: string;
+  /** Foreground utility for inline text + icons. */
+  ink: string;
+}
+
+export const STATUS_COLORS: Record<TeamStatus, StatusToken> = {
   invited: {
-    bg: "bg-yellow-100 dark:bg-yellow-900/30",
-    text: "text-yellow-800 dark:text-yellow-300",
-    dot: "bg-yellow-500",
+    pill: "bg-muted text-muted-foreground ring-1 ring-inset ring-border",
+    dot: "bg-muted-foreground",
+    ink: "text-muted-foreground",
   },
   registered: {
-    bg: "bg-blue-100 dark:bg-blue-900/30",
-    text: "text-blue-800 dark:text-blue-300",
-    dot: "bg-blue-500",
+    pill: "bg-info/10 text-info ring-1 ring-inset ring-info/30",
+    dot: "bg-info",
+    ink: "text-info",
   },
   shortlisted: {
-    bg: "bg-green-100 dark:bg-green-900/30",
-    text: "text-green-800 dark:text-green-300",
-    dot: "bg-green-500",
+    pill: "bg-primary/12 text-primary ring-1 ring-inset ring-primary/30",
+    dot: "bg-primary",
+    ink: "text-primary",
   },
   submitted: {
-    bg: "bg-purple-100 dark:bg-purple-900/30",
-    text: "text-purple-800 dark:text-purple-300",
-    dot: "bg-purple-500",
+    pill: "bg-info/15 text-info ring-1 ring-inset ring-info/40",
+    dot: "bg-info",
+    ink: "text-info",
   },
   selected: {
-    bg: "bg-emerald-100 dark:bg-emerald-900/30",
-    text: "text-emerald-800 dark:text-emerald-300",
-    dot: "bg-emerald-500",
+    pill: "bg-success/10 text-success ring-1 ring-inset ring-success/30",
+    dot: "bg-success",
+    ink: "text-success",
   },
   rejected: {
-    bg: "bg-red-100 dark:bg-red-900/30",
-    text: "text-red-800 dark:text-red-300",
-    dot: "bg-red-500",
+    pill: "bg-danger/10 text-danger ring-1 ring-inset ring-danger/30",
+    dot: "bg-danger",
+    ink: "text-danger",
   },
   withdrawn: {
-    bg: "bg-gray-100 dark:bg-gray-800/50",
-    text: "text-gray-700 dark:text-gray-300",
-    dot: "bg-gray-500",
+    pill: "bg-muted text-muted-foreground ring-1 ring-inset ring-border",
+    dot: "bg-muted-foreground",
+    ink: "text-muted-foreground",
   },
 };

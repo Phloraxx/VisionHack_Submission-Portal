@@ -22,23 +22,34 @@ export interface UserRecord {
 export interface TeamRecord {
   id: string;
   name: string;
-  teamName: string;
   institutionId: string;
   leaderUserId: string;
-  teamCode: string;
+  teamCode?: string;
   status: TeamStatus;
-  membersCount: number;
-  institutionName: string;
-  teamLeadName: string;
-  teamLeadEmail: string;
-  mentor_name: string;
-  mentor_contact: string;
+  membersCount?: number;
+  institutionName?: string;
+  teamLeadName?: string;
+  teamLeadEmail?: string;
   idea_title?: string;
   idea_desc?: string;
   idea_tech_stack?: string;
   submission_file?: string;
+  questionnaire_completed?: boolean;
+  status_changed_at?: string;
   created: string;
   updated: string;
+}
+
+/**
+ * Shape returned by loaders — raw `TeamRecord` plus `expand` fields
+ * joined from PocketBase. Use this everywhere a component reads
+ * `team.expand.*`.
+ */
+export interface TeamView extends TeamRecord {
+  expand?: {
+    institutionId?: { id: string; name: string; district?: string; code?: string };
+    leaderUserId?: { id: string; name: string; email: string };
+  };
 }
 
 export interface MemberRecord {
@@ -58,9 +69,6 @@ export interface InstitutionRecord {
   name: string;
   district: string;
   code: string;
-  campusLeadName: string;
-  campusLeadEmail: string;
-  teamsRegistered: number;
   campusLeadId: string;
   maxTeams: number;
   status: string;
@@ -126,9 +134,9 @@ const TRANSITION_RULES: TransitionRule[] = [
  * Check whether a given status transition is allowed for a given role.
  *
  * ```ts
- * canTransition("invited", "registered", "lead")        // true
- * canTransition("registered", "shortlisted", "lead")     // false
- * canTransition("questionnaire_submitted", "shortlisted", "admin") // true
+ * canTransition("invited", "registered", "lead")          // true
+ * canTransition("registered", "shortlisted", "lead")      // false
+ * canTransition("submitted", "selected", "admin")         // true
  * ```
  */
 export function canTransition(
