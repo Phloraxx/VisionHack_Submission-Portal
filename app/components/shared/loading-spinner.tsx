@@ -42,7 +42,7 @@ export function LoadingSpinner({
   const spinner = (
     <div className="flex flex-col items-center gap-3">
       <Loader2
-        className={`animate-spin text-muted-foreground ${sizeClasses[size]}`}
+        className={`vh-spin text-muted-foreground ${sizeClasses[size]}`}
       />
       {label && (
         <p className="text-sm text-muted-foreground">{label}</p>
