@@ -1,16 +1,15 @@
-import { useState } from "react";
 import {
   useLoaderData,
   Form,
   useNavigation,
   useActionData,
 } from "react-router";
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
+import { secureAction, fail, ok } from "~/lib/action.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
-import { validateOrigin } from "~/lib/csrf.server";
-import { generateSecurePassword } from "~/lib/password";
-import type { InstitutionRecord } from "~/lib/types";
+import { createCampusLead } from "~/lib/team.server";
+import { getStr } from "~/lib/form.server";
 import {
   Card,
   CardContent,
@@ -30,22 +29,26 @@ import {
   MapPin,
   Upload,
 } from "lucide-react";
+import { PanelHeader } from "~/components/shared/panel-header";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse a single CSV line, handling quoted fields with commas */
+/** Valid institution code: uppercase letters and digits only. */
+const CODE_PATTERN = /^[A-Z0-9]+$/;
+
+/** Simple CSV line parser — handles basic quoted fields */
 function parseCsvLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
   let inQuotes = false;
   for (const ch of line) {
     if (ch === '"') { inQuotes = !inQuotes; continue; }
-    if (ch === "," && !inQuotes) { result.push(current); current = ""; continue; }
+    if (ch === "," && !inQuotes) { result.push(current.trim()); current = ""; continue; }
     current += ch;
   }
-  result.push(current);
+  result.push(current.trim());
   return result;
 }
 
@@ -82,157 +85,138 @@ export async function loader({ request }: LoaderFunctionArgs) {
 // Action
 // ---------------------------------------------------------------------------
 
-export async function action({ request }: ActionFunctionArgs) {
-  validateOrigin(request);
-  const { user } = await requireRole(request, ["admin"]);
+export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent }) => {
   const pb = createSuperuserClient();
 
-  const formData = await request.formData();
-  const intent = formData.get("intent") as string;
-
   if (intent === "create-single") {
-    const institutionName = formData.get("institutionName") as string;
-    const district = formData.get("district") as string;
-    const code = formData.get("code") as string;
-    const leadName = formData.get("leadName") as string;
-    const leadEmail = formData.get("leadEmail") as string;
-    const leadPassword = formData.get("leadPassword") as string;
+    const institutionName = getStr(formData, "institutionName");
+    const district = getStr(formData, "district");
+    const code = getStr(formData, "code");
+    const leadName = getStr(formData, "leadName");
+    const leadEmail = getStr(formData, "leadEmail", { lower: true });
 
-    if (
-      !institutionName ||
-      !district ||
-      !code ||
-      !leadName ||
-      !leadEmail ||
-      !leadPassword
-    ) {
-      return { success: false, error: "All fields are required" };
+    if (!institutionName || !district || !code || !leadName || !leadEmail) {
+      return fail({ error: "All fields are required" });
+    }
+    if (!CODE_PATTERN.test(code)) {
+      return fail({ error: "Institution code must be uppercase letters and digits" });
     }
 
     try {
-      // Check if institution code already exists
-      const existingInst = await pb
-        .collection("institutions")
-        .getFirstListItem(pb.filter('code = {:code}', { code }))
-        .catch(() => null);
+      // The two existence checks are independent — run in parallel.
+      const [existingInst, existingUser] = await Promise.all([
+        pb
+          .collection("institutions")
+          .getFirstListItem(pb.filter("code = {:code}", { code }))
+          .catch(() => null),
+        pb
+          .collection("users")
+          .getFirstListItem(pb.filter("email = {:email}", { email: leadEmail }))
+          .catch(() => null),
+      ]);
       if (existingInst) {
-        return {
-          success: false,
-          error: `Institution with code "${code}" already exists`,
-        };
+        return fail({ error: `Institution with code "${code}" already exists` });
       }
-
-      // Check if user email already exists
-      const existingUser = await pb
-        .collection("users")
-        .getFirstListItem(pb.filter('email = {:email}', { email: leadEmail }))
-        .catch(() => null);
       if (existingUser) {
-        return {
-          success: false,
-          error: `User with email "${leadEmail}" already exists`,
-        };
+        return fail({ error: `User with email "${leadEmail}" already exists` });
       }
 
-      // Create campus lead user
-      const campusLead = await pb.collection("users").create({
-        email: leadEmail,
-        password: leadPassword,
-        passwordConfirm: leadPassword,
-        name: leadName,
-        role: "institution",
-      });
-
-      // Create institution
-      const institution = await pb.collection("institutions").create({
-        name: institutionName,
+      await createCampusLead(pb, {
+        institutionName,
         district,
         code,
-        campusLeadId: campusLead.id,
-        maxTeams: 5,
-        status: "active",
-      });
-
-      return {
-        success: true,
-        type: "single",
-        institutionName,
         leadName,
         leadEmail,
-      };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err.message || "Failed to create campus lead",
-      };
+      });
+
+      return ok({ type: "single", institutionName, leadName, leadEmail });
+    } catch (err) {
+      console.error("[campus-leads] create-single failed:", err);
+      return fail({ error: "Failed to create campus lead" });
     }
   }
 
   if (intent === "bulk-create") {
-    const csvFile = formData.get("csvFile") as File | null;
-    if (!csvFile || csvFile.size === 0) {
-      return { success: false, error: "Please upload a CSV file" };
+    const csvFile = formData.get("csvFile");
+    if (!csvFile) {
+      return fail({ error: "Please upload a CSV file" });
+    }
+    // `csvFile` is a File when multipart, a string when urlencoded.
+    let text: string;
+    if (typeof csvFile === "string") {
+      text = csvFile;
+    } else if (typeof (csvFile as Blob).text === "function") {
+      if ((csvFile as File).size === 0) {
+        return fail({ error: "Please upload a CSV file" });
+      }
+      if ((csvFile as File).size > 1_000_000) {
+        return fail({ error: "CSV file too large (max 1 MB)" });
+      }
+      text = await (csvFile as Blob).text();
+    } else {
+      return fail({ error: "Invalid CSV upload" });
     }
 
-    const text = await csvFile.text();
     const lines = text.trim().split("\n");
     if (lines.length < 2) {
-      return { success: false, error: "CSV must have a header row and at least one data row" };
+      return fail({ error: "CSV must have a header row and at least one data row" });
     }
 
     const results: Array<{ row: number; name: string; status: string; error?: string }> = [];
     let created = 0;
 
     for (let i = 1; i < lines.length; i++) {
-      // Parse CSV: Name,District,Code,LeadName,LeadEmail,Password
       const cols = parseCsvLine(lines[i]);
       if (cols.length < 5) continue;
 
-      const [instName, district, code, leadName, leadEmail, leadPassword] = cols;
-      const password = (leadPassword || "").trim() || generateSecurePassword();
+      const [instName, district, code, leadName, leadEmail] = cols;
       const rowNum = i + 1;
 
+      const cleanInst = instName.trim();
+      const cleanDistrict = district.trim();
+      const cleanCode = code.trim();
+      const cleanLeadName = leadName.trim();
+      const cleanLeadEmail = leadEmail.trim().toLowerCase();
+
       try {
-        // Check duplicate code
-        const exists = await pb.collection("institutions")
-          .getFirstListItem(pb.filter('code = {:code}', { code: code.trim() }))
-          .catch(() => null);
-        if (exists) {
-          results.push({ row: rowNum, name: instName.trim(), status: "skipped", error: "Code already exists" });
+        if (!cleanInst || !cleanDistrict || !cleanCode || !cleanLeadName || !cleanLeadEmail) {
+          results.push({ row: rowNum, name: cleanInst || "unknown", status: "skipped", error: "Missing required field" });
+          continue;
+        }
+        if (!CODE_PATTERN.test(cleanCode)) {
+          results.push({ row: rowNum, name: cleanInst, status: "skipped", error: "Invalid code format" });
           continue;
         }
 
-        // Create user
-        const campusLead = await pb.collection("users").create({
-          email: leadEmail.trim().toLowerCase(),
-          password,
-          passwordConfirm: password,
-          name: leadName.trim(),
-          role: "institution",
-        });
+        const exists = await pb.collection("institutions")
+          .getFirstListItem(pb.filter("code = {:code}", { code: cleanCode }))
+          .catch(() => null);
+        if (exists) {
+          results.push({ row: rowNum, name: cleanInst, status: "skipped", error: "Code already exists" });
+          continue;
+        }
 
-        // Create institution
-        await pb.collection("institutions").create({
-          name: instName.trim(),
-          district: district.trim(),
-          code: code.trim(),
-          campusLeadId: campusLead.id,
-          maxTeams: 5,
-          status: "active",
+        await createCampusLead(pb, {
+          institutionName: cleanInst,
+          district: cleanDistrict,
+          code: cleanCode,
+          leadName: cleanLeadName,
+          leadEmail: cleanLeadEmail,
         });
 
         created++;
-        results.push({ row: rowNum, name: instName.trim(), status: "created" });
-      } catch (err: any) {
-        results.push({ row: rowNum, name: instName?.trim() || "unknown", status: "failed", error: err.message });
+        results.push({ row: rowNum, name: cleanInst, status: "created" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        results.push({ row: rowNum, name: cleanInst || "unknown", status: "failed", error: message });
       }
     }
 
-    return { success: true, type: "bulk", created, total: results.length, results };
+    return ok({ type: "bulk", created, total: results.length, results });
   }
 
-  return { success: false, error: "Invalid intent" };
-}
+  return fail({ error: "Invalid intent" });
+});
 
 // ---------------------------------------------------------------------------
 // Component
@@ -242,25 +226,76 @@ export function meta() {
   return [{ title: "Campus Leads — VisionHack" }];
 }
 
+interface BulkCreateRow {
+  row: number;
+  name: string;
+  status: "created" | "skipped" | "failed";
+  error?: string;
+}
+
+interface SingleSuccess {
+  type: "single";
+  success: true;
+  institutionName: string;
+  leadName: string;
+  leadEmail: string;
+}
+
+interface BulkSuccess {
+  type: "bulk";
+  success: true;
+  created: number;
+  total: number;
+  results: BulkCreateRow[];
+}
+
+interface Failure {
+  error: string;
+}
+
+type ActionResult = SingleSuccess | BulkSuccess | Failure;
+
+interface InstitutionRow {
+  id: string;
+  name: string;
+  district: string;
+  code: string;
+  campusLeadId: string;
+  maxTeams: number;
+  expand?: {
+    campusLeadId?: { id: string; name: string; email: string };
+  };
+}
+
 export default function AdminCampusLeads() {
   const { institutions } = useLoaderData() as {
-    user: any;
-    institutions: any[];
+    user: { id: string; email: string; name: string };
+    institutions: InstitutionRow[];
   };
-  const actionData = useActionData() as any;
+  const actionData = useActionData() as ActionResult | undefined;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
+  const singleSuccess =
+    actionData && "type" in actionData && actionData.type === "single" && actionData.success
+      ? (actionData as SingleSuccess)
+      : null;
+  const bulkSuccess =
+    actionData && "type" in actionData && actionData.type === "bulk" && actionData.success
+      ? (actionData as BulkSuccess)
+      : null;
+  const errorMessage =
+    actionData && !("success" in actionData)
+      ? (actionData as Failure).error
+      : null;
+
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Campus Leads
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          Create and manage campus leads and institutions.
-        </p>
-      </div>
+    <div className="space-y-10">
+      <PanelHeader
+        eyebrow="Operations"
+        title="Campus leads"
+        description="Create and manage campus leads and institutions."
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ========== Single Creation ========== */}
@@ -325,31 +360,29 @@ export default function AdminCampusLeads() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="leadPassword">Password *</Label>
-                  <Input
-                    id="leadPassword"
-                    name="leadPassword"
-                    type="password"
-                    placeholder="Min 8 characters"
-                    required
-                    minLength={8}
-                  />
+                <div className="space-y-2 sm:col-span-2">
+                  <p className="text-xs text-muted-foreground">
+                    The campus lead will receive a set-password link by email.
+                    No password is set by the admin.
+                  </p>
                 </div>
               </div>
 
-              {actionData?.type === "single" && actionData.success && (
-                <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300">
+              {singleSuccess && (
+                <div className="rounded-md border border-success/30 bg-success/8 px-3 py-2.5 text-sm text-success">
                   <CheckCircle className="mr-1.5 inline h-4 w-4" />
-                  Created {actionData.institutionName} with lead{" "}
-                  {actionData.leadName} ({actionData.leadEmail})
+                  Created {singleSuccess.institutionName} with lead{" "}
+                  {singleSuccess.leadName} ({singleSuccess.leadEmail})
                 </div>
               )}
 
-              {actionData?.error && actionData.type === "single" && (
-                <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+              {errorMessage && (
+                <div
+                  role="alert"
+                  className="vh-shake rounded-md border border-danger/30 bg-danger/8 px-3 py-2.5 text-sm text-danger"
+                >
                   <XCircle className="mr-1.5 inline h-4 w-4" />
-                  {actionData.error}
+                  {errorMessage}
                 </div>
               )}
 
@@ -368,7 +401,7 @@ export default function AdminCampusLeads() {
               Bulk Import via CSV
             </CardTitle>
             <CardDescription>
-              Upload a CSV file with columns: Name, District, Code, Lead Name, Lead Email, Password (optional — auto-generated if blank)
+              Upload a CSV file with columns: Name, District, Code, Lead Name, Lead Email. The lead receives a set-password link by email.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -389,19 +422,22 @@ export default function AdminCampusLeads() {
                 />
               </div>
 
-              {actionData?.success && actionData.type === "bulk" && (
-                <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300">
+              {bulkSuccess && (
+                <div className="rounded-md border border-success/30 bg-success/8 px-3 py-2.5 text-sm text-success">
                   <CheckCircle className="mr-1.5 inline h-4 w-4" />
-                  Created {actionData.created} of {actionData.total} entries.
-                  {actionData.results?.filter((r: any) => r.status === "skipped").length > 0 && (
-                    <span> {actionData.results.filter((r: any) => r.status === "skipped").length} skipped (duplicate codes).</span>
+                  Created {bulkSuccess.created} of {bulkSuccess.total} entries.
+                  {bulkSuccess.results.filter((r) => r.status === "skipped").length > 0 && (
+                    <span> {bulkSuccess.results.filter((r) => r.status === "skipped").length} skipped (duplicate codes).</span>
                   )}
                 </div>
               )}
-              {actionData?.error && actionData.type === "bulk" && (
-                <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+              {errorMessage && (
+                <div
+                  role="alert"
+                  className="vh-shake rounded-md border border-danger/30 bg-danger/8 px-3 py-2.5 text-sm text-danger"
+                >
                   <XCircle className="mr-1.5 inline h-4 w-4" />
-                  {actionData.error}
+                  {errorMessage}
                 </div>
               )}
 
@@ -419,7 +455,7 @@ export default function AdminCampusLeads() {
           Existing Institutions ({institutions.length})
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {institutions.map((inst: any) => (
+          {institutions.map((inst) => (
             <Card key={inst.id}>
               <CardHeader>
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
