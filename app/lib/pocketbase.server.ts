@@ -53,7 +53,3 @@ export function createSuperuserClient(): PocketBase {
   pb.authStore.save(env.POCKETBASE_SUPER_TOKEN, null);
   return pb;
 }
-
-export function getPocketBaseUrl(): string {
-  return getEnv().POCKETBASE_URL;
-}

@@ -15,6 +15,8 @@ export interface EnvConfig {
   POCKETBASE_URL: string;
   POCKETBASE_SUPER_TOKEN: string;
   ALLOWED_ORIGINS?: string;
+  /** Public base URL of the app, used in outbound email links. */
+  APP_URL?: string;
 }
 
 let _env: EnvConfig | null = null;
@@ -25,6 +27,7 @@ function readNodeEnv(): Partial<EnvConfig> {
       POCKETBASE_URL: process.env.POCKETBASE_URL,
       POCKETBASE_SUPER_TOKEN: process.env.POCKETBASE_SUPER_TOKEN,
       ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+      APP_URL: process.env.APP_URL,
     };
   }
   return {};
@@ -58,7 +61,17 @@ function buildEnv(overrides: Partial<EnvConfig>): EnvConfig {
       "",
     ALLOWED_ORIGINS:
       overrides.ALLOWED_ORIGINS ?? nodeEnv.ALLOWED_ORIGINS,
+    APP_URL: overrides.APP_URL ?? nodeEnv.APP_URL,
   };
+}
+
+/**
+ * Public base URL of the app (no trailing slash). Falls back to the
+ * production domain when APP_URL is not configured.
+ */
+export function getAppUrl(): string {
+  const raw = getEnv().APP_URL || "https://visionhack.mulearn.org";
+  return raw.replace(/\/+$/, "");
 }
 
 /**
