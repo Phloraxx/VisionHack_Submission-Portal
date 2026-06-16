@@ -1,9 +1,14 @@
 import { Form, Link } from "react-router";
 import {
   STATUS_LABELS,
-  STATUS_COLORS,
 } from "~/lib/team-status";
-import type { TeamStatus, TeamRecord, MemberRecord } from "~/lib/types";
+import { escapeCsv, QUESTIONNAIRE_EXCLUDE_KEYS } from "~/lib/utils";
+import type {
+  TeamStatus,
+  TeamView,
+  MemberRecord,
+  QuestionnaireResponseRecord,
+} from "~/lib/types";
 import {
   Card,
   CardContent,
@@ -11,9 +16,8 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Textarea } from "~/components/ui/textarea";
+import { StatusBadge } from "~/components/shared/status-badge";
 import { Separator } from "~/components/ui/separator";
 import {
   ArrowLeft,
@@ -27,7 +31,6 @@ import {
   Lightbulb,
   FileText,
   CalendarIcon,
-  ChevronRight,
 } from "lucide-react";
 import { ConfirmButton } from "./confirm-button";
 
@@ -36,14 +39,9 @@ import { ConfirmButton } from "./confirm-button";
 // ---------------------------------------------------------------------------
 
 export interface TeamDetailProps {
-  team: TeamRecord & {
-    expand?: {
-      institutionId?: { name: string; district: string; code: string };
-      leaderUserId?: { name: string; email: string };
-    };
-  };
+  team: TeamView;
   members: MemberRecord[];
-  questionnaire: any | null;
+  questionnaire: QuestionnaireResponseRecord | null;
   validTransitions: TeamStatus[];
   /** Back link URL, e.g. "/admin/teams" or "/coordinator/dashboard" */
   backUrl: string;
@@ -58,17 +56,10 @@ export interface TeamDetailProps {
 // ---------------------------------------------------------------------------
 
 export function downloadTeamCSV(
-  team: any,
+  team: TeamView,
   members: MemberRecord[],
-  questionnaire: any,
+  questionnaire: QuestionnaireResponseRecord | null,
 ) {
-  const escapeCsv = (str: string | null | undefined) => {
-    if (!str) return "";
-    const s = String(str).replace(/"/g, '""');
-    return s.includes(",") || s.includes('"') || s.includes("\n")
-      ? `"${s}"`
-      : s;
-  };
 
   const data: Record<string, string> = {
     "Team Name": team.name || "",
@@ -96,11 +87,7 @@ export function downloadTeamCSV(
   // Flatten questionnaire
   if (questionnaire) {
     for (const [key, value] of Object.entries(questionnaire)) {
-      if (
-        ["id", "teamId", "userId", "created", "updated", "collectionId", "collectionName"].includes(
-          key,
-        )
-      ) {
+      if ((QUESTIONNAIRE_EXCLUDE_KEYS as readonly string[]).includes(key)) {
         continue;
       }
       data[`Questionnaire: ${key}`] = Array.isArray(value)
@@ -150,8 +137,6 @@ export default function TeamDetail({
   backLabel,
   exportCard,
 }: TeamDetailProps) {
-  const colors = STATUS_COLORS[team.status];
-
   const inst = team.expand?.institutionId;
   const leader = team.expand?.leaderUserId;
 
@@ -166,12 +151,12 @@ export default function TeamDetail({
           <ArrowLeft className="mr-1 h-4 w-4" />
           {backLabel}
         </Link>
-        <div className="flex items-start justify-between">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight">
               {team.name}
             </h1>
-            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {inst && (
                 <span className="flex items-center gap-1">
                   <Building2 className="h-4 w-4" />
@@ -191,9 +176,9 @@ export default function TeamDetail({
               )}
             </div>
           </div>
-          <Badge className={`${colors.bg} ${colors.text} border-0 text-sm px-3 py-1 h-auto`}>
-            {STATUS_LABELS[team.status]}
-          </Badge>
+          <div className="shrink-0 self-start sm:self-center">
+            <StatusBadge status={team.status} className="text-sm px-3 py-1" />
+          </div>
         </div>
       </div>
 
@@ -274,7 +259,10 @@ export default function TeamDetail({
 
               <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <CalendarIcon className="h-3 w-3" />
-                Created: {new Date(team.created).toLocaleString()}
+                Created:{" "}
+                {team.created
+                  ? new Date(team.created).toLocaleString()
+                  : "—"}
               </div>
             </CardContent>
           </Card>
@@ -340,25 +328,19 @@ export default function TeamDetail({
                   {Object.entries(questionnaire)
                     .filter(
                       ([key]) =>
-                        ![
-                          "id",
-                          "teamId",
-                          "userId",
-                          "created",
-                          "updated",
-                          "collectionId",
-                          "collectionName",
-                        ].includes(key),
+                        !(
+                          QUESTIONNAIRE_EXCLUDE_KEYS as readonly string[]
+                        ).includes(key),
                     )
                     .map(([key, value]) => (
                       <div
                         key={key}
-                        className="flex justify-between border-b pb-1"
+                        className="flex justify-between gap-3 border-b pb-1"
                       >
-                        <span className="text-muted-foreground capitalize">
+                        <span className="shrink-0 text-muted-foreground capitalize">
                           {key.replace(/_/g, " ")}
                         </span>
-                        <span className="font-medium text-right max-w-[60%]">
+                        <span className="min-w-0 flex-1 break-words text-right font-medium">
                           {Array.isArray(value)
                             ? (value as string[]).join(", ")
                             : String(value)}
@@ -381,17 +363,13 @@ export default function TeamDetail({
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Status Actions</CardTitle>
-              <CardDescription>
-                Current:{" "}
-                <Badge className={`${colors.bg} ${colors.text} border-0`}>
-                  {STATUS_LABELS[team.status]}
-                </Badge>
+              <CardDescription className="flex items-center gap-2">
+                Current: <StatusBadge status={team.status} />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               {validTransitions.length > 0 ? (
                 validTransitions.map((nextStatus) => {
-                  const nextColors = STATUS_COLORS[nextStatus];
                   return (
                     <Form method="post" key={nextStatus}>
                       <input type="hidden" name="intent" value="transition" />
@@ -401,14 +379,9 @@ export default function TeamDetail({
                         value={nextStatus}
                       />
                       <ConfirmButton
-                        type="submit"
                         label={`Move to ${STATUS_LABELS[nextStatus]}`}
                         confirmMessage={`Move this team to "${STATUS_LABELS[nextStatus]}"?`}
-                        icon={
-                          <span
-                            className={`inline-block h-2 w-2 rounded-full ${nextColors.dot}`}
-                          />
-                        }
+                        icon={<StatusBadge status={nextStatus} showDot compact />}
                         className="w-full justify-between"
                       />
                     </Form>
@@ -422,36 +395,9 @@ export default function TeamDetail({
             </CardContent>
           </Card>
 
-          {/* Review Notes — visible to admin & coordinator */}
-          {validTransitions.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Review Notes</CardTitle>
-                <CardDescription>
-                  Add internal notes about this submission. Only visible to admins and coordinators.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form method="post">
-                  <input type="hidden" name="intent" value="save-notes" />
-                  <Textarea
-                    name="notes"
-                    defaultValue={(team as any).notes || ""}
-                    placeholder="Write your review notes here..."
-                    className="min-h-[100px] mb-3"
-                  />
-                  <Button type="submit" size="sm">
-                    Save Notes
-                  </Button>
-                </Form>
-                {(team as any).reviewed_by && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Last reviewed by: {(team as any).reviewed_by}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
+          {/* Review notes form removed — there are no `notes`/`reviewed_by`
+              fields in the schema. To add review notes, add the fields
+              via setup-pb.ts first. */}
 
           {/* Institution & Lead */}
           <Card>
