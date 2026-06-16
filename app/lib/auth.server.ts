@@ -5,11 +5,25 @@ import {
 } from "./pocketbase.server";
 import { getEnv } from "./env.server";
 import { cookieParse } from "pocketbase";
+import { decodeJwtPayload, isExpiringSoon } from "./jwt.server";
 import type { Role, UserRecord } from "./types";
 
 const COOKIE_NAME = "pb_jwt";
 const COOKIE_MAX_AGE = 432000; // 5 days in seconds
 const COOKIE_PATH = "/";
+
+// ---------------------------------------------------------------------------
+// Per-request auth cache
+// ---------------------------------------------------------------------------
+//
+// React Router 7 runs the layout loader and every child loader in
+// parallel, and each previously called `authRefresh()` independently —
+// 2+ network round-trips to PocketBase per navigation, plus a token-
+// rotation race. We dedupe by caching the in-flight auth promise keyed by
+// the Request object for the lifetime of that request. A WeakMap means
+// entries are GC'd once the request is done; nothing leaks across users.
+
+const authCache = new WeakMap<Request, Promise<AuthResult>>();
 
 /** Map of role → default dashboard path */
 export const ROLE_DASHBOARD_MAP: Record<Role, string> = {
@@ -119,12 +133,17 @@ export interface AuthResult {
  * Require a valid authenticated session.
  *
  * 1. Reads the `pb_jwt` cookie from the request.
- * 2. If missing → **throws** `redirect("/login")`.
- * 3. Creates an authenticated PocketBase client and calls `authRefresh()`
- *    to validate (and potentially refresh) the token.
- * 4. If refresh fails → **throws** `redirect("/login")`.
+ * 2. If missing/malformed → **throws** `redirect("/login")`.
+ * 3. Validates the JWT expiry locally. If healthy, loads the user record
+ *    with a single `getOne`. If near expiry, calls `authRefresh()` to
+ *    validate against PocketBase and rotate the token.
+ * 4. If validation fails → **throws** `redirect("/login")`.
  * 5. Returns the PocketBase instance, the user record, and the (possibly
  *    refreshed) token so callers can issue a new cookie if needed.
+ *
+ * The result is cached per `Request` (WeakMap), so the layout loader and
+ * all child loaders share one PocketBase call instead of each making their
+ * own — eliminating the previous 2+ round-trips per navigation.
  *
  * **Important:** React Router 7 layout loaders run in parallel with child
  * loaders, so you must `throw redirect()` (not return it) to stop execution.
@@ -146,25 +165,91 @@ export interface AuthResult {
 export async function requireAuth(
   request: Request,
 ): Promise<AuthResult> {
+  // Reuse an in-flight/resolved auth result for this request so the
+  // layout loader and child loaders share a single PocketBase call.
+  const cached = authCache.get(request);
+  if (cached) return cached;
+
+  const promise = resolveAuth(request);
+  authCache.set(request, promise);
+  // If auth fails (throws redirect), drop the cached rejected promise so a
+  // retry within the same request can re-evaluate.
+  promise.catch(() => authCache.delete(request));
+  return promise;
+}
+
+/**
+ * The actual auth resolution. Validates the JWT locally (cheap) and only
+ * hits PocketBase when:
+ *   - the token is near expiry (needs a real `authRefresh` + rotation), or
+ *   - we still need the user record (role/institutionId aren't in the JWT).
+ *
+ * PocketBase JWTs carry only `id`/`collectionId`/`exp` — custom fields
+ * like `role` live on the record, so a single `getOne` (or `authRefresh`
+ * when rotating) is required to load them. We do that exactly once per
+ * request via the cache above.
+ */
+async function resolveAuth(request: Request): Promise<AuthResult> {
   const token = getAuthFromCookie(request);
   if (!token) throw redirect("/login");
 
-  const pb = createAuthenticatedClient(token);
-
-  try {
-    await pb.collection("users").authRefresh();
-  } catch {
-    // Token expired or invalid — redirect to login
+  const payload = decodeJwtPayload(token);
+  if (!payload || !payload.id) {
+    // Malformed token — treat as unauthenticated.
     throw redirect("/login");
   }
 
-  const user = pb.authStore.model as unknown as UserRecord | null;
-  if (!user) throw redirect("/login");
+  const pb = createAuthenticatedClient(token);
 
-  // After authRefresh, PocketBase may have rotated the token.
-  const refreshedToken = pb.authStore.token || token;
+  if (isExpiringSoon(payload)) {
+    // Near expiry (or already expired): validate against PB and rotate.
+    try {
+      await pb.collection("users").authRefresh();
+    } catch {
+      throw redirect("/login");
+    }
+    const user = pb.authStore.model as unknown as UserRecord | null;
+    if (!user) throw redirect("/login");
+    return { pb, user, token: pb.authStore.token || token };
+  }
 
-  return { pb, user, token: refreshedToken };
+  // Healthy token: skip the refresh round-trip. Load the user record once
+  // (needed for role/institutionId, which aren't present in the JWT).
+  try {
+    const user = await pb
+      .collection("users")
+      .getOne<UserRecord>(payload.id);
+    return { pb, user, token };
+  } catch {
+    // Record fetch failed (deleted user / invalid token) — sign out.
+    throw redirect("/login");
+  }
+}
+
+/**
+ * JSON-API variant of `requireAuth`.
+ *
+ * Returns a 401 JSON response instead of a redirect to /login. Use this
+ * for resource routes (`/api/...`) where HTML redirects are inappropriate.
+ */
+export async function requireAuthJson(
+  request: Request,
+): Promise<AuthResult | Response> {
+  try {
+    // Reuse the same local-validation + per-request dedupe as requireAuth.
+    return await requireAuth(request);
+  } catch (err) {
+    // requireAuth throws a redirect Response for unauthenticated requests;
+    // resource routes want a 401 JSON body instead. Only convert redirects
+    // — other Responses (e.g. 403 from requireRole) should propagate.
+    if (err instanceof Response && err.status >= 300 && err.status < 400) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw err;
+  }
 }
 
 /**

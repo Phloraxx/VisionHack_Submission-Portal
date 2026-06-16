@@ -1,8 +1,8 @@
 import type PocketBase from "pocketbase";
 
 /**
- * Fetch all feature-flag records from the `config` collection and return them
- * as a flat `Record<string, boolean>` map.
+ * Fetch all feature-flag records from the `config` collection and return
+ * them as a flat `Record<string, boolean>` map.
  *
  * Each record is expected to have:
  * - `key`   (string)  — the feature name, e.g. `"registration_open"`
@@ -21,9 +21,10 @@ export async function getConfig(
     value: boolean;
   }>();
 
-  const config: Record<string, boolean> = {};
+  const value: Record<string, boolean> = {};
   for (const record of records) {
-    config[record.key] = record.value;
+    value[record.key] = record.value;
   }
-  return config;
+
+  return value;
 }
