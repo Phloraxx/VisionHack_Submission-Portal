@@ -1,21 +1,18 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 
 /**
- * Auto-saves form state to localStorage at a given interval.
+ * Auto-saves form state to sessionStorage at a given interval.
+ *
+ * sessionStorage survives page refresh but is cleared on tab close —
+ * the right scope for a form draft (PII shouldn't persist across sessions
+ * or be accessible to other same-origin scripts the way localStorage is).
  *
  * On mount, restores any previously saved state. The saved state is
- * cleared when the form is successfully submitted (via `clearSaved()`)
- * or when `clearOnUnmount` is true.
- *
- * ```tsx
- * const { savedData, save, clearSaved } = useAutoSave<FormData>("my-form", 3000);
- * // savedData is the restored state (null if none)
- * // save(data) persists immediately
- * // clearSaved() wipes the saved state (call on successful submit)
- * ```
+ * cleared when `clearSaved()` is called (after a successful submit) or
+ * when `clearOnUnmount` is true.
  */
 export function useAutoSave<T>(
-  /** Unique key used as the localStorage key. */
+  /** Unique key used as the storage key. */
   key: string,
   /** Auto-save interval in ms (default: 5000). */
   intervalMs = 5000,
@@ -25,29 +22,32 @@ export function useAutoSave<T>(
   const dataRef = useRef<T | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Restore saved data on mount
-  const savedData: T | null = (() => {
+  const storageKey = `autosave:${key}`;
+
+  // Restore saved data once on mount (lazy initializer — does NOT re-read
+  // or re-parse sessionStorage on every render).
+  const [initial] = useState<T | null>(() => {
     if (typeof window === "undefined") return null;
     try {
-      const raw = localStorage.getItem(`autosave:${key}`);
+      const raw = sessionStorage.getItem(storageKey);
       return raw ? (JSON.parse(raw) as T) : null;
     } catch {
       return null;
     }
-  })();
+  });
 
-  // Persist current data to localStorage
+  // Persist current data to sessionStorage
   const save = useCallback(
     (data: T) => {
       dataRef.current = data;
       if (typeof window === "undefined") return;
       try {
-        localStorage.setItem(`autosave:${key}`, JSON.stringify(data));
+        sessionStorage.setItem(storageKey, JSON.stringify(data));
       } catch {
-        // localStorage full or unavailable — silently fail
+        // sessionStorage full or unavailable — silently fail
       }
     },
-    [key],
+    [storageKey],
   );
 
   // Clear saved data
@@ -55,11 +55,11 @@ export function useAutoSave<T>(
     dataRef.current = null;
     if (typeof window === "undefined") return;
     try {
-      localStorage.removeItem(`autosave:${key}`);
+      sessionStorage.removeItem(storageKey);
     } catch {
       // ignore
     }
-  }, [key]);
+  }, [storageKey]);
 
   // Periodic auto-save
   useEffect(() => {
@@ -75,5 +75,5 @@ export function useAutoSave<T>(
     };
   }, [intervalMs, clearOnUnmount, save, clearSaved]);
 
-  return { savedData, save, clearSaved } as const;
+  return { savedData: initial, save, clearSaved } as const;
 }
