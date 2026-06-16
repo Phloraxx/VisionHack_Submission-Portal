@@ -11,6 +11,7 @@ initEnv({
   POCKETBASE_URL: process.env.POCKETBASE_URL,
   POCKETBASE_SUPER_TOKEN: process.env.POCKETBASE_SUPER_TOKEN,
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+  APP_URL: process.env.APP_URL,
 });
 
 export default async function handleRequest(
@@ -58,25 +59,32 @@ export default async function handleRequest(
     "camera=(), microphone=(), geolocation=()",
   );
 
-  // Content-Security-Policy: restrict script/style sources.
-  // Note: both script-src and style-src use 'unsafe-inline' because
-  // React Router's injected scripts and Tailwind don't yet support
-  // nonce-based CSP in our current version (v7.17.0).
-  // A nonce is still generated and passed to ServerRouter so that
-  // upgrading to v7.17.1+ will automatically activate nonce-based CSP.
+  // Content-Security-Policy: nonce-based. React 19 stamps every inline
+  // <script> emitted by ServerRouter with the nonce we pass in. The
+  // theme script in app/root.tsx must also be nonce-stamped — we do
+  // that in the layout via `nonce={...}` on the <script> tag.
   const isProd =
     typeof import.meta !== "undefined" && import.meta.env?.PROD;
-  responseHeaders.set(
-    "Content-Security-Policy",
-    [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "frame-ancestors 'none'",
-      "form-action 'self'",
-      "connect-src 'self'",
-    ].join("; "),
-  );
+
+  // Strict nonce-based CSP only in production — Vite's HMR injects
+  // unnonce-stamped inline scripts in dev that would all be blocked.
+  if (isProd) {
+    responseHeaders.set(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "connect-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+      ].join("; "),
+    );
+  }
 
   // HSTS: only in production
   if (isProd) {
