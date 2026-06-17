@@ -9,7 +9,12 @@ import { requireAuth, ROLE_DASHBOARD_MAP } from "~/lib/auth.server";
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireAuth(request);
-  throw redirect(ROLE_DASHBOARD_MAP[user.role]);
+  // Guard against legacy users with an empty role (the role select
+  // is now constrained to 4 values, but pre-migration users may still
+  // have role="" — fail closed to /login rather than redirecting to
+  // an undefined path).
+  const target = ROLE_DASHBOARD_MAP[user.role as keyof typeof ROLE_DASHBOARD_MAP];
+  throw redirect(target ?? "/login");
 }
 
 export default function Home() {
