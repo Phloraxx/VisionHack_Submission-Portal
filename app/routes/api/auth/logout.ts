@@ -2,7 +2,6 @@ import { redirect } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import { clearAuthCookie } from "~/lib/auth.server";
 import { validateOrigin } from "~/lib/csrf.server";
-import { checkMutationRateLimit } from "~/lib/rate-limit.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -11,12 +10,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
   validateOrigin(request);
 
-  // Rate limiting: 30 mutations per minute per IP
-  if (!checkMutationRateLimit(request)) {
-    return new Response("Too many requests", { status: 429 });
-  }
-
-  // Clear the auth cookie and redirect to login
+  // Clear the auth cookie and redirect to login. Rate limiting is handled
+  // by PocketBase's built-in settings.
   const cookie = clearAuthCookie();
 
   throw redirect("/login", {

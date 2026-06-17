@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { requireAuth } from "~/lib/auth.server";
+import { requireAuthJson } from "~/lib/auth.server";
+import { createSuperuserClient } from "~/lib/pocketbase.server";
 import type { InstitutionRecord } from "~/lib/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -7,7 +8,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const { pb } = await requireAuth(request);
+  const auth = await requireAuthJson(request);
+  if (auth instanceof Response) return auth;
+
+  // We use the superuser client here so the response is consistent
+  // regardless of the requesting user's role. The API rule on
+  // `institutions` already restricts direct PB access, and the auth
+  // check above gates the route.
+  const pb = createSuperuserClient();
 
   try {
     const institutions = await pb
@@ -26,7 +34,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         },
       },
     );
-  } catch {
+  } catch (err) {
+    console.error("[/api/institutions] failed:", err);
     return Response.json(
       { error: "Failed to fetch institutions." },
       { status: 500 },

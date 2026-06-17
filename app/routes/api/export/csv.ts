@@ -3,55 +3,68 @@
  * GET /api/export/csv?filterStatus=all
  */
 import type { LoaderFunctionArgs } from "react-router";
-import { requireRole } from "~/lib/auth.server";
+import { requireAuthJson } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { STATUS_LABELS } from "~/lib/team-status";
-import type { TeamStatus, TeamRecord } from "~/lib/types";
+import type { TeamStatus, TeamView, MemberRecord } from "~/lib/types";
+import { escapeCsv } from "~/lib/utils";
+
+const TEAM_STATUSES: TeamStatus[] = [
+  "invited",
+  "registered",
+  "shortlisted",
+  "submitted",
+  "selected",
+  "rejected",
+  "withdrawn",
+];
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { user } = await requireRole(request, ["admin"]);
+  const auth = await requireAuthJson(request);
+  if (auth instanceof Response) return auth;
+  if (auth.user.role !== "admin") {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const url = new URL(request.url);
-  const filterStatus = url.searchParams.get("filterStatus") || "all";
+  const rawStatus = url.searchParams.get("filterStatus") || "all";
+  // Only treat the value as a filter if it's a real status; otherwise "all".
+  const filterStatus = TEAM_STATUSES.includes(rawStatus as TeamStatus)
+    ? (rawStatus as TeamStatus)
+    : "all";
 
   const pb = createSuperuserClient();
 
-  const teams = await pb.collection("teams").getFullList<TeamRecord & {
-    expand?: {
-      institutionId?: { name: string; district: string };
-      leaderUserId?: { name: string; email: string };
-    };
-  }>({
+  // Push the status filter into PocketBase instead of fetching everything
+  // and filtering in JS.
+  const filtered = await pb.collection("teams").getFullList<TeamView>({
+    filter:
+      filterStatus !== "all"
+        ? pb.filter("status = {:status}", { status: filterStatus })
+        : undefined,
     expand: "institutionId,leaderUserId",
     sort: "-created",
   });
 
-  const filtered = filterStatus !== "all"
-    ? teams.filter((t) => t.status === filterStatus)
-    : teams;
+  // Fetch only the members of the teams we're exporting.
+  const teamIds = filtered.map((t) => t.id);
+  const members =
+    teamIds.length > 0
+      ? await pb.collection("members").getFullList<MemberRecord>({
+          filter: pb.filter(
+            teamIds.map((_, i) => `teamId = {:t${i}}`).join(" || "),
+            Object.fromEntries(teamIds.map((id, i) => [`t${i}`, id])),
+          ),
+        })
+      : [];
 
-  const members = await pb.collection("members").getFullList<{
-    teamId: string;
-    fullName: string;
-    email: string;
-    phone: string;
-    gender: string;
-    role: string;
-  }>();
-
-  const membersByTeam: Record<string, any[]> = {};
+  const membersByTeam: Record<string, MemberRecord[]> = {};
   for (const m of members) {
-    if (!membersByTeam[m.teamId]) membersByTeam[m.teamId] = [];
-    membersByTeam[m.teamId].push(m);
+    (membersByTeam[m.teamId] ??= []).push(m);
   }
-
-  const escapeCsv = (str: string) => {
-    if (!str) return "";
-    const text = String(str).replace(/"/g, '""');
-    return text.includes(",") || text.includes('"') || text.includes("\n")
-      ? `"${text}"`
-      : text;
-  };
 
   const headers = [
     "Team Name", "Team Code", "Status", "Institution", "District",
@@ -106,6 +119,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="teams_export_${new Date().toISOString().split("T")[0]}.csv"`,
+      // PII export — never cache.
+      "Cache-Control": "no-store",
     },
   });
 }
