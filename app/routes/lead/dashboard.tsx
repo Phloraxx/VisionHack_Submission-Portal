@@ -1,82 +1,102 @@
-import { useLoaderData, Link, Form, useActionData } from "react-router";
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import { Link, Form, useActionData, useLoaderData } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
-import { validateOrigin } from "~/lib/csrf.server";
+import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
+import { getLeadTeam, transitionTeamStatus } from "~/lib/team.server";
 import { STATUS_LABELS, STATUS_COLORS } from "~/lib/team-status";
-import type { TeamStatus, TeamRecord } from "~/lib/types";
-import { canTransition } from "~/lib/types";
+import type { TeamStatus, TeamView } from "~/lib/types";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Button } from "~/components/ui/button";
+import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
+import { PhaseStrip } from "~/components/shared/phase-strip";
+import { ProgressBar } from "~/components/shared/progress-bar";
+import { MetricCard } from "~/components/shared/metric-card";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { ConfirmButton } from "~/components/shared/confirm-button";
 import {
-  Users,
   UserPlus,
   FileText,
   Upload,
-  Clock,
-  CheckCircle2,
   ArrowRight,
-  Lock,
-  Circle,
+  Building2,
+  Users,
   XCircle,
+  CheckCircle2,
+  Lock,
+  Clock,
+  Sparkles,
 } from "lucide-react";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
-import { PhaseTimeline } from "~/components/shared/phase-timeline";
-import { ConfirmButton } from "~/components/shared/confirm-button";
 
 // ---------------------------------------------------------------------------
-// Loader
+// Loader / Action
 // ---------------------------------------------------------------------------
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { pb, user } = await requireRole(request, ["lead"]);
 
-  const teams = await pb
-    .collection("teams")
-    .getFullList<TeamRecord>({
-      filter: pb.filter('leaderUserId = {:userId}', { userId: user.id }),
+  // Team + config are independent — fetch in parallel.
+  const [team, config] = await Promise.all([
+    getLeadTeam<TeamView>(pb, user.id, {
       expand: "institutionId",
-    });
+      fields:
+        "id,name,status,institutionId,leaderUserId,teamCode,idea_title,questionnaire_completed,status_changed_at,created,updated,expand.institutionId.name,expand.institutionId.district",
+    }),
+    getConfig(pb),
+  ]);
 
-  const team = teams.length > 0 ? teams[0] : null;
-
-  // Fetch institution name and campus lead contact
   let institutionName = "";
   let campusLeadName = "";
   let campusLeadEmail = "";
-  if (team) {
-    try {
-      const inst = await pb.collection("institutions").getOne(team.institutionId);
-      institutionName = (inst as any).name || "";
-      if ((inst as any).campusLeadId) {
-        const lead = await pb.collection("users").getOne((inst as any).campusLeadId);
-        campusLeadName = (lead as any).name || "";
-        campusLeadEmail = (lead as any).email || "";
-      }
-    } catch { /* ignore fetch errors */ }
-  }
+  let memberCount = 0;
 
-  // Check if the questionnaire has been submitted
-  let questionnaireCompleted = false;
   if (team) {
-    try {
-      const responses = await pb
-        .collection("questionnaire_responses")
-        .getFullList({ filter: pb.filter('teamId = {:tid}', { tid: team.id }) });
-      questionnaireCompleted = responses.length > 0;
-    } catch {
-      questionnaireCompleted = false;
+    institutionName = team.expand?.institutionId?.name ?? "";
+
+    // Member count + institution record run in parallel (both depend only
+    // on the already-fetched team).
+    const [memberCountResult, inst] = await Promise.all([
+      pb.collection("members").getList(1, 1, {
+        filter: pb.filter("teamId = {:tid}", { tid: team.id }),
+        fields: "id",
+      }),
+      team.institutionId
+        ? pb
+            .collection("institutions")
+            .getOne<{ campusLeadId?: string }>(team.institutionId, {
+              fields: "id,campusLeadId",
+            })
+            .catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    memberCount = memberCountResult.totalItems;
+
+    // Campus lead is the only genuinely dependent hop (needs inst first).
+    if (inst?.campusLeadId) {
+      const lead = await pb
+        .collection("users")
+        .getOne<{ name?: string; email?: string }>(inst.campusLeadId, {
+          fields: "id,name,email",
+        })
+        .catch(() => null);
+      if (lead) {
+        campusLeadName = lead.name || "";
+        campusLeadEmail = lead.email || "";
+      }
     }
   }
 
-  const config = await getConfig(pb);
+  // Denormalized: the questionnaire action sets `questionnaire_completed`
+  // on the team, so we don't need a join here. Falls back to false
+  // for legacy teams that predate the field.
+  const questionnaireCompleted = team?.questionnaire_completed ?? false;
 
   return {
     user,
@@ -84,6 +104,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     institutionName,
     campusLeadName,
     campusLeadEmail,
+    memberCount,
     questionnaireCompleted,
     registrationOpen: config.registration_open ?? false,
     questionnaireOpen: config.questionnaire_open ?? false,
@@ -92,51 +113,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Action
-// ---------------------------------------------------------------------------
-
-export async function action({ request }: ActionFunctionArgs) {
-  validateOrigin(request);
-  const { pb, user } = await requireRole(request, ["lead"]);
-
-  const formData = await request.formData();
-  const intent = formData.get("intent") as string;
-
+export const action = secureAction({ roles: ["lead"] }, async ({ user, pb, intent }) => {
   if (intent === "withdraw") {
-    const teams = await pb
-      .collection("teams")
-      .getFullList<TeamRecord>({
-        filter: pb.filter('leaderUserId = {:userId}', { userId: user.id }),
-      });
+    const team = await getLeadTeam(pb, user.id, { fields: "id,status" });
+    if (!team) return fail({ error: "Team not found", status: 404 });
 
-    if (teams.length === 0) {
-      return Response.json({ error: "Team not found" }, { status: 404 });
-    }
-
-    const team = teams[0];
-
-    if (!canTransition(team.status, "withdrawn", "lead")) {
-      return Response.json(
-        { error: "Cannot withdraw your team from its current status" },
-        { status: 403 },
-      );
-    }
-
-    await pb.collection("teams").update(team.id, {
-      status: "withdrawn",
-      status_changed_at: new Date().toISOString(),
+    const result = await transitionTeamStatus(pb, {
+      teamId: team.id,
+      to: "withdrawn",
+      role: "lead",
     });
-
-    return Response.json({ success: true });
+    if (!result.ok) return result.response;
+    return ok();
   }
 
-  return Response.json({ error: "Unknown intent" }, { status: 400 });
-}
-
-// ---------------------------------------------------------------------------
-// Meta
-// ---------------------------------------------------------------------------
+  return fail({ error: "Unknown intent", status: 400 });
+});
 
 export function meta() {
   return [{ title: "Team Dashboard — VisionHack" }];
@@ -146,23 +138,22 @@ export function meta() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** How many of the 3 steps are completed for this status?
- *  Questionnaire completion checks the actual response data,
- *  since questionnaire submission doesn't transition team status. */
-function completedSteps(status: TeamStatus | null, questionnaireDone: boolean): number {
+function completedSteps(
+  status: TeamStatus | null,
+  questionnaireDone: boolean,
+): number {
   if (!status || status === "invited") return 0;
   if (status === "registered") return questionnaireDone ? 2 : 1;
   if (status === "shortlisted") return 2;
-  return 3; // submitted, selected, rejected — all done
+  return 3;
 }
 
-/** Determine the per-card state: "done" | "active" | "locked" | "closed" */
 type CardState = "done" | "active" | "locked" | "closed";
 
 function cardState(
   step: "register" | "questionnaire" | "submit",
   status: TeamStatus | null,
-  config: { registrationOpen: boolean; questionnaireOpen: boolean; submissionOpen: boolean },
+  flags: { registrationOpen: boolean; questionnaireOpen: boolean; submissionOpen: boolean },
   questionnaireDone: boolean,
 ): CardState {
   const stepNum = { register: 0, questionnaire: 1, submit: 2 }[step];
@@ -170,8 +161,8 @@ function cardState(
 
   if (stepNum < completed) return "done";
   if (stepNum === completed) {
-    // Check if this step's feature flag is open
-    const flag = { register: config.registrationOpen, questionnaire: config.questionnaireOpen, submit: config.submissionOpen }[step];
+    const flag =
+      { register: flags.registrationOpen, questionnaire: flags.questionnaireOpen, submit: flags.submissionOpen }[step];
     return flag ? "active" : "closed";
   }
   return "locked";
@@ -188,6 +179,7 @@ export default function LeadDashboard() {
     institutionName,
     campusLeadName,
     campusLeadEmail,
+    memberCount,
     questionnaireCompleted,
     registrationOpen,
     questionnaireOpen,
@@ -195,10 +187,11 @@ export default function LeadDashboard() {
     submissionOpen,
   } = useLoaderData() as {
     user: { id: string; name: string; email: string };
-    team: TeamRecord | null;
+    team: TeamView | null;
     institutionName: string;
     campusLeadName: string;
     campusLeadEmail: string;
+    memberCount: number;
     questionnaireCompleted: boolean;
     registrationOpen: boolean;
     questionnaireOpen: boolean;
@@ -209,336 +202,433 @@ export default function LeadDashboard() {
 
   const status = team?.status ?? null;
   const colors = status ? STATUS_COLORS[status] : null;
-  const config = { registrationOpen, questionnaireOpen, submissionOpen };
+  const flags = { registrationOpen, questionnaireOpen, submissionOpen };
   const steps = getLeadSteps(status, "/lead/dashboard");
   const progress = completedSteps(status, questionnaireCompleted);
-  const progressPct = (progress / 3) * 100;
 
-  // Quick-action cards with completion state
+  // One-line next action — the canonical "what to do now" for this lead.
+  // Kept terse so it reads as instruction, not status report.
+  const nextAction: string = (() => {
+    if (!team) return "Start by registering your team and adding up to 5 members.";
+    if (status === "invited") return "Register your team to unlock the questionnaire and submission.";
+    if (status === "registered") {
+      return questionnaireCompleted
+        ? "Awaiting shortlisting by your campus lead. We'll email you when there's an update."
+        : "Complete the team profile questionnaire to unlock submission.";
+    }
+    if (status === "shortlisted") return "Upload your idea presentation (PDF or PPT) to enter final review.";
+    if (status === "submitted") return "Your idea is under review. Decisions land by the end of the event.";
+    if (status === "selected") return "Check your email for next steps and the finalist briefing.";
+    if (status === "rejected") return "Thanks for submitting. Watch the VisionHack channel for upcoming editions.";
+    if (status === "withdrawn") return "This team has been withdrawn. Contact your campus lead to re-register.";
+    return "";
+  })();
+
   const cards: Array<{
     label: string;
     href: string;
     icon: React.ComponentType<{ className?: string }>;
     description: string;
     state: CardState;
-    stateLabel: string;
+    stepNumber: string;
   }> = [
     {
-      label: "Register Team",
+      label: "Register team",
       href: "/lead/register",
       icon: UserPlus,
       description: "Create your team and add up to 5 members",
-      state: cardState("register", status, config, questionnaireCompleted),
-      stateLabel: "Registration",
+      state: cardState("register", status, flags, questionnaireCompleted),
+      stepNumber: "01",
     },
     {
       label: "Questionnaire",
       href: "/lead/questionnaire",
       icon: FileText,
-      description: "Complete your team profile questionnaire",
-      state: cardState("questionnaire", status, config, questionnaireCompleted),
-      stateLabel: "Questionnaire",
+      description: "Complete your team's profile",
+      state: cardState("questionnaire", status, flags, questionnaireCompleted),
+      stepNumber: "02",
     },
     {
-      label: "Submit Idea",
+      label: "Submit idea",
       href: "/lead/submit-idea",
       icon: Upload,
       description: "Upload your idea presentation (PDF/PPT)",
-      state: cardState("submit", status, config, questionnaireCompleted),
-      stateLabel: "Idea Submission",
+      state: cardState("submit", status, flags, questionnaireCompleted),
+      stepNumber: "03",
     },
   ];
 
-  const stateIcon = {
-    done: CheckCircle2,
-    active: ArrowRight,
-    locked: Lock,
-    closed: Lock,
-  };
-
-  const stateClass = {
-    done: "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30",
-    active: "border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10",
-    locked: "border-muted bg-muted/20",
-    closed: "border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/30",
-  };
-
-  const stateColor = {
-    done: "text-emerald-700 dark:text-emerald-400",
-    active: "text-primary",
-    locked: "text-muted-foreground",
-    closed: "text-orange-700 dark:text-orange-400",
-  };
-
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Team Dashboard
-        </h1>
-        <p className="text-muted-foreground">
-          Welcome back, {user.name}
-        </p>
-      </div>
-
-      {/* Step Progress Indicator */}
-      <StepIndicator steps={steps} />
-
-      {/* Phase Timeline */}
-      <PhaseTimeline
-        phases={[
-          { label: "Registration", open: registrationOpen },
-          { label: "Questionnaire", open: questionnaireOpen },
-          { label: "Shortlisting", open: nominationOpen },
-          { label: "Submission", open: submissionOpen },
-        ]}
-      />
-
-      {/* Status Card + Progress */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            Team Status
-          </CardTitle>
-          <CardDescription>
-            Your current progress in VisionHack 2026
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Progress bar */}
-          <div>
-            <div className="mb-1 flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">
-                Overall progress
-              </span>
-              <span className="font-medium tabular-nums">{progress} / 3 steps</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
+    <div className="space-y-10">
+      {/* ------------------------------------------------------------
+          HERO — current status, mission line
+          ------------------------------------------------------------ */}
+      <div className="relative overflow-hidden rounded-lg border border-border bg-card">
+        <div className="vh-grid-bg absolute inset-0 opacity-30" aria-hidden="true" />
+        <div className="relative flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between md:p-8">
+          <div className="space-y-3 max-w-xl">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-primary">
+              VisionHack · 2026 · Team
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl text-wrap-balance">
+              {team ? `Hi, ${user.name.split(" ")[0]}` : "Welcome to VisionHack"}
+            </h1>
+            <p className="text-sm text-muted-foreground leading-relaxed text-wrap-pretty">
+              {nextAction}
+            </p>
           </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-sm text-muted-foreground">Status</span>
-            {status ? (
+          {status && colors && (
+            <div className="flex flex-row items-center justify-between gap-3 sm:flex-col sm:items-start md:items-end shrink-0">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground sm:order-2 md:order-1">
+                Current status
+              </span>
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${colors?.bg} ${colors?.text}`}
+                className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium sm:order-1 md:order-2 ${colors.pill}`}
               >
-                <span className={`h-2 w-2 rounded-full ${colors?.dot}`} />
+                <span className={`h-2 w-2 rounded-full ${colors.dot}`} />
                 {STATUS_LABELS[status]}
               </span>
-            ) : (
-              <span className="text-sm text-muted-foreground">
-                Not Started
-              </span>
-            )}
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Team Name</span>
-            <span className="text-sm font-medium">
-              {team?.name || "Not Set"}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------
+          STEP INDICATOR — single primary stepper
+          ------------------------------------------------------------ */}
+      <StepIndicator steps={steps} />
+
+      {/* ------------------------------------------------------------
+          METRICS — 3 compact stat cards (members, status, institution)
+          ------------------------------------------------------------ */}
+      <div className="grid gap-4 sm:grid-cols-3 stagger-cards">
+        <MetricCard
+          label="Team members"
+          value={team ? memberCount : "—"}
+          icon={Users}
+          context={team ? "Including the team lead" : "Register to add members"}
+        />
+        <MetricCard
+          label="Steps completed"
+          value={`${progress} / 3`}
+          icon={CheckCircle2}
+          tone="info"
+          context={
+            progress === 3
+              ? "All done — awaiting decisions"
+              : progress === 0
+                ? "Not started"
+                : "Keep going"
+          }
+        />
+        <MetricCard
+          label="Institution"
+          value={institutionName || "—"}
+          icon={Building2}
+          context={campusLeadName || "No campus lead assigned"}
+        />
+      </div>
+
+      {/* ------------------------------------------------------------
+          PROGRESS BAR — fine-grained progress
+          ------------------------------------------------------------ */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-baseline justify-between gap-4 mb-4">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Progress
+              </p>
+              <h3 className="mt-0.5 text-base font-semibold tracking-tight text-wrap-balance">
+                Where you are in the workflow
+              </h3>
+            </div>
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {progress} / 3
             </span>
           </div>
-          {team?.teamCode && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                Team Code
-              </span>
-              <span className="font-mono text-sm font-medium">
-                {team.teamCode}
-              </span>
-            </div>
-          )}
-          {institutionName && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Institution</span>
-              <span className="text-sm font-medium">{institutionName}</span>
-            </div>
-          )}
-          {campusLeadName && (
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-sm text-muted-foreground">Campus Lead</span>
-              <span className="text-sm font-medium">
-                {campusLeadName}
-                {campusLeadEmail && (
-                  <span className="block text-xs text-muted-foreground text-right">
-                    {campusLeadEmail}
-                  </span>
-                )}
-              </span>
-            </div>
-          )}
-
-          {team && (
-            <div className="flex items-center justify-between pt-1">
-              <Link
-                to="/lead/team"
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-              >
-                View team details
-                <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          )}
-
-          {/* Callout per status */}
-          {status === "invited" && (
-            <div className="rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
-              You've been invited! Complete your team registration to get started.
-            </div>
-          )}
-          {status === "submitted" && (
-            <div className="rounded-lg bg-purple-50 p-3 text-sm text-purple-800 dark:bg-purple-950 dark:text-purple-200">
-              Your idea has been submitted and is under review. Awaiting results.
-            </div>
-          )}
-          {status === "selected" && (
-            <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-              Congratulations! Your team has been selected. Check your email for further instructions.
-            </div>
-          )}
-          {status === "rejected" && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
-              Your application was not selected for the next round. Thank you for participating.
-            </div>
-          )}
-
-          {/* Withdraw action */}
-          {status && !["withdrawn", "selected", "rejected"].includes(status) && (
-            <div className="border-t pt-3">
-              <Form method="post">
-                <input type="hidden" name="intent" value="withdraw" />
-                <ConfirmButton
-                  type="submit"
-                  label="Withdraw Team"
-                  confirmMessage="Are you sure you want to withdraw? This cannot be undone."
-                  variant="destructive"
-                  className="w-full justify-center"
-                  icon={<XCircle className="mr-1.5 h-4 w-4" />}
-                />
-              </Form>
-              <p className="mt-1 text-center text-xs text-muted-foreground">
-                You will not be able to rejoin after withdrawing.
-              </p>
-            </div>
-          )}
-
-          {/* Action feedback */}
-          {actionData?.success && (
-            <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-              Your team has been withdrawn.
-            </div>
-          )}
-          {actionData?.error && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
-              {actionData.error}
-            </div>
-          )}
+          <ProgressBar
+            value={progress}
+            max={3}
+            tone={status === "selected" ? "success" : status === "rejected" ? "danger" : "primary"}
+          />
+          <span className="sr-only" aria-live="polite">
+            {progress} of 3 steps completed
+          </span>
         </CardContent>
       </Card>
 
-      {/* Quick Action Cards */}
-      <div className="grid gap-4 md:grid-cols-3 stagger-cards">
-        {cards.map((card) => {
-          const Icon = card.icon;
-          const SI = stateIcon[card.state];
-          return (
-            <Card
-              key={card.href}
-              className={`relative border ${stateClass[card.state]} card-hover`}
-            >
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                  <Icon className="h-4 w-4" />
-                  {card.label}
-                </CardTitle>
-                <CardDescription>{card.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-2">
-                  <SI className={`h-4 w-4 ${stateColor[card.state]}`} />
-                  <span className={`text-xs font-medium ${stateColor[card.state]}`}>
-                    {card.state === "done"
-                      ? "Completed"
-                      : card.state === "active"
-                        ? "Available"
-                        : card.state === "closed"
-                          ? "Closed"
-                          : "Locked"}
-                  </span>
-                </div>
-                {card.state === "active" && (
-                  <Link to={card.href}>
-                    <Button className="mt-3 w-full" size="sm">
-                      Continue
-                      <ArrowRight className="ml-2 h-3 w-3" />
-                    </Button>
-                  </Link>
-                )}
-                {card.state === "done" && (
-                  <Link to={card.href}>
-                    <Button variant="outline" className="mt-3 w-full" size="sm">
-                      View details
-                    </Button>
-                  </Link>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
+      {/* ------------------------------------------------------------
+          ACTION CARDS — 3 cards, collapsed card-state palette
+          ------------------------------------------------------------ */}
+      <div>
+        <PanelHeader
+          eyebrow="Workflow"
+          title="Your next moves"
+          description={
+            status
+              ? "Each card represents a step in the submission workflow."
+              : "Start with step 1 to create your team."
+          }
+        />
+        <div className="grid gap-4 md:grid-cols-3 stagger-cards">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            const stateClasses: Record<CardState, string> = {
+              done: "border-success/30 bg-success/5",
+              active: "border-primary/40 bg-primary/5",
+              locked: "border-border bg-card opacity-60",
+              closed: "border-border bg-muted/30",
+            };
+            const stateLabel: Record<CardState, string> = {
+              done: "Completed",
+              active: "Available",
+              locked: "Locked",
+              closed: "Closed",
+            };
+            const stateTone: Record<CardState, string> = {
+              done: "text-success",
+              active: "text-primary",
+              locked: "text-muted-foreground",
+              closed: "text-muted-foreground",
+            };
+            const stateIcon: Record<CardState, React.ReactNode> = {
+              done: <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />,
+              active: <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />,
+              locked: <Lock className="h-3.5 w-3.5" aria-hidden="true" />,
+              closed: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
+            };
+
+            return (
+              <Card
+                key={card.href}
+                variant="elevated"
+                className={`relative ${stateClasses[card.state]}`}
+              >
+                <CardContent className="flex h-full flex-col justify-between p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-2 min-w-0">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                        Step {card.stepNumber}
+                      </span>
+                      <h3 className="text-base font-semibold tracking-tight flex items-center gap-2 text-wrap-balance">
+                        <Icon className="h-4 w-4" />
+                        {card.label}
+                      </h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {card.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-5 flex items-center justify-between gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-xs font-medium ${stateTone[card.state]}`}
+                    >
+                      {stateIcon[card.state]}
+                      {stateLabel[card.state]}
+                    </span>
+                    {(card.state === "active" || card.state === "done") && (
+                      <Link to={card.href}>
+                        <Button
+                          size="sm"
+                          variant={card.state === "done" ? "outline" : "default"}
+                          className="h-8"
+                        >
+                          {card.state === "done" ? "View" : "Continue"}
+                          <ArrowRight className="ml-1.5 h-3 w-3" />
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
+
+      {/* ------------------------------------------------------------
+          PHASE STRIP — compact, secondary surface
+          ------------------------------------------------------------ */}
+      <div>
+        <PanelHeader
+          eyebrow="Event"
+          title="Phases"
+          description="The four phases of the event and their current state."
+        />
+        <PhaseStrip
+          phases={[
+            { label: "Registration", open: registrationOpen, detail: "Team signup" },
+            { label: "Questionnaire", open: questionnaireOpen, detail: "Profile" },
+            { label: "Shortlisting", open: nominationOpen, detail: "Review" },
+            { label: "Submission", open: submissionOpen, detail: "Ideas" },
+          ]}
+        />
+      </div>
+
+      {/* ------------------------------------------------------------
+          TEAM CARD + WITHDRAW — secondary
+          ------------------------------------------------------------ */}
+      {team && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2 text-wrap-balance">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Team details
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Row label="Team name" value={team.name} />
+              {team.teamCode && <Row label="Team code" value={team.teamCode} mono />}
+              {institutionName && <Row label="Institution" value={institutionName} />}
+              {campusLeadName && (
+                <Row
+                  label="Campus lead"
+                  value={
+                    <span>
+                      {campusLeadName}
+                      {campusLeadEmail && (
+                        <span className="block text-xs text-muted-foreground">
+                          {campusLeadEmail}
+                        </span>
+                      )}
+                    </span>
+                  }
+                />
+              )}
+            </div>
+
+            {/* Status-specific callout */}
+            {status === "invited" && (
+              <Callout tone="info">
+                You've been invited. Complete your team registration to get
+                started.
+              </Callout>
+            )}
+            {status === "submitted" && (
+              <Callout tone="info">
+                Your idea is submitted and under review. Awaiting results.
+              </Callout>
+            )}
+            {status === "selected" && (
+              <Callout tone="success">
+                Congratulations — your team has been selected. Check your email
+                for next steps.
+              </Callout>
+            )}
+            {status === "rejected" && (
+              <Callout tone="danger">
+                Your application was not selected this round. Thank you for
+                participating.
+              </Callout>
+            )}
+
+            {status && !["withdrawn", "selected", "rejected"].includes(status) && (
+              <div className="border-t border-border pt-4">
+                <Form method="post">
+                  <input type="hidden" name="intent" value="withdraw" />
+                  <ConfirmButton
+                    label="Withdraw team"
+                    confirmMessage="Withdraw your team? This cannot be undone."
+                    variant="destructive"
+                    className="w-full justify-center"
+                    icon={<XCircle className="mr-1.5 h-4 w-4" />}
+                  />
+                </Form>
+                <p className="mt-1.5 text-center text-xs text-muted-foreground">
+                  You will not be able to rejoin after withdrawing.
+                </p>
+              </div>
+            )}
+
+            {actionData?.success && (
+              <Callout tone="success">Your team has been withdrawn.</Callout>
+            )}
+            {actionData?.error && (
+              <Callout tone="danger">{actionData.error}</Callout>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={`text-sm font-medium text-right ${mono ? "font-mono" : ""}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function Callout({
+  tone,
+  children,
+}: {
+  tone: "info" | "success" | "danger";
+  children: React.ReactNode;
+}) {
+  const styles = {
+    info: "border-info/30 bg-info/8 text-info",
+    success: "border-success/30 bg-success/8 text-success",
+    danger: "border-danger/30 bg-danger/8 text-danger",
+  }[tone];
+  return (
+    <div className={`rounded-md border px-3 py-2.5 text-sm ${styles}`}>
+      {children}
     </div>
   );
 }
 
 export function HydrateFallback() {
   return (
-    <div className="space-y-8">
-      <div className="space-y-1">
-        <Skeleton className="h-7 w-44" />
-        <Skeleton className="h-4 w-48" />
+    <div className="space-y-10">
+      <div className="rounded-lg border border-border bg-card p-8">
+        <Skeleton className="h-3 w-32" />
+        <Skeleton className="mt-3 h-7 w-48" />
+        <Skeleton className="mt-2 h-4 w-72" />
       </div>
-
-      {/* Step indicator */}
-      <Skeleton className="h-16 w-full rounded-lg" />
-
-      {/* Phase timeline */}
-      <Skeleton className="h-12 w-full rounded-lg" />
-
-      {/* Status card + progress */}
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-4 w-48" />
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Skeleton className="h-2 w-full rounded-full" />
-          <div className="flex items-center justify-between">
-            <Skeleton className="h-4 w-12" />
-            <Skeleton className="h-6 w-20 rounded-full" />
+      <Skeleton className="h-16 w-full rounded-md" />
+      <div className="grid gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={i}
+            className="rounded-lg border border-border bg-card p-5 space-y-3"
+          >
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-7 w-24" />
+            <Skeleton className="h-3 w-32" />
           </div>
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-4 w-24" />
-        </CardContent>
-      </Card>
-
-      {/* Action cards */}
+        ))}
+      </div>
+      <div className="rounded-lg border border-border bg-card p-6">
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="mt-4 h-2 w-full rounded-full" />
+      </div>
       <div className="grid gap-4 md:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader>
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-3 w-full" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-full rounded-lg" />
-            </CardContent>
-          </Card>
+          <div
+            key={i}
+            className="rounded-lg border border-border bg-card p-5 space-y-3"
+          >
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="mt-3 h-7 w-full rounded-md" />
+          </div>
         ))}
       </div>
     </div>

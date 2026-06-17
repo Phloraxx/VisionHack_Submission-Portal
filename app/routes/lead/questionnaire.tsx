@@ -5,11 +5,13 @@ import {
   useNavigation,
   useActionData,
 } from "react-router";
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
-import { validateOrigin } from "~/lib/csrf.server";
+import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
-import type { TeamStatus, TeamRecord } from "~/lib/types";
+import { getLeadTeam } from "~/lib/team.server";
+import { getStr } from "~/lib/form.server";
+import type { TeamRecord } from "~/lib/types";
 import {
   Card,
   CardContent,
@@ -36,6 +38,7 @@ import {
   Send,
 } from "lucide-react";
 import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
+import { PanelHeader } from "~/components/shared/panel-header";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,34 +95,26 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 export async function loader({ request }: LoaderFunctionArgs) {
   const { pb, user } = await requireRole(request, ["lead"]);
 
-  const teams = await pb
-    .collection("teams")
-    .getFullList<TeamRecord>({
-      filter: pb.filter('leaderUserId = {:userId}', { userId: user.id }),
-    });
+  // Team and config are independent — fetch in parallel.
+  const [team, flags] = await Promise.all([
+    getLeadTeam<TeamRecord>(pb, user.id),
+    getConfig(pb),
+  ]);
 
-  const team = teams.length > 0 ? teams[0] : null;
-  let questionnaire: QuestionnaireData | null = null;
-
-  if (team) {
-    const responses = await pb
-      .collection("questionnaire_responses")
-      .getFullList<QuestionnaireData>({
-        filter: pb.filter('teamId = {:teamId}', { teamId: team.id }),
-      });
-    if (responses.length > 0) {
-      questionnaire = responses[0];
-    }
-  }
-
-  const flags = await getConfig(pb);
-  const questionnaireOpen = flags.questionnaire_open ?? false;
+  const questionnaire: QuestionnaireData | null = team
+    ? await pb
+        .collection("questionnaire_responses")
+        .getFirstListItem<QuestionnaireData>(
+          pb.filter("teamId = {:teamId}", { teamId: team.id }),
+        )
+        .catch(() => null)
+    : null;
 
   return {
     user,
     team,
     questionnaire,
-    questionnaireOpen,
+    questionnaireOpen: flags.questionnaire_open ?? false,
   } satisfies LoaderData;
 }
 
@@ -127,110 +122,107 @@ export async function loader({ request }: LoaderFunctionArgs) {
 // Action
 // ---------------------------------------------------------------------------
 
-export async function action({ request }: ActionFunctionArgs) {
-  validateOrigin(request);
-  const { pb, user } = await requireRole(request, ["lead"]);
+const MAX_TEXT = 2000; // matches schema max for free-text fields
 
+export const action = secureAction({ roles: ["lead"] }, async ({ formData, user, pb }) => {
   const flags = await getConfig(pb);
-  const questionnaireOpen = flags.questionnaire_open ?? false;
-  if (!questionnaireOpen) {
-    return Response.json(
-      { error: "Questionnaire is currently closed" },
-      { status: 403 },
-    );
+  if (!flags.questionnaire_open) {
+    return fail({ error: "Questionnaire is currently closed", status: 403 });
   }
 
-  const formData = await request.formData();
+  const age = getStr(formData, "age", { trim: false });
+  const gender = getStr(formData, "gender", { trim: false });
+  const education = getStr(formData, "education", { trim: false });
+  const collegeName = getStr(formData, "college_name");
+  const district = getStr(formData, "district");
+  const skills = getStr(formData, "skills", { trim: false });
+  const interests = getStr(formData, "interests", { trim: false });
+  const challenges = getStr(formData, "challenges", { trim: false });
+  const experience = getStr(formData, "experience", { trim: false });
+  const motivation = getStr(formData, "motivation", { trim: false });
+  const teamExperience = getStr(formData, "team_experience", { trim: false });
+  const expectations = getStr(formData, "expectations", { trim: false });
+  const additionalInfo = getStr(formData, "additional_info", { trim: false });
 
-  // Validate personal section
+  // Validate
   const fieldErrors: Record<string, string> = {};
-  const age = formData.get("age") as string;
-  const gender = formData.get("gender") as string;
-  const education = formData.get("education") as string;
-  const college_name = formData.get("college_name") as string;
-  const district = formData.get("district") as string;
-
   if (!age) fieldErrors.age = "Age is required";
+  else if (Number.isNaN(Number(age)) || Number(age) < 10 || Number(age) > 100) {
+    fieldErrors.age = "Enter a valid age";
+  }
   if (!gender) fieldErrors.gender = "Gender is required";
   if (!education) fieldErrors.education = "Education is required";
-  if (!college_name?.trim())
-    fieldErrors.college_name = "College name is required";
-  else if (college_name.length > 200) fieldErrors.college_name = "College name too long";
-  if (!district?.trim()) fieldErrors.district = "District is required";
+  if (!collegeName) fieldErrors.college_name = "College name is required";
+  else if (collegeName.length > 200) fieldErrors.college_name = "College name too long";
+  if (!district) fieldErrors.district = "District is required";
   else if (district.length > 100) fieldErrors.district = "District name too long";
 
-  const skills = (formData.get("skills") as string) ?? "";
-  const interests = (formData.get("interests") as string) ?? "";
-  const challenges = (formData.get("challenges") as string) ?? "";
-  const experience = (formData.get("experience") as string) ?? "";
-  const motivation = (formData.get("motivation") as string) ?? "";
-  const team_experience = (formData.get("team_experience") as string) ?? "";
-  const expectations = (formData.get("expectations") as string) ?? "";
-  const additional_info = (formData.get("additional_info") as string) ?? "";
-
-  // Length limits for textarea fields (max 5000 chars each)
-  const MAX_TEXT = 5000;
-  if (skills.length > MAX_TEXT) fieldErrors.skills = `Skills must be under ${MAX_TEXT} characters`;
-  if (interests.length > MAX_TEXT) fieldErrors.interests = `Interests must be under ${MAX_TEXT} characters`;
-  if (challenges.length > MAX_TEXT) fieldErrors.challenges = `Challenges must be under ${MAX_TEXT} characters`;
-  if (experience.length > MAX_TEXT) fieldErrors.experience = `Experience must be under ${MAX_TEXT} characters`;
-  if (motivation.length > MAX_TEXT) fieldErrors.motivation = `Motivation must be under ${MAX_TEXT} characters`;
-  if (team_experience.length > MAX_TEXT) fieldErrors.team_experience = `Team experience must be under ${MAX_TEXT} characters`;
-  if (expectations.length > MAX_TEXT) fieldErrors.expectations = `Expectations must be under ${MAX_TEXT} characters`;
-  if (additional_info.length > MAX_TEXT) fieldErrors.additional_info = `Additional info must be under ${MAX_TEXT} characters`;
+  const textLimits: Array<[string, string, number]> = [
+    ["skills", skills, 1000],
+    ["interests", interests, 1000],
+    ["challenges", challenges, MAX_TEXT],
+    ["experience", experience, MAX_TEXT],
+    ["motivation", motivation, MAX_TEXT],
+    ["team_experience", teamExperience, MAX_TEXT],
+    ["expectations", expectations, MAX_TEXT],
+    ["additional_info", additionalInfo, MAX_TEXT],
+  ];
+  for (const [key, value, max] of textLimits) {
+    if (value.length > max) fieldErrors[key] = `${key} must be under ${max} characters`;
+  }
 
   if (Object.keys(fieldErrors).length > 0) {
-    return Response.json({ fieldErrors }, { status: 400 });
+    return fail({ fieldErrors });
   }
 
   // Find team
-  const teams = await pb
-    .collection("teams")
-    .getFullList<TeamRecord>({
-      filter: pb.filter('leaderUserId = {:userId}', { userId: user.id }),
-    });
+  const team = await getLeadTeam<TeamRecord>(pb, user.id, {
+    fields: "id,status,questionnaire_completed",
+  });
+  if (!team) return fail({ error: "Team not found", status: 404 });
 
-  if (teams.length === 0) {
-    return Response.json({ error: "Team not found" }, { status: 404 });
-  }
-
-  const team = teams[0];
-
-  // Find existing response
-  const existingResponses = await pb
+  // Upsert response
+  const existing = await pb
     .collection("questionnaire_responses")
-    .getFullList<QuestionnaireData>({
-      filter: pb.filter('teamId = {:teamId}', { teamId: team.id }),
-    });
+    .getFirstListItem(pb.filter("teamId = {:teamId}", { teamId: team.id }), {
+      fields: "id",
+    })
+    .catch(() => null);
 
   const payload: Record<string, unknown> = {
     teamId: team.id,
     userId: user.id,
-    age,
+    age: Number(age),
     gender,
     education,
-    college_name: college_name.slice(0, 200),
+    college_name: collegeName.slice(0, 200),
     district: district.slice(0, 100),
-    skills: skills.slice(0, MAX_TEXT),
-    interests: interests.slice(0, MAX_TEXT),
+    skills: skills.slice(0, 1000),
+    interests: interests.slice(0, 1000),
     challenges: challenges.slice(0, MAX_TEXT),
     experience: experience.slice(0, MAX_TEXT),
     motivation: motivation.slice(0, MAX_TEXT),
-    team_experience: team_experience.slice(0, MAX_TEXT),
+    team_experience: teamExperience.slice(0, MAX_TEXT),
     expectations: expectations.slice(0, MAX_TEXT),
-    additional_info: additional_info.slice(0, MAX_TEXT),
+    additional_info: additionalInfo.slice(0, MAX_TEXT),
   };
 
-  if (existingResponses.length > 0) {
-    await pb
-      .collection("questionnaire_responses")
-      .update(existingResponses[0].id!, payload);
+  if (existing) {
+    await pb.collection("questionnaire_responses").update(existing.id, payload);
   } else {
     await pb.collection("questionnaire_responses").create(payload);
   }
 
-  return Response.json({ success: true });
-}
+  // Denormalize: mark the team as having completed the questionnaire
+  // so the rest of the app can read it without a join.
+  if (!team.questionnaire_completed) {
+    await pb.collection("teams").update(team.id, {
+      questionnaire_completed: true,
+    });
+  }
+
+  return ok();
+});
 
 // ---------------------------------------------------------------------------
 // Meta
@@ -245,7 +237,7 @@ export function meta() {
 // ---------------------------------------------------------------------------
 
 export default function LeadQuestionnaire() {
-  const { user, team, questionnaire, questionnaireOpen } =
+  const { team, questionnaire, questionnaireOpen } =
     useLoaderData() as LoaderData;
   const actionData = useActionData() as ActionData | undefined;
   const navigation = useNavigation();
@@ -279,15 +271,12 @@ export default function LeadQuestionnaire() {
 
   if (!team) {
     return (
-      <div className="space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Questionnaire
-          </h1>
-          <p className="text-muted-foreground">
-            Complete your team profile questionnaire.
-          </p>
-        </div>
+      <div className="space-y-10">
+        <PanelHeader
+          eyebrow="Step 02"
+          title="Questionnaire"
+          description="Complete your team profile questionnaire."
+        />
         <Card>
           <CardContent className="py-8 text-center">
             <AlertCircle className="mx-auto mb-3 h-12 w-12 text-muted-foreground opacity-30" />
@@ -323,20 +312,17 @@ export default function LeadQuestionnaire() {
   };
 
   return (
-    <div className="space-y-8" ref={topRef}>
+    <div className="space-y-10" ref={topRef}>
       <StepIndicator steps={steps} />
 
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Team Questionnaire
-        </h1>
-        <p className="text-muted-foreground">
-          Complete this questionnaire to help us understand your team better.
-        </p>
-      </div>
+      <PanelHeader
+        eyebrow="Step 02"
+        title="Team questionnaire"
+        description="Complete this questionnaire to help us understand your team better."
+      />
 
       {!questionnaireOpen && (
-        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">
+        <div className="rounded-md border border-warning/30 bg-warning/8 px-4 py-3 text-sm text-warning">
           <AlertCircle className="mr-2 inline h-4 w-4" />
           Questionnaire submissions are currently closed. You can view your
           answers but cannot make changes.
@@ -344,13 +330,13 @@ export default function LeadQuestionnaire() {
       )}
 
       {actionData?.success && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+        <div className="rounded-md border border-success/30 bg-success/8 px-4 py-3 text-sm text-success">
           Questionnaire saved successfully!
         </div>
       )}
 
       {actionData?.error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+        <div className="rounded-md border border-danger/30 bg-danger/8 px-4 py-3 text-sm text-danger">
           {actionData.error}
         </div>
       )}
@@ -376,7 +362,7 @@ export default function LeadQuestionnaire() {
       <Form method="post" className="space-y-6">
         {/* Section 1: Personal Info */}
         {currentSection === "personal" && (
-          <Card key="personal" className="animate-in slide-in-from-right-4 fade-in duration-300">
+          <Card key="personal" className="panel-enter">
             <CardHeader>
               <CardTitle>Personal Info</CardTitle>
               <CardDescription>
@@ -519,7 +505,7 @@ export default function LeadQuestionnaire() {
 
         {/* Section 2: Skills & Interests */}
         {currentSection === "skills" && (
-          <Card key="skills" className="animate-in slide-in-from-right-4 fade-in duration-300">
+          <Card key="skills" className="panel-enter">
             <CardHeader>
               <CardTitle>Skills &amp; Interests</CardTitle>
               <CardDescription>
@@ -532,7 +518,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="skills"
                   name="skills"
-                  maxLength={5000}
+                  maxLength={1000}
                   placeholder="List your technical and non-technical skills (e.g., Python, UI/UX Design, Public Speaking)"
                   value={formValues.skills}
                   onChange={(e) => updateField("skills", e.target.value)}
@@ -549,7 +535,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="interests"
                   name="interests"
-                  maxLength={5000}
+                  maxLength={1000}
                   placeholder="What are you passionate about? (e.g., AI, Web Development, Social Impact)"
                   value={formValues.interests}
                   onChange={(e) =>
@@ -568,7 +554,7 @@ export default function LeadQuestionnaire() {
 
         {/* Section 3: Motivation */}
         {currentSection === "motivation" && (
-          <Card key="motivation" className="animate-in slide-in-from-right-4 fade-in duration-300">
+          <Card key="motivation" className="panel-enter">
             <CardHeader>
               <CardTitle>Motivation</CardTitle>
               <CardDescription>
@@ -583,7 +569,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="challenges"
                   name="challenges"
-                  maxLength={5000}
+                  maxLength={2000}
                   placeholder="What challenges have you faced in your journey so far?"
                   value={formValues.challenges}
                   onChange={(e) =>
@@ -601,7 +587,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="experience"
                   name="experience"
-                  maxLength={5000}
+                  maxLength={2000}
                   placeholder="Describe any previous hackathon, project, or work experience"
                   value={formValues.experience}
                   onChange={(e) =>
@@ -619,7 +605,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="motivation"
                   name="motivation"
-                  maxLength={5000}
+                  maxLength={2000}
                   placeholder="What motivates you to join VisionHack?"
                   value={formValues.motivation}
                   onChange={(e) =>
@@ -637,7 +623,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="team_experience"
                   name="team_experience"
-                  maxLength={5000}
+                  maxLength={2000}
                   placeholder="Describe your experience working in teams"
                   value={formValues.team_experience}
                   onChange={(e) =>
@@ -655,7 +641,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="expectations"
                   name="expectations"
-                  maxLength={5000}
+                  maxLength={2000}
                   placeholder="What do you hope to gain from this hackathon?"
                   value={formValues.expectations}
                   onChange={(e) =>
@@ -673,7 +659,7 @@ export default function LeadQuestionnaire() {
                 <Textarea
                   id="additional_info"
                   name="additional_info"
-                  maxLength={5000}
+                  maxLength={2000}
                   placeholder="Anything else you'd like to share?"
                   value={formValues.additional_info}
                   onChange={(e) =>
@@ -705,7 +691,7 @@ export default function LeadQuestionnaire() {
               disabled={isSubmitting || !questionnaireOpen}
             >
               {isSubmitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 vh-spin" />
               ) : (
                 <Send className="mr-2 h-4 w-4" />
               )}
