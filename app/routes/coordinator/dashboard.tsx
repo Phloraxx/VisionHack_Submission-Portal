@@ -1,11 +1,11 @@
-import { useState, useMemo } from "react";
-import { useLoaderData, Link } from "react-router";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useLoaderData, useSearchParams, useNavigation } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
+import { getMemberCountsForTeams } from "~/lib/team.server";
 import {
   STATUS_LABELS,
-  STATUS_COLORS,
 } from "~/lib/team-status";
 import type { TeamStatus } from "~/lib/types";
 import {
@@ -16,8 +16,10 @@ import {
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Input } from "~/components/ui/input";
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { MetricCard } from "~/components/shared/metric-card";
+import { StatusBadge } from "~/components/shared/status-badge";
+import { DataList, type DataListRow } from "~/components/shared/data-list";
 import {
   Select,
   SelectContent,
@@ -30,7 +32,6 @@ import {
   Building2,
   MapPin,
   Users,
-  TrendingUp,
   Filter,
 } from "lucide-react";
 
@@ -60,32 +61,144 @@ interface InstitutionRecord {
   };
 }
 
+const PAGE_SIZE = 50;
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["coordinator"]);
   const pb = createSuperuserClient();
 
-  const teams = await pb.collection("teams").getFullList<TeamWithExpand>({
-    expand: "institutionId,leaderUserId",
-    sort: "-created",
-  });
+  const url = new URL(request.url);
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
+  const search = (url.searchParams.get("q") ?? "").trim();
+  const district = url.searchParams.get("district") ?? "all";
+  const status = url.searchParams.get("status") ?? "all";
+  const institution = url.searchParams.get("institution") ?? "all";
 
-  const institutions = await pb
-    .collection("institutions")
-    .getFullList<InstitutionRecord>({
+  // Coordinator can see all teams; paginate the teams query and skip
+  // the expensive full-list scan. The institutions list is bounded
+  // (a few hundred at most for a hackathon) and is still loaded once.
+  // PB's filter syntax does NOT support `expand.X.field` for filtering
+  // by related-record fields. To filter teams by district, we resolve
+  // the district to institution IDs and filter by `institutionId` instead.
+  const institutions = await pb.collection("institutions").getList<InstitutionRecord>(
+    1,
+    200,
+    {
       expand: "campusLeadId",
       sort: "name",
-    });
+      fields: "id,name,district,code,campusLeadId,expand.campusLeadId.name,expand.campusLeadId.email",
+    },
+  );
 
-  // Get member counts
-  const members = await pb.collection("members").getFullList<{
-    teamId: string;
-  }>();
-  const memberCounts: Record<string, number> = {};
-  for (const m of members) {
-    memberCounts[m.teamId] = (memberCounts[m.teamId] || 0) + 1;
+  const teamClauses: string[] = [];
+  if (search) {
+    const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    teamClauses.push(`(name ~ "${safe}" || teamCode ~ "${safe}")`);
+  }
+  if (status && status !== "all") teamClauses.push(`status = "${status}"`);
+  if (district && district !== "all") {
+    const instIds = institutions.items
+      .filter((i) => i.district === district)
+      .map((i) => i.id);
+    if (instIds.length > 0) {
+      // PB doesn't accept SQL `IN` lists; we expand to `||` clauses.
+      const orChain = instIds
+        .map((id) => `institutionId = "${id}"`)
+        .join(" || ");
+      teamClauses.push(`(${orChain})`);
+    } else {
+      // District has no institutions — short-circuit to empty.
+      return {
+        user,
+        teams: [] as TeamWithExpand[],
+        institutions: institutions.items,
+        memberCounts: {} as Record<string, number>,
+        page: 1,
+        perPage: PAGE_SIZE,
+        totalItems: 0,
+        totalPages: 1,
+        statusCounts: {} as Partial<Record<TeamStatus, number>>,
+        teamsByInstitution: {} as Record<
+          string,
+          { total: number; registered: number; shortlisted: number }
+        >,
+        uniqueInstitutionIds: 0,
+        scannedCount: 0,
+        activeFilters: { search, status, district, institution },
+      };
+    }
+  }
+  if (institution && institution !== "all") {
+    teamClauses.push(`institutionId = "${institution}"`);
+  }
+  const teamFilter = teamClauses.length > 0 ? teamClauses.join(" && ") : undefined;
+
+  // For accurate per-status counts and per-institution aggregates we scan
+  // a bounded set of teams (id/status/institutionId only) matching the
+  // current filter — independent of the page slice. Capped to keep it cheap.
+  const COUNT_SCAN_CAP = 1000;
+
+  const [teamsPage, countScan] = await Promise.all([
+    pb.collection("teams").getList<TeamWithExpand>(page, PAGE_SIZE, {
+      filter: teamFilter,
+      expand: "institutionId,leaderUserId",
+      sort: "-created",
+      fields:
+        "id,name,teamCode,status,created,institutionId,leaderUserId,expand.institutionId.name,expand.leaderUserId.name,expand.leaderUserId.email,expand.institutionId.district",
+    }),
+    pb.collection("teams").getList<{
+      status: TeamStatus;
+      institutionId: string;
+    }>(1, COUNT_SCAN_CAP, {
+      filter: teamFilter,
+      fields: "status,institutionId",
+    }),
+  ]);
+
+  // Member counts for the visible page only.
+  const memberCounts = await getMemberCountsForTeams(
+    pb,
+    teamsPage.items.map((t) => t.id),
+  );
+
+  // Status counts + per-institution aggregates across the (filtered) scan.
+  const statusCounts: Partial<Record<TeamStatus, number>> = {};
+  const teamsByInstitution: Record<
+    string,
+    { total: number; registered: number; shortlisted: number }
+  > = {};
+  for (const t of countScan.items) {
+    statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1;
+    const agg = (teamsByInstitution[t.institutionId] ??= {
+      total: 0,
+      registered: 0,
+      shortlisted: 0,
+    });
+    agg.total++;
+    if (t.status === "registered") agg.registered++;
+    if (t.status === "shortlisted") agg.shortlisted++;
   }
 
-  return { user, teams, institutions, memberCounts };
+  const uniqueInstitutionIds = new Set(
+    countScan.items.map((t) => t.institutionId),
+  ).size;
+
+  return {
+    user,
+    teams: teamsPage.items,
+    institutions: institutions.items,
+    memberCounts,
+    page: teamsPage.page,
+    perPage: teamsPage.perPage,
+    totalItems: teamsPage.totalItems,
+    totalPages: teamsPage.totalPages,
+    statusCounts,
+    teamsByInstitution,
+    uniqueInstitutionIds,
+    scannedCount: Math.min(countScan.totalItems, COUNT_SCAN_CAP),
+    // Echo back the active filters so the UI can stay in sync.
+    activeFilters: { search, status, district, institution },
+  };
 }
 
 export function meta() {
@@ -93,20 +206,82 @@ export function meta() {
 }
 
 export default function CoordinatorDashboard() {
-  const { teams, institutions, memberCounts } = useLoaderData() as {
-    user: any;
+  const {
+    teams,
+    institutions,
+    memberCounts,
+    page,
+    totalItems,
+    totalPages,
+    statusCounts,
+    teamsByInstitution,
+    uniqueInstitutionIds,
+    activeFilters,
+  } = useLoaderData() as {
     teams: TeamWithExpand[];
     institutions: InstitutionRecord[];
     memberCounts: Record<string, number>;
+    page: number;
+    perPage: number;
+    totalItems: number;
+    totalPages: number;
+    statusCounts: Partial<Record<TeamStatus, number>>;
+    teamsByInstitution: Record<
+      string,
+      { total: number; registered: number; shortlisted: number }
+    >;
+    uniqueInstitutionIds: number;
+    activeFilters: {
+      search: string;
+      status: string;
+      district: string;
+      institution: string;
+    };
   };
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [districtFilter, setDistrictFilter] = useState("all");
-  const [institutionFilter, setInstitutionFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
+  const isLoading = navigation.state === "loading";
+
+  // All filters are URL-driven (server-side) so they stay correct across
+  // pagination. The search box keeps local state only to debounce typing.
+  const [searchInput, setSearchInput] = useState(activeFilters.search);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewMode, setViewMode] = useState<"teams" | "institutions">("teams");
 
-  // Get unique values for filters
+  const districtFilter = activeFilters.district || "all";
+  const institutionFilter = activeFilters.institution || "all";
+  const statusFilter = activeFilters.status || "all";
+
+  // Keep the search box in sync if the URL changes externally (e.g. back).
+  useEffect(() => {
+    setSearchInput(activeFilters.search);
+  }, [activeFilters.search]);
+
+  /** Update one or more URL params, always resetting pagination. */
+  const setParams = (updates: Record<string, string>, replace = false) => {
+    const params = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(updates)) {
+      if (value && value !== "all") params.set(key, value);
+      else params.delete(key);
+    }
+    params.delete("page");
+    setSearchParams(params, { replace });
+  };
+
+  const updateQuery = (next: string) => {
+    setSearchInput(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setParams({ q: next }, true), 250);
+  };
+  const goToPage = (n: number) => {
+    const params = new URLSearchParams(searchParams);
+    if (n > 1) params.set("page", String(n));
+    else params.delete("page");
+    setSearchParams(params);
+  };
+
+  // Filter options come from the (bounded) institutions list.
   const uniqueDistricts = useMemo(
     () =>
       Array.from(
@@ -116,117 +291,56 @@ export default function CoordinatorDashboard() {
   );
 
   const uniqueStatuses = useMemo(
-    () => Array.from(new Set(teams.map((t) => t.status))).sort(),
-    [teams],
+    () => (Object.keys(statusCounts) as TeamStatus[]).sort(),
+    [statusCounts],
   );
 
-  // Filter teams
-  const filteredTeams = useMemo(() => {
-    return teams.filter((team) => {
-      const query = searchQuery.toLowerCase();
-      const inst = team.expand?.institutionId;
-
-      const matchesSearch =
-        team.name.toLowerCase().includes(query) ||
-        (inst?.name || "").toLowerCase().includes(query) ||
-        (team.expand?.leaderUserId?.name || "")
-          .toLowerCase()
-          .includes(query) ||
-        (team.teamCode || "").toLowerCase().includes(query);
-
-      const matchesDistrict =
-        districtFilter === "all" || inst?.district === districtFilter;
-      const matchesInstitution =
-        institutionFilter === "all" ||
-        team.institutionId === institutionFilter;
-      const matchesStatus =
-        statusFilter === "all" || team.status === statusFilter;
-
-      return (
-        matchesSearch && matchesDistrict && matchesInstitution && matchesStatus
-      );
-    });
-  }, [teams, searchQuery, districtFilter, institutionFilter, statusFilter]);
-
-  // Filter institutions
-  const filteredInstitutions = useMemo(() => {
-    return institutions.filter((inst) => {
-      const query = searchQuery.toLowerCase();
-      const matchesSearch =
-        inst.name.toLowerCase().includes(query) ||
-        (inst.expand?.campusLeadId?.name || "")
-          .toLowerCase()
-          .includes(query);
-
-      const matchesDistrict =
-        districtFilter === "all" || inst.district === districtFilter;
-
-      return matchesSearch && matchesDistrict;
-    });
-  }, [institutions, searchQuery, districtFilter]);
-
-  // Get team counts per institution
-  const teamsByInstitution = useMemo(() => {
-    const counts: Record<
-      string,
-      { total: number; registered: number; submitted: number }
-    > = {};
-    for (const team of teams) {
-      if (!counts[team.institutionId]) {
-        counts[team.institutionId] = {
-          total: 0,
-          registered: 0,
-          submitted: 0,
-        };
-      }
-      counts[team.institutionId].total++;
-      if (team.status === "registered") counts[team.institutionId].registered++;
-      if (team.status === "shortlisted") counts[team.institutionId].submitted++;
-    }
-    return counts;
-  }, [teams]);
+  // Institutions view honors the active district filter (client-side over
+  // the small institutions list is fine — it's not paginated).
+  const visibleInstitutions = useMemo(() => {
+    if (districtFilter === "all") return institutions;
+    return institutions.filter((i) => i.district === districtFilter);
+  }, [institutions, districtFilter]);
 
   const stats = {
-    totalTeams: filteredTeams.length,
-    totalInstitutions:
-      viewMode === "institutions"
-        ? filteredInstitutions.length
-        : new Set(filteredTeams.map((t) => t.institutionId)).size,
-    invited: filteredTeams.filter((t) => t.status === "invited").length,
-    registered: filteredTeams.filter((t) => t.status === "registered").length,
-    shortlisted: filteredTeams.filter((t) => t.status === "shortlisted").length,
-    submitted: filteredTeams.filter((t) => t.status === "submitted")
-      .length,
+    totalTeams: totalItems,
+    totalInstitutions: uniqueInstitutionIds,
+    invited: statusCounts.invited ?? 0,
+    registered: statusCounts.registered ?? 0,
+    shortlisted: statusCounts.shortlisted ?? 0,
+    submitted: statusCounts.submitted ?? 0,
   };
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Coordinator Dashboard
+    <div className="space-y-10">
+      <div>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-primary">
+          VisionHack · 2026 · Coordinator
+        </p>
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Coordinator overview
         </h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="mt-1.5 text-sm text-muted-foreground">
           View teams and institutions filtered by district.
         </p>
       </div>
 
       {/* District Filter */}
-      <Card className="mb-6">
-        <CardContent className="pt-4">
+      <Card>
+        <CardContent className="p-4">
           <div className="flex items-center gap-4">
             <MapPin className="h-5 w-5 text-muted-foreground shrink-0" />
             <Select
               value={districtFilter}
-              onValueChange={(val) => {
-                setDistrictFilter(val);
-                setInstitutionFilter("all");
-              }}
+              onValueChange={(val) =>
+                setParams({ district: val, institution: "all" })
+              }
             >
               <SelectTrigger className="w-full md:w-64">
-                <SelectValue placeholder="Select District" />
+                <SelectValue placeholder="Select district" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Districts</SelectItem>
+                <SelectItem value="all">All districts</SelectItem>
                 {uniqueDistricts.map((d) => (
                   <SelectItem key={d} value={d}>
                     {d}
@@ -238,10 +352,7 @@ export default function CoordinatorDashboard() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setDistrictFilter("all");
-                  setInstitutionFilter("all");
-                }}
+                onClick={() => setParams({ district: "all", institution: "all" })}
               >
                 Clear
               </Button>
@@ -250,61 +361,31 @@ export default function CoordinatorDashboard() {
         </CardContent>
       </Card>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-6 stagger-cards">
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-muted-foreground">Total Teams</p>
-            <p className="text-xl font-bold">{stats.totalTeams}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-muted-foreground">Invited</p>
-            <p className="text-xl font-bold text-yellow-600">
-              {stats.invited}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-muted-foreground">Registered</p>
-            <p className="text-xl font-bold text-blue-600">
-              {stats.registered}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-muted-foreground">Shortlisted</p>
-            <p className="text-xl font-bold text-green-600">
-              {stats.shortlisted}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-muted-foreground">Submitted</p>
-            <p className="text-xl font-bold text-purple-600">
-              {stats.submitted}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-muted-foreground">Institutions</p>
-            <p className="text-xl font-bold">{stats.totalInstitutions}</p>
-          </CardContent>
-        </Card>
+      {/* Stats Cards — 6 MetricCards */}
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 stagger-cards">
+        <MetricCard label="Teams" value={stats.totalTeams} icon={Users} />
+        <MetricCard label="Invited" value={stats.invited} />
+        <MetricCard label="Registered" value={stats.registered} tone="info" />
+        <MetricCard
+          label="Shortlisted"
+          value={stats.shortlisted}
+          tone="primary"
+        />
+        <MetricCard
+          label="Submitted"
+          value={stats.submitted}
+          tone="success"
+        />
+        <MetricCard label="Institutions" value={stats.totalInstitutions} icon={Building2} />
       </div>
 
       {/* View Mode + Filters */}
-      <Card className="mb-6">
-        <CardContent className="pt-4 space-y-4">
-          <div className="flex items-center justify-between">
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">View:</span>
+              <span className="text-sm font-medium">View</span>
             </div>
             <div className="flex gap-2">
               <Button
@@ -326,18 +407,19 @@ export default function CoordinatorDashboard() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={
                   viewMode === "teams"
-                    ? "Search teams..."
-                    : "Search institutions..."
+                    ? "Search teams…"
+                    : "Search institutions…"
                 }
                 className="pl-9"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => updateQuery(e.target.value)}
+                disabled={isLoading}
               />
             </div>
 
@@ -345,13 +427,13 @@ export default function CoordinatorDashboard() {
               <>
                 <Select
                   value={institutionFilter}
-                  onValueChange={setInstitutionFilter}
+                  onValueChange={(val) => setParams({ institution: val })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Filter by Institution" />
+                    <SelectValue placeholder="Filter by institution" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Institutions</SelectItem>
+                    <SelectItem value="all">All institutions</SelectItem>
                     {institutions.map((inst) => (
                       <SelectItem key={inst.id} value={inst.id}>
                         {inst.name}
@@ -362,13 +444,13 @@ export default function CoordinatorDashboard() {
 
                 <Select
                   value={statusFilter}
-                  onValueChange={setStatusFilter}
+                  onValueChange={(val) => setParams({ status: val })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Filter by Status" />
+                    <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
                     {uniqueStatuses.map((status) => (
                       <SelectItem key={status} value={status}>
                         {STATUS_LABELS[status as TeamStatus] || status}
@@ -384,79 +466,58 @@ export default function CoordinatorDashboard() {
 
       {/* Content */}
       {viewMode === "teams" ? (
-        filteredTeams.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No teams match your filters
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 stagger-cards">
-            {filteredTeams.map((team) => {
-              const colors = STATUS_COLORS[team.status];
-              const inst = team.expand?.institutionId;
-              return (
-                <Link
-                  key={team.id}
-                  to={`/coordinator/teams/${team.id}`}
-                  className="block"
-                >
-                  <Card className="h-full card-hover cursor-pointer">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between mb-2">
-                        <Badge
-                          className={`${colors.bg} ${colors.text} border-0`}
-                        >
-                          {STATUS_LABELS[team.status]}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {memberCounts[team.id] || 0} members
-                        </span>
-                      </div>
-                      <CardTitle className="text-sm font-semibold leading-snug">
-                        {team.name}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-xs space-y-1.5 text-muted-foreground">
-                      {inst && (
-                        <div className="flex items-center gap-1.5">
-                          <Building2 className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{inst.name}</span>
-                        </div>
-                      )}
-                      {inst?.district && (
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="h-3 w-3 shrink-0" />
-                          <span>{inst.district}</span>
-                        </div>
-                      )}
-                      {team.teamCode && (
-                        <span className="inline-block text-xs font-mono text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded">
-                          {team.teamCode}
-                        </span>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
-        )
+        <DataList
+          rows={teams.map<DataListRow>((team) => ({
+            id: team.id,
+            primary: team.name,
+            code: team.teamCode,
+            secondary: (
+              <span className="flex items-center gap-2">
+                {team.expand?.institutionId && (
+                  <span>{team.expand.institutionId.name}</span>
+                )}
+                {team.expand?.institutionId?.district && (
+                  <span className="text-muted-foreground/70">
+                    · {team.expand.institutionId.district}
+                  </span>
+                )}
+                {team.expand?.leaderUserId && (
+                  <span className="text-muted-foreground/70">
+                    · {team.expand.leaderUserId.name}
+                  </span>
+                )}
+              </span>
+            ),
+            metric: {
+              label: "Members",
+              value: memberCounts[team.id] || 0,
+            },
+            indicator: <StatusBadge status={team.status} />,
+            href: `/coordinator/teams/${team.id}`,
+          }))}
+          emptyMessage="No teams match your filters"
+        emptyHint="Clear the search field or set the status filter to All to see every team."
+        />
       ) : (
         // Institutions view
-        filteredInstitutions.length === 0 ? (
+        visibleInstitutions.length === 0 ? (
           <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No institutions match your filters
+            <CardContent className="py-12 text-center">
+              <p className="text-sm font-medium text-foreground">
+                No institutions match your filters
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Clear the search field or set the district filter to All.
+              </p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredInstitutions.map((inst) => {
+            {visibleInstitutions.map((inst) => {
               const counts = teamsByInstitution[inst.id] || {
                 total: 0,
                 registered: 0,
-                submitted: 0,
+                shortlisted: 0,
               };
               return (
                 <Card key={inst.id} className="h-full">
@@ -475,20 +536,20 @@ export default function CoordinatorDashboard() {
                         <p className="text-xs text-muted-foreground">Total</p>
                         <p className="text-lg font-bold">{counts.total}</p>
                       </div>
-                      <div className="bg-blue-50 dark:bg-blue-900/30 rounded p-2 text-center">
-                        <p className="text-xs text-blue-600 dark:text-blue-300">
+                      <div className="bg-info/10 rounded p-2 text-center">
+                        <p className="text-xs text-info">
                           Registered
                         </p>
-                        <p className="text-lg font-bold text-blue-600 dark:text-blue-300">
+                        <p className="text-lg font-bold text-info">
                           {counts.registered}
                         </p>
                       </div>
-                      <div className="bg-purple-50 dark:bg-purple-900/30 rounded p-2 text-center">
-                        <p className="text-xs text-purple-600 dark:text-purple-300">
-                          Submitted
+                      <div className="bg-success/10 rounded p-2 text-center">
+                        <p className="text-xs text-success">
+                          Shortlisted
                         </p>
-                        <p className="text-lg font-bold text-purple-600 dark:text-purple-300">
-                          {counts.submitted}
+                        <p className="text-lg font-bold text-success">
+                          {counts.shortlisted}
                         </p>
                       </div>
                     </div>
@@ -505,65 +566,84 @@ export default function CoordinatorDashboard() {
           </div>
         )
       )}
+
+      {/* Pagination (teams view) */}
+      {viewMode === "teams" && totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-border pt-4">
+          <p className="text-xs text-muted-foreground">
+            Page {page} of {totalPages} · {totalItems} teams
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || isLoading}
+              onClick={() => goToPage(page - 1)}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || isLoading}
+              onClick={() => goToPage(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export function HydrateFallback() {
   return (
-    <div>
-      <div className="mb-8">
-        <Skeleton className="h-7 w-52" />
-        <Skeleton className="mt-1 h-4 w-72" />
+    <div className="space-y-10">
+      <div>
+        <Skeleton className="h-3 w-32" />
+        <Skeleton className="mt-2 h-7 w-48" />
+        <Skeleton className="mt-1 h-4 w-64" />
       </div>
 
-      {/* District filter */}
-      <Card className="mb-6">
-        <CardContent className="pt-4">
-          <Skeleton className="h-10 w-48 rounded-lg" />
+      <Card>
+        <CardContent className="p-4">
+          <Skeleton className="h-10 w-48 rounded-md" />
         </CardContent>
       </Card>
 
-      {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-6">
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="pt-4 text-center">
-              <Skeleton className="mx-auto h-3 w-16" />
-              <Skeleton className="mx-auto mt-1 h-6 w-10" />
-            </CardContent>
-          </Card>
+          <div
+            key={i}
+            className="rounded-lg border border-border bg-card p-5 space-y-3"
+          >
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-7 w-12" />
+          </div>
         ))}
       </div>
 
-      {/* View mode + filters */}
-      <Card className="mb-6">
-        <CardContent className="pt-4 space-y-4">
-          <Skeleton className="h-8 w-40" />
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-10 w-full rounded-lg" />
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <Skeleton className="h-8 w-32" />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Skeleton className="h-10 w-full rounded-md" />
+            <Skeleton className="h-10 w-full rounded-md" />
+            <Skeleton className="h-10 w-full rounded-md" />
           </div>
         </CardContent>
       </Card>
 
-      {/* Team cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between mb-2">
-                <Skeleton className="h-5 w-20 rounded-full" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-              <Skeleton className="h-5 w-full" />
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              <Skeleton className="h-3 w-32" />
-              <Skeleton className="h-3 w-24" />
-            </CardContent>
-          </Card>
+      <div className="rounded-lg border border-border bg-card divide-y divide-border">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="px-4 py-3 flex items-center gap-4">
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-64" />
+            </div>
+            <Skeleton className="h-6 w-16 rounded-full" />
+          </div>
         ))}
       </div>
     </div>
