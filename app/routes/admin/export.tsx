@@ -3,11 +3,8 @@ import { useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
-import {
-  STATUS_LABELS,
-  STATUS_COLORS,
-} from "~/lib/team-status";
-import type { TeamStatus, TeamRecord } from "~/lib/types";
+import { STATUS_LABELS } from "~/lib/team-status";
+import type { TeamStatus, TeamView } from "~/lib/types";
 import {
   Card,
   CardContent,
@@ -16,7 +13,6 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { Button } from "~/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -25,58 +21,39 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Search, Download, FileDown } from "lucide-react";
+import { countByKey } from "~/lib/utils";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { MetricCard } from "~/components/shared/metric-card";
 
 // ---------------------------------------------------------------------------
 // Loader
 // ---------------------------------------------------------------------------
 
-// TeamExport: central TeamRecord + expansion for institution/leader names
-interface TeamExport extends TeamRecord {
-  expand?: {
-    institutionId?: { name: string; district: string };
-    leaderUserId?: { name: string; email: string };
-  };
-}
-
+// The export *page* only renders counts + filters; the actual CSV is
+// produced by /api/export/csv. So the loader needs team metadata for the
+// filter UI and member counts only — not full member rows.
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
   const pb = createSuperuserClient();
 
-  const teams = await pb
-    .collection("teams")
-    .getFullList<TeamExport>({
+  const [teams, members] = await Promise.all([
+    pb.collection("teams").getFullList<TeamView>({
       expand: "institutionId,leaderUserId",
       sort: "-created",
-    });
+      fields:
+        "id,name,teamCode,status,institutionId,leaderUserId,created,updated,expand.institutionId.name,expand.institutionId.district,expand.leaderUserId.name,expand.leaderUserId.email",
+    }),
+    pb.collection("members").getFullList<{ teamId: string }>({
+      fields: "teamId",
+    }),
+  ]);
 
-  // Get members for all teams
-  const members = await pb.collection("members").getFullList<{
-    id: string;
-    teamId: string;
-    fullName: string;
-    email: string;
-    phone: string;
-    gender: string;
-    role: string;
-  }>();
-
-  const membersByTeam: Record<string, any[]> = {};
-  for (const m of members) {
-    if (!membersByTeam[m.teamId]) membersByTeam[m.teamId] = [];
-    membersByTeam[m.teamId].push(m);
-  }
-
-  const memberCounts: Record<string, number> = {};
-  for (const m of members) {
-    memberCounts[m.teamId] = (memberCounts[m.teamId] || 0) + 1;
-  }
-
+  const memberCounts = countByKey(members, (m) => m.teamId);
   const totalMembers = members.length;
 
   return {
     user,
     teams,
-    membersByTeam,
     memberCounts,
     totalMembers,
   };
@@ -88,9 +65,7 @@ export function meta() {
 
 export default function AdminExport() {
   const { teams, memberCounts, totalMembers } = useLoaderData() as {
-    user: any;
-    teams: TeamExport[];
-    membersByTeam: Record<string, any[]>;
+    teams: TeamView[];
     memberCounts: Record<string, number>;
     totalMembers: number;
   };
@@ -120,44 +95,27 @@ export default function AdminExport() {
   const uniqueStatuses = Array.from(new Set(teams.map((t) => t.status))).sort();
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Export Data</h1>
-        <p className="mt-1 text-muted-foreground">
-          Export filtered teams and members data as CSV.
-        </p>
-      </div>
+    <div className="space-y-10">
+      <PanelHeader
+        eyebrow="Data"
+        title="Export"
+        description="Export filtered teams and members data as CSV."
+      />
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4 mb-6">
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Total Teams</p>
-            <p className="text-2xl font-bold">{teams.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Filtered Teams</p>
-            <p className="text-2xl font-bold text-blue-600">
-              {filteredTeams.length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Total Members</p>
-            <p className="text-2xl font-bold">{totalMembers}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Filtered Members</p>
-            <p className="text-2xl font-bold text-blue-600">
-              {filteredMemberCount}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-cards">
+        <MetricCard label="Total teams" value={teams.length} icon={Download} />
+        <MetricCard
+          label="Filtered teams"
+          value={filteredTeams.length}
+          tone="info"
+        />
+        <MetricCard label="Total members" value={totalMembers} />
+        <MetricCard
+          label="Filtered members"
+          value={filteredMemberCount}
+          tone="info"
+        />
       </div>
 
       {/* Filters */}

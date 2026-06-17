@@ -1,9 +1,11 @@
 import { useRef, useState } from "react";
 import { useLoaderData, Form } from "react-router";
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
-import { validateOrigin } from "~/lib/csrf.server";
+import { secureAction, fail, ok } from "~/lib/action.server";
+import { getConfig } from "~/lib/config.server";
+import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { Switch } from "~/components/ui/switch";
 import { toast } from "sonner";
 import {
@@ -13,86 +15,50 @@ import {
   Upload,
   Loader2,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { PanelHeader } from "~/components/shared/panel-header";
 
-interface ConfigRecord {
-  id: string;
-  key: string;
-  value: boolean;
-}
-
-const FEATURE_FLAGS = [
-  {
-    key: "registration_open",
-    label: "Registration",
-    description: "Campus leads can invite team leads",
-    Icon: UserPlus,
-    step: 1,
-  },
-  {
-    key: "questionnaire_open",
-    label: "Questionnaire",
-    description: "Teams can submit their questionnaire",
-    Icon: FileText,
-    step: 2,
-  },
-  {
-    key: "nomination_open",
-    label: "Nomination",
-    description: "Campus leads can shortlist teams",
-    Icon: ShieldCheck,
-    step: 3,
-  },
-  {
-    key: "submission_open",
-    label: "Submission",
-    description: "Teams can submit their ideas",
-    Icon: Upload,
-    step: 4,
-  },
-];
+// Icons are presentation-only, so they live here (not in the shared,
+// server-safe feature-flags module).
+const FLAG_ICONS: Record<string, LucideIcon> = {
+  registration_open: UserPlus,
+  questionnaire_open: FileText,
+  nomination_open: ShieldCheck,
+  submission_open: Upload,
+};
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
   const pb = createSuperuserClient();
-
-  const configs = await pb
-    .collection("config")
-    .getFullList<ConfigRecord>();
-
-  const configMap: Record<string, boolean> = {};
-  for (const c of configs) {
-    configMap[c.key] = c.value;
-  }
-
-  return { user, configs, configMap };
+  const configMap = await getConfig(pb);
+  return { user, configMap };
 }
 
-export async function action({ request }: ActionFunctionArgs) {
-  validateOrigin(request);
-  await requireRole(request, ["admin"]);
-  const pb = createSuperuserClient();
+export const action = secureAction(
+  { roles: ["admin"] },
+  async ({ formData }) => {
+    const key = (formData.get("key") as string | null) ?? "";
+    const value = formData.get("value") === "true";
 
-  const formData = await request.formData();
-  const key = formData.get("key") as string;
-  const value = formData.get("value") === "true";
+    if (!FEATURE_FLAGS.some((f) => f.key === key)) {
+      return fail({ error: `Unknown config key "${key}"`, status: 400 });
+    }
 
-  // Find the existing config record for this key
-  const configs = await pb
-    .collection("config")
-    .getFullList<ConfigRecord>();
-  const target = configs.find((c) => c.key === key);
+    // Config writes require superuser — the `config` collection has null
+    // create/update rules (server-side only).
+    const pb = createSuperuserClient();
+    const target = await pb
+      .collection("config")
+      .getFirstListItem(pb.filter("key = {:key}", { key }))
+      .catch(() => null);
+    if (!target) {
+      return fail({ error: `Config key "${key}" not found`, status: 404 });
+    }
 
-  if (!target) {
-    return Response.json(
-      { success: false, error: `Config key "${key}" not found` },
-      { status: 404 },
-    );
-  }
-
-  await pb.collection("config").update(target.id, { value });
-
-  return Response.json({ success: true, key, value });
-}
+    await pb.collection("config").update(target.id, { value });
+    return ok({ key, value });
+  },
+);
 
 export function meta() {
   return [{ title: "Event Config — VisionHack" }];
@@ -100,8 +66,6 @@ export function meta() {
 
 export default function AdminConfig() {
   const { configMap } = useLoaderData() as {
-    user: any;
-    configs: ConfigRecord[];
     configMap: Record<string, boolean>;
   };
 
@@ -118,19 +82,16 @@ export default function AdminConfig() {
   };
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Event Configuration
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          Toggle phases on or off. Changes are saved immediately.
-        </p>
-      </div>
+    <div className="space-y-10">
+      <PanelHeader
+        eyebrow="Event"
+        title="Configuration"
+        description="Toggle phases on or off. Changes are saved immediately."
+      />
 
       <div className="max-w-lg space-y-1">
         {FEATURE_FLAGS.map((flag) => {
-          const Icon = flag.Icon;
+          const Icon = FLAG_ICONS[flag.key] ?? UserPlus;
           const isEnabled = configMap[flag.key] === true;
           const isLoading = toggling === flag.key;
 
@@ -142,7 +103,7 @@ export default function AdminConfig() {
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
                   {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 vh-spin" />
                   ) : (
                     <Icon className="h-4 w-4" />
                   )}

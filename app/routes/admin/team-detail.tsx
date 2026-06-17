@@ -1,16 +1,20 @@
 import { useLoaderData, Link } from "react-router";
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
-import { validateOrigin } from "~/lib/csrf.server";
-import { sendEmail } from "~/lib/email.server";
-import { escapeHtml } from "~/lib/utils";
+import { secureAction, fail, ok } from "~/lib/action.server";
 import {
-  canTransitionTo,
-  getValidTransitions,
-  STATUS_LABELS,
-} from "~/lib/team-status";
-import type { TeamStatus, TeamRecord, MemberRecord } from "~/lib/types";
+  transitionTeamStatus,
+  sendStatusChangeEmail,
+} from "~/lib/team.server";
+import { getValidTransitions } from "~/lib/team-status";
+import type {
+  TeamStatus,
+  TeamView,
+  MemberRecord,
+  QuestionnaireResponseRecord,
+  UserRecord,
+} from "~/lib/types";
 import {
   Card,
   CardContent,
@@ -33,15 +37,10 @@ function detectRole(url: string): RoleContext {
 }
 
 interface LoaderData {
-  user: any;
-  team: TeamRecord & {
-    expand?: {
-      institutionId?: { name: string; district: string; code: string };
-      leaderUserId?: { name: string; email: string };
-    };
-  };
+  user: UserRecord;
+  team: TeamView;
   members: MemberRecord[];
-  questionnaire: any | null;
+  questionnaire: QuestionnaireResponseRecord | null;
   validTransitions: TeamStatus[];
   roleContext: RoleContext;
 }
@@ -56,31 +55,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const pb = createSuperuserClient();
   const teamId = params.teamId as string;
 
-  const team = await pb.collection("teams").getOne<
-    TeamRecord & {
-      expand?: {
-        institutionId?: { name: string; district: string; code: string };
-        leaderUserId?: { name: string; email: string };
-      };
-    }
-  >(teamId, {
-    expand: "institutionId,leaderUserId",
-  });
-
-  const members = await pb
-    .collection("members")
-    .getFullList<MemberRecord>({
-      filter: pb.filter('teamId = {:teamId}', { teamId }),
-    });
-
-  let questionnaire = null;
-  try {
-    questionnaire = await pb
+  // Team, members, and questionnaire are independent reads — run together.
+  const [team, members, questionnaire] = await Promise.all([
+    pb.collection("teams").getOne<TeamView>(teamId, {
+      expand: "institutionId,leaderUserId",
+    }),
+    pb.collection("members").getFullList<MemberRecord>({
+      filter: pb.filter("teamId = {:teamId}", { teamId }),
+    }),
+    pb
       .collection("questionnaire_responses")
-      .getFirstListItem(pb.filter('teamId = {:teamId}', { teamId }));
-  } catch {
-    // no questionnaire response
-  }
+      .getFirstListItem<QuestionnaireResponseRecord>(
+        pb.filter("teamId = {:teamId}", { teamId }),
+      )
+      .catch(() => null),
+  ]);
 
   const validTransitions = getValidTransitions(team.status, user.role);
 
@@ -98,60 +87,59 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 // Action
 // ---------------------------------------------------------------------------
 
-export async function action({ request, params }: ActionFunctionArgs) {
-  validateOrigin(request);
-  const role = detectRole(request.url);
-  const { user } = await requireRole(request, [role]);
-  const pb = createSuperuserClient();
-  const teamId = params.teamId as string;
+export const action = secureAction(
+  { roles: ["admin", "coordinator"] },
+  async ({ formData, user, intent, params }) => {
+    const teamId =
+      params.teamId ?? (formData.get("teamId") as string | null) ?? "";
 
-  const formData = await request.formData();
-  const intent = formData.get("intent") as string;
+    // Superuser is required here: the `teams` updateRule grants write to
+    // admin / institution / lead but NOT coordinator, and this route is
+    // shared by coordinators who legitimately transition status.
+    const pb = createSuperuserClient();
 
-  if (intent === "transition") {
-    const toStatus = formData.get("toStatus") as TeamStatus;
-    const team = await pb.collection("teams").getOne(teamId);
+    if (intent === "transition") {
+      const toStatus = formData.get("toStatus") as TeamStatus;
 
-    if (!canTransitionTo(team.status, toStatus, user.role)) {
-      return Response.json({
-        success: false,
-        error: `Cannot transition from "${team.status}" to "${toStatus}"`,
+      // Fetch with the lead expand up front so we can reuse it for the
+      // notification email — no second round-trip.
+      let team: TeamView;
+      try {
+        team = await pb
+          .collection("teams")
+          .getOne<TeamView>(teamId, { expand: "leaderUserId" });
+      } catch {
+        return fail({ error: "Team not found", status: 404 });
+      }
+
+      const result = await transitionTeamStatus(pb, {
+        teamId,
+        to: toStatus,
+        role: user.role,
       });
+      if (!result.ok) return result.response;
+
+      // Best-effort notification email — reuse the expand from above.
+      const leadUser = team.expand?.leaderUserId;
+      if (leadUser?.email) {
+        try {
+          await sendStatusChangeEmail({
+            to: leadUser.email,
+            leadName: leadUser.name || "Team Lead",
+            teamName: team.name,
+            status: toStatus,
+          });
+        } catch (err) {
+          console.error("[admin/team-detail] notify email failed:", err);
+        }
+      }
+
+      return ok({ newStatus: toStatus });
     }
 
-    await pb.collection("teams").update(teamId, {
-      status: toStatus,
-      status_changed_at: new Date().toISOString(),
-    });
-
-    // Send notification email to team lead about status change
-    try {
-      const updatedTeam = await pb.collection("teams").getOne(teamId, { expand: "leaderUserId" });
-      const leadUser = (updatedTeam as any).expand?.leaderUserId;
-      if (leadUser?.email) {
-        await sendStatusChangeEmail(
-          leadUser.email,
-          leadUser.name || "Team Lead",
-          (updatedTeam as any).name,
-          toStatus,
-        );
-      }
-    } catch { /* email failure is non-blocking */ }
-
-    return Response.json({ success: true, newStatus: toStatus });
-  }
-
-  if (intent === "save-notes") {
-    const notes = formData.get("notes") as string;
-    await pb.collection("teams").update(teamId, {
-      notes: notes || "",
-      reviewed_by: user.name || user.email,
-    });
-    return Response.json({ success: true });
-  }
-
-  return Response.json({ success: false, error: "Invalid intent" });
-}
+    return fail({ error: "Invalid intent", status: 400 });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Meta
@@ -209,29 +197,4 @@ export default function TeamDetailPage() {
       }
     />
   );
-}
-
-async function sendStatusChangeEmail(
-  to: string,
-  leadName: string,
-  teamName: string,
-  newStatus: string,
-) {
-  const statusLabel = STATUS_LABELS[newStatus as keyof typeof STATUS_LABELS] || newStatus;
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-      <h1 style="font-size: 18px; margin: 0 0 16px;">Team Status Update — VisionHack 2026</h1>
-      <p>Hello <strong>${escapeHtml(leadName)}</strong>,</p>
-      <p>The status of your team <strong>${escapeHtml(teamName)}</strong> has been updated to <strong>${escapeHtml(statusLabel)}</strong>.</p>
-      <p style="margin: 16px 0;">
-        <a href="https://visionhack.mulearn.org/lead/dashboard"
-           style="display: inline-block; background: #18181b; color: #fff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-size: 14px;">
-          Check Your Dashboard
-        </a>
-      </p>
-      <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 24px 0;" />
-      <p style="margin: 0; font-size: 12px; color: #71717a;">VisionHack Team</p>
-    </div>
-  `.trim();
-  await sendEmail({ to, subject: `Team "${teamName}" status: ${statusLabel}`, html });
 }

@@ -1,21 +1,12 @@
-import { useState, useMemo } from "react";
-import { useLoaderData, Link } from "react-router";
+import { useState, useRef, useMemo } from "react";
+import { useLoaderData, useSearchParams, useNavigation } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
-import {
-  STATUS_LABELS,
-  STATUS_COLORS,
-} from "~/lib/team-status";
-import type { TeamStatus, MemberRecord } from "~/lib/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { getMemberCountsForTeams } from "~/lib/team.server";
+import { STATUS_LABELS } from "~/lib/team-status";
+import type { TeamStatus } from "~/lib/types";
 import { Input } from "~/components/ui/input";
-import { Badge } from "~/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -24,8 +15,14 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Button } from "~/components/ui/button";
-import { Search, ExternalLink, Users, CalendarIcon } from "lucide-react";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { DataList, type DataListRow } from "~/components/shared/data-list";
+import { StatusBadge } from "~/components/shared/status-badge";
+import { MetricCard } from "~/components/shared/metric-card";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Search, Users, ChevronLeft, ChevronRight } from "lucide-react";
+
+const PAGE_SIZE = 50;
 
 interface TeamWithExpand {
   id: string;
@@ -41,272 +38,337 @@ interface TeamWithExpand {
   };
 }
 
-interface MemberCountRecord {
-  teamId: string;
-}
-
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["admin"]);
   const pb = createSuperuserClient();
 
-  const teams = await pb.collection("teams").getFullList<TeamWithExpand>({
-    expand: "institutionId,leaderUserId",
-    sort: "-created",
-  });
+  const url = new URL(request.url);
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
+  const search = (url.searchParams.get("q") ?? "").trim();
+  const status = url.searchParams.get("status") ?? "";
 
-  // Get member counts
-  const members = await pb.collection("members").getFullList<MemberCountRecord>();
-  const memberCounts: Record<string, number> = {};
-  for (const m of members) {
-    memberCounts[m.teamId] = (memberCounts[m.teamId] || 0) + 1;
+  // Build a server-side filter. PB's `~` operator works on local
+  // fields (name, teamCode) and on equality of expanded relations
+  // (expand.X.field = "...") but NOT for substring match across
+  // expanded relations. We therefore scope server-side search to
+  // name and teamCode, then post-filter on lead name/email and
+  // institution name in JS below. The page is bounded to PAGE_SIZE,
+  // so the post-filter is cheap.
+  const clauses: string[] = [];
+  if (search) {
+    const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    clauses.push(`(name ~ "${safe}" || teamCode ~ "${safe}")`);
+  }
+  if (status && status !== "all") {
+    clauses.push(`status = "${status}"`);
+  }
+  const filter = clauses.length > 0 ? clauses.join(" && ") : undefined;
+
+  // Page slice + a fields-only scan for per-status counts. We cap the
+  // count scan at 500 rows; for 500+ teams, the metric cards become
+  // approximate. (A future migration can add server-side aggregations
+  // on PB if the event grows past this size.)
+  const COUNT_SCAN_CAP = 500;
+
+  const [pageResult, countScan] = await Promise.all([
+    pb.collection("teams").getList<TeamWithExpand>(page, PAGE_SIZE, {
+      filter,
+      expand: "institutionId,leaderUserId",
+      sort: "-created",
+      fields:
+        "id,name,teamCode,status,created,institutionId,leaderUserId,expand.institutionId.name,expand.leaderUserId.name,expand.leaderUserId.email",
+    }),
+    pb.collection("teams").getList<{ id: string; status: TeamStatus }>(1, COUNT_SCAN_CAP, {
+      fields: "id,status",
+    }),
+  ]);
+
+  // Member counts for THIS PAGE only — full counts are too expensive.
+  const teamIds = pageResult.items.map((t) => t.id);
+  const memberCounts = await getMemberCountsForTeams(pb, teamIds);
+
+  const statusCounts: Partial<Record<TeamStatus, number>> = {};
+  for (const t of countScan.items) {
+    statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1;
   }
 
-  return { user, teams, memberCounts };
+  return {
+    user,
+    teams: pageResult.items,
+    memberCounts,
+    page: pageResult.page,
+    perPage: pageResult.perPage,
+    totalItems: pageResult.totalItems,
+    totalPages: pageResult.totalPages,
+    statusCounts,
+    scannedCount: Math.min(countScan.totalItems, COUNT_SCAN_CAP),
+    scannedCap: COUNT_SCAN_CAP,
+  };
 }
 
 export function meta() {
-  return [{ title: "All Teams — VisionHack" }];
+  return [{ title: "Teams — VisionHack Admin" }];
 }
 
 export default function AdminTeams() {
-  const { teams, memberCounts } = useLoaderData() as {
-    user: any;
+  const {
+    teams,
+    memberCounts,
+    page,
+    totalItems,
+    totalPages,
+    statusCounts,
+    scannedCount,
+    scannedCap,
+  } = useLoaderData() as {
     teams: TeamWithExpand[];
     memberCounts: Record<string, number>;
+    page: number;
+    perPage: number;
+    totalItems: number;
+    totalPages: number;
+    statusCounts: Partial<Record<TeamStatus, number>>;
+    scannedCount: number;
+    scannedCap: number;
   };
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
+  const isLoading = navigation.state === "loading";
 
-  const filteredTeams = useMemo(() => {
-    return teams.filter((team) => {
-      const query = searchQuery.toLowerCase();
-      const matchesSearch =
-        team.name.toLowerCase().includes(query) ||
-        (team.teamCode || "").toLowerCase().includes(query) ||
-        (team.expand?.institutionId?.name || "")
-          .toLowerCase()
-          .includes(query) ||
-        (team.expand?.leaderUserId?.name || "")
-          .toLowerCase()
-          .includes(query) ||
-        (team.expand?.leaderUserId?.email || "")
-          .toLowerCase()
-          .includes(query);
+  const searchQuery = searchParams.get("q") ?? "";
+  const statusFilter = searchParams.get("status") ?? "all";
 
-      const matchesStatus =
-        statusFilter === "all" || team.status === statusFilter;
+  // Push search input into the URL with a 250ms debounce so the loader
+  // doesn't refire on every keystroke.
+  const [searchInput, setSearchInput] = useState(searchQuery);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateQuery = (next: string) => {
+    setSearchInput(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams(searchParams);
+      if (next) params.set("q", next);
+      else params.delete("q");
+      params.delete("page");
+      setSearchParams(params, { replace: true });
+    }, 250);
+  };
+  const updateStatus = (next: string) => {
+    const params = new URLSearchParams(searchParams);
+    if (next && next !== "all") params.set("status", next);
+    else params.delete("status");
+    params.delete("page");
+    setSearchParams(params, { replace: true });
+  };
+  const goToPage = (n: number) => {
+    const params = new URLSearchParams(searchParams);
+    if (n > 1) params.set("page", String(n));
+    else params.delete("page");
+    setSearchParams(params);
+  };
 
-      return matchesSearch && matchesStatus;
+  const uniqueStatuses = Object.keys(statusCounts).sort() as TeamStatus[];
+
+  // Post-filter for the lead name/email and institution name on the
+  // CURRENT page only. PB's filter doesn't support substring match on
+  // expanded relations, so the loader pre-filters name/teamCode
+  // server-side and we do the rest here. With PAGE_SIZE = 50 the
+  // post-filter is bounded.
+  const visibleTeams = useMemo(() => {
+    if (!searchQuery) return teams;
+    const q = searchQuery.toLowerCase();
+    return teams.filter((t: TeamWithExpand) => {
+      const lead = t.expand?.leaderUserId;
+      const inst = t.expand?.institutionId;
+      return (
+        (lead?.name || "").toLowerCase().includes(q) ||
+        (lead?.email || "").toLowerCase().includes(q) ||
+        (inst?.name || "").toLowerCase().includes(q)
+      );
     });
-  }, [teams, searchQuery, statusFilter]);
+  }, [teams, searchQuery]);
 
-  const uniqueStatuses = Array.from(new Set(teams.map((t) => t.status))).sort();
+  const rows: DataListRow[] = visibleTeams.map((team) => ({
+    id: team.id,
+    primary: team.name,
+    code: team.teamCode,
+    secondary: (
+      <span className="flex items-center gap-2 flex-wrap">
+        {team.expand?.institutionId && (
+          <span>{team.expand.institutionId.name}</span>
+        )}
+        {team.expand?.leaderUserId && (
+          <span className="text-muted-foreground">
+            · {team.expand.leaderUserId.name}
+          </span>
+        )}
+        <span className="text-muted-foreground/70">
+          · {new Date(team.created).toLocaleDateString()}
+        </span>
+      </span>
+    ),
+    metric: {
+      label: "Members",
+      value: memberCounts[team.id] || 0,
+    },
+    indicator: <StatusBadge status={team.status} />,
+    href: `/admin/teams/${team.id}`,
+  }));
+
+  const isApprox = scannedCount < totalItems;
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">All Teams</h1>
-        <p className="mt-1 text-muted-foreground">
-          View, search, and manage all registered teams ({teams.length} total)
+    <div className="space-y-8">
+      <PanelHeader
+        eyebrow="Pipeline"
+        title="All teams"
+        description={
+          isApprox
+            ? `Showing page ${page} of ${totalPages} — ${totalItems} total teams (per-status counts scanned ${scannedCount}/${scannedCap})`
+            : `Page ${page} of ${totalPages} — ${totalItems} total teams`
+        }
+      />
+
+      {/* Compact stats */}
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 stagger-cards">
+        <MetricCard label="Total" value={totalItems} icon={Users} />
+        <MetricCard
+          label="Registered"
+          value={statusCounts.registered ?? 0}
+          tone="info"
+        />
+        <MetricCard
+          label="Shortlisted"
+          value={statusCounts.shortlisted ?? 0}
+          tone="primary"
+        />
+        <MetricCard
+          label="Submitted"
+          value={statusCounts.submitted ?? 0}
+          tone="success"
+        />
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search teams, codes, leads, institutions…"
+            className="pl-9"
+            value={searchInput}
+            onChange={(e) => updateQuery(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <Select
+          value={statusFilter}
+          onValueChange={updateStatus}
+          disabled={isLoading}
+        >
+          <SelectTrigger className="sm:w-56">
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {uniqueStatuses.map((status) => (
+              <SelectItem key={status} value={status}>
+                {STATUS_LABELS[status] || status}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* List — show a "filtered" hint when client-side post-filter
+          reduces the visible page below the loader's count. */}
+      {searchQuery && visibleTeams.length < teams.length && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          Showing {visibleTeams.length} of {teams.length} teams on this
+          page (search filter applied to lead / institution names).
         </p>
-      </div>
+      )}
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6 stagger-cards">
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Total Teams</p>
-            <p className="text-2xl font-bold">{teams.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Registered</p>
-            <p className="text-2xl font-bold text-blue-600">
-              {teams.filter((t) => t.status === "registered").length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Shortlisted</p>
-            <p className="text-2xl font-bold text-indigo-600">
-              {
-                teams.filter((t) => t.status === "shortlisted")
-                  .length
-              }
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Submitted</p>
-            <p className="text-2xl font-bold text-purple-600">
-              {teams.filter((t) => t.status === "submitted").length}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* List */}
+      <DataList
+        rows={rows}
+        emptyMessage={
+          searchQuery || statusFilter !== "all"
+            ? "No teams match your filters"
+            : "No teams registered yet"
+        }
+        emptyHint={
+          searchQuery || statusFilter !== "all"
+            ? "Clear the search field or set the status filter to All to see every team."
+            : "Teams appear here once leaders register them."
+        }
+      />
 
-      {/* Search & Filters */}
-      <Card className="mb-6">
-        <CardContent className="pt-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search teams..."
-                className="pl-9"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {uniqueStatuses.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {STATUS_LABELS[status as TeamStatus] || status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="text-sm text-muted-foreground flex items-center">
-              {searchQuery || statusFilter !== "all" ? (
-                <span>
-                  Showing {filteredTeams.length} of {teams.length} teams
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Teams List */}
-      <div className="space-y-3 stagger-cards">
-        {filteredTeams.map((team) => {
-          const colors = STATUS_COLORS[team.status];
-          return (
-            <Link
-              key={team.id}
-              to={`/admin/teams/${team.id}`}
-              className="block"
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-border pt-4">
+          <p className="text-xs text-muted-foreground">
+            Page {page} of {totalPages} · {totalItems} teams
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || isLoading}
+              onClick={() => goToPage(page - 1)}
             >
-              <Card className="card-hover cursor-pointer">
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-3">
-                        <p className="font-medium truncate">{team.name}</p>
-                        {team.teamCode && (
-                          <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                            {team.teamCode}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-muted-foreground">
-                        {team.expand?.institutionId && (
-                          <span>
-                            {team.expand.institutionId.name}
-                            {team.expand.institutionId.district
-                              ? ` • ${team.expand.institutionId.district}`
-                              : ""}
-                          </span>
-                        )}
-                        {team.expand?.leaderUserId && (
-                          <span>
-                            Lead: {team.expand.leaderUserId.name}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1">
-                          <Users className="h-3 w-3" />
-                          {memberCounts[team.id] || 0}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <CalendarIcon className="h-3 w-3" />
-                          {new Date(team.created).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0 ml-4">
-                      <Badge
-                        className={`${colors.bg} ${colors.text} border-0`}
-                      >
-                        {STATUS_LABELS[team.status] || team.status}
-                      </Badge>
-                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
-
-        {filteredTeams.length === 0 && (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No teams found
-            </CardContent>
-          </Card>
-        )}
-      </div>
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || isLoading}
+              onClick={() => goToPage(page + 1)}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export function HydrateFallback() {
   return (
-    <div>
-      <div className="mb-8">
-        <Skeleton className="h-7 w-36" />
+    <div className="space-y-8">
+      <div>
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="mt-2 h-7 w-32" />
         <Skeleton className="mt-1 h-4 w-64" />
       </div>
-
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="pt-4 text-center">
-              <Skeleton className="mx-auto h-4 w-20" />
-              <Skeleton className="mx-auto mt-1 h-8 w-12" />
-            </CardContent>
-          </Card>
+          <div
+            key={i}
+            className="rounded-lg border border-border bg-card p-5 space-y-3"
+          >
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-8 w-12" />
+          </div>
         ))}
       </div>
-
-      {/* Search & filters */}
-      <Card className="mb-6">
-        <CardContent className="pt-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-4 w-32" />
+      <div className="flex gap-3">
+        <Skeleton className="h-9 flex-1 max-w-md rounded-md" />
+        <Skeleton className="h-9 w-56 rounded-md" />
+      </div>
+      <div className="rounded-lg border border-border bg-card divide-y divide-border">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="px-4 py-3 flex items-center gap-4">
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-64" />
+            </div>
+            <Skeleton className="h-6 w-16 rounded-full" />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Team cards */}
-      <div className="space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Card key={i} className="transition-shadow">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-5 w-48" />
-                  <Skeleton className="h-3 w-64" />
-                </div>
-                <Skeleton className="ml-4 h-6 w-20 rounded-full" />
-              </div>
-            </CardContent>
-          </Card>
         ))}
       </div>
     </div>
