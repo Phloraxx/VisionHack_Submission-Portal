@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>VisionHack Submission Portal - Review Report (Round 2)</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<style>
+		body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+		.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.report-section { border: 1px solid #222226; background: #0a0a0b; position: relative; }
+		.corner-box { position: absolute; width: 20px; height: 20px; border: 1px solid #222226; background: #000; }
+	</style>
+</head>
+<body class="bg-black text-[#fafafa]">
+	<main class="mx-auto w-full max-w-6xl px-5 py-8 md:px-10 md:py-12">
+		<header class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// REVIEW · ROUND 2</div>
+					<h1 class="text-4xl font-bold tracking-tight md:text-6xl">VisionHack Portal</h1>
+					<p class="mono mt-2 text-xs text-[#666]">submissionPortalV2 &middot; Post-redesign &middot; Tactical Mission Console</p>
+				</div>
+				<div class="mono text-left text-xs text-[#666] md:text-right">
+					<div>COMMANDCODE REPORT</div>
+					<div class="text-[#444]">2026-06-16</div>
+				</div>
+			</div>
+		</header>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="grid gap-8 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// OVERALL</div>
+					<div class="text-6xl font-bold tracking-tight md:text-7xl">41</div>
+					<div class="mt-1 text-lg text-[#666]">/ 50 <span class="text-sm text-[#34d399]">(+9 from round 1)</span></div>
+					<div class="mt-4 inline-flex border border-[#fbbf24]/30 bg-[#fbbf24]/10 px-3 py-1 text-sm text-[#fbbf24]">Direction landed. Edge work remains.</div>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// TL;DR</div>
+					<p class="text-sm leading-6 text-[#a0a0a0]">The redesign moved the needle hard. The portal now has a brand voice (μLearn amber on warm-tinted chrome), real visual hierarchy, and an actual operator language (mono numerics, square step markers, instrument-panel borders). A stranger can identify the portal in 2 seconds. What's left is proportion debt — some places still lean on the old shadcn starter geometry, and the EventMark component claims to be a "VH monogram" but draws chevron brackets.</p>
+					<p class="mt-4 text-sm leading-6 text-[#fbbf24]">Start with /design refine to reconcile the EventMark promise with its rendered shape and tighten the lead dashboard hero copy.</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// HEURISTIC SCORES</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">#</th>
+							<th class="py-3 pr-4 font-normal">LENS</th>
+							<th class="py-3 pr-4 font-normal">SCORE</th>
+							<th class="py-3 pr-4 font-normal">Δ</th>
+							<th class="py-3 font-normal">KEY FINDING</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">1</td>
+							<td class="py-4 pr-4 text-[#fafafa]">First impression</td>
+							<td class="py-4 pr-4 text-[#34d399]">8 / 10</td>
+							<td class="py-4 pr-4 text-[#34d399]">+2</td>
+							<td class="py-4 text-[#a0a0a0]">Login is now split-screen identity: dark brand panel with mission line, live phase indicator, proof stats. Mark visible from first viewport.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">2</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Hierarchy</td>
+							<td class="py-4 pr-4 text-[#34d399]">9 / 10</td>
+							<td class="py-4 pr-4 text-[#34d399]">+2</td>
+							<td class="py-4 text-[#a0a0a0]">Each role dashboard has a clear primary surface. Squint test passes everywhere. Hero strip + metrics + spanning pipeline + 2-up action grid is the new admin pattern.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">3</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Color voice</td>
+							<td class="py-4 pr-4 text-[#34d399]">8 / 10</td>
+							<td class="py-4 pr-4 text-[#34d399]">+4</td>
+							<td class="py-4 text-[#a0a0a0]">μLearn amber owns identity. Status collapsed to 4 semantic tokens (info/primary/success/danger/muted). Warm-tinted neutrals in both modes.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">4</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Type voice</td>
+							<td class="py-4 pr-4 text-[#34d399]">8 / 10</td>
+							<td class="py-4 pr-4 text-[#34d399]">+1</td>
+							<td class="py-4 text-[#a0a0a0]">Mono + tabular-nums is now systematic across every stat surface. Some places still use text-sm where tracked label would be more on-system.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">5</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Interaction feel</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">8 / 10</td>
+							<td class="py-4 pr-4 text-[#666]">0</td>
+							<td class="py-4 text-[#a0a0a0]">Dark toggle works. vh-progress / vh-fade-in / vh-beat-in / vh-pulse-dot implemented. Focus rings. Missing: next-action CTA when status=selected.</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// ROUND-OVER-ROUND</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">LENS</th>
+							<th class="py-3 pr-4 font-normal">ROUND 1</th>
+							<th class="py-3 pr-4 font-normal">ROUND 2</th>
+							<th class="py-3 font-normal">DELTA</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fafafa]">First impression</td>
+							<td class="py-4 pr-4 text-[#666]">6</td>
+							<td class="py-4 pr-4 text-[#34d399]">8</td>
+							<td class="py-4 text-[#34d399]">+2 &middot; split-screen identity</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fafafa]">Hierarchy</td>
+							<td class="py-4 pr-4 text-[#666]">7</td>
+							<td class="py-4 pr-4 text-[#34d399]">9</td>
+							<td class="py-4 text-[#34d399]">+2 &middot; hero strips + relaid</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fafafa]">Color voice</td>
+							<td class="py-4 pr-4 text-[#ef4444]">4</td>
+							<td class="py-4 pr-4 text-[#34d399]">8</td>
+							<td class="py-4 text-[#34d399]">+4 &middot; brand hue + semantic tokens</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fafafa]">Type voice</td>
+							<td class="py-4 pr-4 text-[#666]">7</td>
+							<td class="py-4 pr-4 text-[#34d399]">8</td>
+							<td class="py-4 text-[#34d399]">+1 &middot; mono systematic</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fafafa]">Interaction feel</td>
+							<td class="py-4 pr-4 text-[#666]">8</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">8</td>
+							<td class="py-4 text-[#666]">0 &middot; already strong</td>
+						</tr>
+						<tr class="border-t border-[#222226]">
+							<td class="py-4 pr-4 text-[#fafafa] font-medium">Total</td>
+							<td class="py-4 pr-4 text-[#666] font-medium">32</td>
+							<td class="py-4 pr-4 text-[#34d399] font-medium">41</td>
+							<td class="py-4 text-[#34d399] font-medium">+9</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// COGNITIVE LOAD / RISK</div>
+			<div class="grid gap-6 md:grid-cols-2">
+				<div>
+					<div class="mb-3 text-xl font-semibold">Low &middot; voice debt only</div>
+					<ul class="space-y-3 text-sm text-[#a0a0a0]">
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Brand voice is now visible. μLearn amber carries identity on login, sidebar, hero strips, primary CTAs.</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Token system holds together. Semantic status shared between badges, callouts, metric tones.</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Mono numerics are systematic. font-mono tabular-nums across every stat surface.</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Dark mode is real &mdash; toggle works, persists, no-flash script, prefers-color-scheme respected.</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Composition obeys work pattern. Admin = Monitor. Lead = Configure. Each section earns its space.</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Motion has a vocabulary. vh-beat-in, vh-fade-in, vh-progress, vh-pulse-dot, stagger cascade. prefers-reduced-motion honored.</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>EventMark docstring claims "VH monogram" but SVG draws chevron brackets. Promise vs render mismatch.</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>Lead dashboard hero "step N of 3" repeats the metric card below it. Two surfaces reporting same info.</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>Admin hero CTA "Open review queue" competes with metric card "Submitted" tone="primary" for amber hue.</li>
+						<li><span class="mono mr-2 text-[#ef4444]">FAIL</span>Forgot-password identity panel duplicates login identity panel. Same wash, same grid, same footer.</li>
+						<li><span class="mono mr-2 text-[#ef4444]">FAIL</span>Routes not redesigned still use the old h1/text-2xl pattern: campus-leads, config, export, questionnaire, submit-idea, team-detail pages.</li>
+					</ul>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// NEXT MODES</div>
+					<div class="flex flex-wrap gap-2">
+						<span class="border border-[#fbbf24] bg-[#fbbf24]/10 px-3 py-1 text-sm text-[#fbbf24]">/design refine</span>
+						<span class="border border-[#fbbf24] bg-[#fbbf24]/10 px-3 py-1 text-sm text-[#fbbf24]">/design motion</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design interaction</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design typeset</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design refactor</span>
+					</div>
+					<p class="mt-4 text-sm text-[#666]">Order: refine (EventMark, lead hero) &rarr; refactor (sweep remaining routes) &rarr; motion (vh-pulse-dot swap) &rarr; interaction (inline link &rarr; button) &rarr; typeset (MetricCard value).</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// WHAT'S WORKING (POST-REDESIGN)</div>
+			<div class="grid gap-4 md:grid-cols-3">
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Brand is finally visible</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">μLearn amber reads as the identity color across login, sidebar, hero strips, primary CTAs, focus rings. A stranger can identify the portal in 2 seconds. The P0 from round 1 is resolved.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Token system holds together</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Every new surface uses the same tokens. The semantic status system (info / primary / success / danger / muted) is shared between badges, callouts, and metric tones.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Mono numerics are systematic</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Every stat surface &mdash; MetricCard, DataList, sidebar stats, pipeline legend, hero stat strips &mdash; uses font-mono tabular-nums. The portal reads as an instrument panel.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Dark mode is real</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Toggle works, persists, respects prefers-color-scheme on first load, has a no-flash inline script. Dark palette is warmer than default shadcn &mdash; neutrals tinted amber at chroma-0.005.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Composition obeys work pattern</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Admin = Monitor (hero + metrics + pipeline + actions). Lead = Configure (hero + stepper + metrics + progress + actions + phases). Each section earns its space.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">IdentityLockup is reusable</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">The hero panel on login and forgot-password uses it consistently. It carries brand + tagline + edition in one component.</p>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// PRIORITY ISSUES</div>
+			<div class="space-y-5">
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">P0</div>
+					<h2 class="mb-2 text-lg font-semibold">EventMark draws brackets, not VH</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">app/components/shared/event-mark.tsx, lines 60&ndash;84. The SVG paths are M6 10 L20 22 L6 34 (a `&lt;` chevron, brand fill) and M20 22 L34 10 M20 22 L34 34 (a `&gt;` chevron, chrome stroke). The component docstring says "geometric monogram for VH built from two interlocking chevrons" &mdash; but two opposing chevrons are not a monogram for VH. They read as brackets, an aperture, or a vision frame.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: /design refine &mdash; either (a) update SVG to draw a true VH monogram, or (b) update the docstring + rename to acknowledge the chevron is an intentional aperture mark. Pick one.</div>
+				</article>
+
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">P1</div>
+					<h2 class="mb-2 text-lg font-semibold">Lead hero copy repeats the metric card</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">app/routes/lead/dashboard.tsx, lines 271&ndash;281. The hero strip says "Your team X is on step N of 3". The metric card row immediately below has a card labeled "Steps completed" with value "N / 3". Both surfaces report the same information.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: /design refine &mdash; cut "step N of 3" from the hero mission line. Replace with a concrete next action ("Complete the questionnaire to unlock submission").</div>
+				</article>
+
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">P1</div>
+					<h2 class="mb-2 text-lg font-semibold">Admin hero CTA competes with metric tone for amber</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">app/routes/admin/dashboard.tsx, lines 78&ndash;87. "Open review queue" CTA is filled amber. The metric card "Submitted" right below uses tone="primary" which colors its numeric value text-primary. Both surfaces claim the brand hue.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: /design refine &mdash; tighten metric tones. Use primary only for things meaning "this is the brand". Reserve brand-color numerics for the most important signal. Let the CTA own amber alone.</div>
+				</article>
+
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">P1</div>
+					<h2 class="mb-2 text-lg font-semibold">Forgot-password identity panel duplicates login</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">app/routes/forgot-password.tsx, lines 71&ndash;117. Same dark brand panel, same brand wash, same grid backdrop, same mark at top, same "μLearn SCET &middot; VisionHack" footer as login. Two near-identical panels in the same auth flow.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: /design refine &mdash; make the forgot-password panel visibly shorter and visually distinct. Different mode of the same product, not a clone.</div>
+				</article>
+
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#666]">P2</div>
+					<h2 class="mb-2 text-lg font-semibold">Lead dashboard inline link uses old pattern</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">app/routes/lead/dashboard.tsx, ~line 440. "View team details" renders as a plain `text-primary hover:underline` Link. The new system has Button variants &mdash; this inline link is the only place the old pattern survives in the redesigned routes.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: /design interaction &mdash; convert to a ghost or outline Button.</div>
+				</article>
+
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#666]">P2</div>
+					<h2 class="mb-2 text-lg font-semibold">MetricCard values feel shy at text-3xl</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">app/components/shared/metric-card.tsx. Value at text-3xl against text-sm label and text-xs context gives only 1.5&times; ratio &mdash; close to the floor. The login mission line is text-4xl. The metrics could push to text-4xl or pair with mono tracking.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: /design typeset &mdash; bump value to text-4xl or sharpen with mono tracking-tight.</div>
+				</article>
+
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#666]">P2</div>
+					<h2 class="mb-2 text-lg font-semibold">Login live phase indicator uses Tailwind's animate-ping</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">app/routes/login.tsx, line 99. `animate-ping` is the Tailwind preset, not the new motion system. The system already has vh-pulse-dot for live indicators.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: /design motion &mdash; replace animate-ping with vh-pulse-dot. One-line change, brings the indicator into the system.</div>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// SMELL CHECK (POST-REDESIGN)</div>
+			<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">The surface no longer reads as "AI-generated shadcn admin tool". It has a clear direction. Specific smells remaining:</p>
+			<ul class="space-y-3 text-sm text-[#a0a0a0]">
+				<li><span class="mono mr-2 text-[#ef4444]">SMELL</span>EventMark claim vs render. The component documents itself as a "VH monogram" but draws chevron brackets. Either name or geometry must change.</li>
+				<li><span class="mono mr-2 text-[#fbbf24]">SMELL</span>Lead dashboard mission line is information, not poetry. "Your team X is on step N of 3" is a status report. Hero lines should be statements.</li>
+				<li><span class="mono mr-2 text-[#fbbf24]">SMELL</span>Inline `style={{ background: 'radial-gradient(...oklch(var(--primary))...)' }}` in 4 hero strips instead of using the new `vh-brand-wash` utility class from app.css.</li>
+				<li><span class="mono mr-2 text-[#fbbf24]">SMELL</span>Routes not redesigned still use the old `text-2xl font-semibold tracking-tight` heading without the eyebrow/panel-header pattern: admin/campus-leads, admin/config, admin/export, lead/questionnaire, lead/submit-idea, lead/team-detail, coordinator/team-detail, institution/team-detail.</li>
+				<li><span class="mono mr-2 text-[#666]">SMELL</span>Tailwind preset `animate-ping` borrowed on the login live indicator instead of the new `vh-pulse-dot`.</li>
+			</ul>
+			<p class="mt-4 text-sm leading-6 text-[#a0a0a0]">A stranger seeing the redesigned login and admin dashboard says "this is VisionHack". Navigating to admin/campus-leads still risks "this is a generic admin". The redesign is honest at the entry points; the deeper routes haven't been pulled into the new system.</p>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// TOP RECOMMENDATIONS (ORDERED BY IMPACT)</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">#</th>
+							<th class="py-3 pr-4 font-normal">MOVE</th>
+							<th class="py-3 pr-4 font-normal">MODE</th>
+							<th class="py-3 font-normal">WHY</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#f43f5e]">1</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Make EventMark match its promise: render a true VH monogram or rename + re-document the chevron as an aperture mark.</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">/design refine</td>
+							<td class="py-4 text-[#a0a0a0]">Highest-visibility artifact in the product. Brand promise and rendered shape must agree.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fbbf24]">2</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Sweep the remaining 8 routes to apply the new PanelHeader + eyebrow + tracked-label vocabulary.</td>
+							<td class="py-4 pr-4 mono text-[#a0a0a0]">/design refactor</td>
+							<td class="py-4 text-[#a0a0a0]">Without this, the redesign is entry-point-only. Users click through 3 routes and see drift.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fbbf24]">3</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Replace lead dashboard hero "step N of 3" with a real next-action line.</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">/design refine</td>
+							<td class="py-4 text-[#a0a0a0]">Two surfaces reporting the same info is design debt.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fbbf24]">4</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Replace inline `oklch(var(--primary))` radial gradients in 4 hero strips with the `vh-brand-wash` utility class.</td>
+							<td class="py-4 pr-4 mono text-[#a0a0a0]">/design refactor</td>
+							<td class="py-4 text-[#a0a0a0]">Pulls hero treatments into the design system. One line per file.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#fbbf24]">5</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Tighten MetricCard tones so the admin hero CTA is the only amber on the page.</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">/design refine</td>
+							<td class="py-4 text-[#a0a0a0]">Brand hue should win attention at the most important affordance.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#666]">6</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Convert lead dashboard "View team details" inline link to a Button variant.</td>
+							<td class="py-4 pr-4 mono text-[#a0a0a0]">/design interaction</td>
+							<td class="py-4 text-[#a0a0a0]">Button language consistency across the system.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#666]">7</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Bump MetricCard value to text-4xl or sharpen with mono tracking.</td>
+							<td class="py-4 pr-4 mono text-[#a0a0a0]">/design typeset</td>
+							<td class="py-4 text-[#a0a0a0]">Brings metric confidence in line with other surfaces.</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#666]">8</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Replace `animate-ping` on login live phase indicator with `vh-pulse-dot`.</td>
+							<td class="py-4 pr-4 mono text-[#a0a0a0]">/design motion</td>
+							<td class="py-4 text-[#a0a0a0]">Brings the live indicator into the system vocabulary.</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<footer class="mono py-8 text-center text-xs tracking-widest text-[#444]">
+			Generated with CommandCode &middot; 2026-06-16 &middot; /design review (Round 2)
+		</footer>
+	</main>
+</body>
+</html>

@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-18T00:00:00Z",
+  "title": "Design System: Submission Portal V2",
+  "extensions": {
+    "colorMeta": {
+      "console-amber": { "role": "primary", "displayName": "Console Amber", "canonical": "oklch(0.62 0.165 50)", "tonalRamp": ["oklch(0.28 0.06 50)","oklch(0.38 0.10 50)","oklch(0.48 0.14 50)","oklch(0.62 0.165 50)","oklch(0.74 0.175 55)","oklch(0.82 0.14 55)","oklch(0.90 0.09 55)","oklch(0.95 0.05 55)"] },
+      "console-amber-bright": { "role": "primary", "displayName": "Console Amber Bright", "canonical": "oklch(0.74 0.175 55)", "tonalRamp": ["oklch(0.30 0.06 55)","oklch(0.40 0.10 55)","oklch(0.50 0.14 55)","oklch(0.62 0.165 55)","oklch(0.74 0.175 55)","oklch(0.82 0.14 55)","oklch(0.90 0.09 55)","oklch(0.95 0.05 55)"] },
+      "warm-paper": { "role": "neutral", "displayName": "Warm Paper", "canonical": "oklch(0.985 0.005 75)", "tonalRamp": ["oklch(0.20 0.008 75)","oklch(0.35 0.008 75)","oklch(0.55 0.008 75)","oklch(0.75 0.006 75)","oklch(0.85 0.006 75)","oklch(0.92 0.006 75)","oklch(0.96 0.005 75)","oklch(0.985 0.005 75)"] },
+      "deep-chrome": { "role": "neutral", "displayName": "Deep Chrome", "canonical": "oklch(0.16 0.008 60)", "tonalRamp": ["oklch(0.12 0.008 60)","oklch(0.16 0.008 60)","oklch(0.20 0.008 60)","oklch(0.26 0.008 60)","oklch(0.40 0.008 60)","oklch(0.60 0.008 60)","oklch(0.80 0.006 60)","oklch(0.95 0.005 60)"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(0.18 0.012 60)", "tonalRamp": ["oklch(0.10 0.012 60)","oklch(0.18 0.012 60)","oklch(0.28 0.012 60)","oklch(0.40 0.012 60)","oklch(0.55 0.012 60)","oklch(0.70 0.010 60)","oklch(0.85 0.008 60)","oklch(0.95 0.005 60)"] },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "oklch(0.9 0.008 70)", "tonalRamp": ["oklch(0.20 0.008 70)","oklch(0.35 0.008 70)","oklch(0.50 0.008 70)","oklch(0.65 0.008 70)","oklch(0.78 0.008 70)","oklch(0.85 0.008 70)","oklch(0.90 0.008 70)","oklch(0.96 0.005 70)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero/landing only. Ceiling respected." },
+      "headline": { "displayName": "Headline", "purpose": "Page titles, section leads inside dashboards." },
+      "title": { "displayName": "Title", "purpose": "Card titles, dialog headings, list item primaries." },
+      "body": { "displayName": "Body", "purpose": "Default body text. 65-75ch in prose." },
+      "label": { "displayName": "Label", "purpose": "Metadata only: metric labels, status, field labels. Never section eyebrows." },
+      "mono": { "displayName": "Mono", "purpose": "Numerics in columns, metrics, IDs. tabular-nums." }
+    },
+    "shadows": [
+      { "name": "ambient-lift", "value": "0 4px 24px rgba(0,0,0,0.06)", "purpose": "Hover/focus only on interactive cards and popovers. Never at rest." },
+      { "name": "ambient-lift-dark", "value": "0 4px 24px rgba(0,0,0,0.3)", "purpose": "Dark-mode instance of ambient-lift." }
+    ],
+    "motion": [
+      { "name": "vh-ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default easing - sharp arrival (quart-ish)." },
+      { "name": "vh-ease-in", "value": "cubic-bezier(0.7, 0, 0.84, 0)", "purpose": "Exits only." },
+      { "name": "vh-ease-glide", "value": "cubic-bezier(0.32, 0.72, 0, 1)", "purpose": "Spatial transitions - drawer, accordion." },
+      { "name": "beat-in", "value": "360ms var(--vh-ease-out)", "purpose": "3-beat entrance: opacity 0 + scale 0.96 to 1.01 to 1." },
+      { "name": "page-enter", "value": "320ms var(--vh-ease-out)", "purpose": "Page-level fade-in + translateY(4px)." },
+      { "name": "panel-enter", "value": "240ms var(--vh-ease-out)", "purpose": "Sidebars/panels slide-in." },
+      { "name": "drawer-slide", "value": "320ms var(--vh-ease-glide)", "purpose": "Dashboard sidebar drawer." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "narrative": {
+    "northStar": "The Operating Console",
+    "overview": "This is an operating console, not a marketing site. A campus lead sits down under deadline pressure to register a team and submit an idea; the interface's job is to make state unambiguous - what's submitted, what's pending, what's next - and to stay out of the way otherwise. Every surface reads like an instrument panel: warm-tinted chrome, hairline edges that carry the depth, and a single amber signal reserved for identity and primary action. Motion is sharp and deliberate, never decorative. The console earns trust by being precise about state; it does not earn attention by being loud.",
+    "keyCharacteristics": [
+      "Console amber as the single signal - reserved for primary action and identity, never decoration",
+      "Warm-tinted neutrals over pure grey; the warmth comes from the surface, not from saturation",
+      "1px hairline borders carry all depth; shadows are absent at rest",
+      "Fixed rem type scale (not fluid); Geist in one family across headings, body, labels, and mono numerics",
+      "Sharp-out motion (ease-out-quart), 150-250ms, never choreographed page-load sequences",
+      "State is communicated by more than color - dot, label, and position carry it too"
+    ],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "Console Amber appears on <=10% of any given screen. Reserved for the single primary action, current selection, and live status.", "section": "colors" },
+      { "name": "The Warmth-From-Surface Rule", "body": "Warmth comes from the tinted neutral surface, never from a saturated wash. No amber gradient washes for personality.", "section": "colors" },
+      { "name": "The No-Pure-Grey Rule", "body": "Pure grey (oklch(* 0 *)) is forbidden for surfaces and text. Every neutral carries 0.005-0.015 chroma toward hue 60-75.", "section": "colors" },
+      { "name": "The One Family Rule", "body": "Geist in weights 400/500/600 is the entire type system. No second sans, serif, or display face. Hierarchy is weight + size + tracking.", "section": "typography" },
+      { "name": "The Mono-For-Numerics Rule", "body": "Any number in a column, metric, or data table uses Geist Mono with tabular-nums. Prose numbers stay in Geist Variable.", "section": "typography" },
+      { "name": "The No-Fluid-Headings Rule", "body": "Product UI uses a fixed rem scale, not clamp(). Responsive behavior is structural, not typographic.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest. Shadows appear only as a response to state (hover, focus, elevation).", "section": "elevation" },
+      { "name": "The Edge-Carries-Depth Rule", "body": "Where two surfaces meet, a 1px hairline border separates them - not a shadow, not a gradient, not a blur.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do reserve Console Amber for the single primary action per screen and live status (The One Signal Rule).",
+      "Do carry depth with 1px Hairline borders, never shadows at rest (The Edge-Carries-Depth Rule).",
+      "Do tint every neutral 0.005-0.015 chroma toward hue 60-75 (The Warmth-From-Surface Rule).",
+      "Do use Geist Mono with tabular-nums for every numeric in a column, metric, or data table (The Mono-For-Numerics Rule).",
+      "Do communicate status with dot + label + position, not color alone.",
+      "Do honor prefers-reduced-motion: every animation degrades to instant/crossfade.",
+      "Do keep body text >=4.5:1 against its background.",
+      "Do use the uppercase tracked Label style for metadata only - never as a section eyebrow."
+    ],
+    "donts": [
+      "Don't use pure grey for surfaces or text - this is the dense enterprise grey anti-reference.",
+      "Don't use border-left or border-right greater than 1px as a colored stripe (side-stripe borders).",
+      "Don't use background-clip: text with a gradient (gradient text).",
+      "Don't use glassmorphism / decorative blur cards as a default.",
+      "Don't build the hero-metric template: big number + small label + supporting stats + gradient accent.",
+      "Don't repeat identical icon-heading-text cards in a grid.",
+      "Don't put a tiny uppercase tracked eyebrow above every section.",
+      "Don't number sections 01/02/03 as default scaffolding.",
+      "Don't let heading text overflow its container at any breakpoint.",
+      "Don't use heavy glassmorphism, gradient mesh, or confetti.",
+      "Don't invent a second font family (The One Family Rule).",
+      "Don't animate CSS layout properties. Transform and opacity only.",
+      "Don't ship a component without the full state set (default/hover/focus/active/disabled/loading/error)."
+    ]
+  }
+}
