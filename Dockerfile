@@ -15,7 +15,7 @@ ENV NODE_ENV=$NODE_ENV
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --ignore-scripts --legacy-peer-deps
+    npm ci --ignore-scripts --legacy-peer-deps --include=dev
 COPY . .
 RUN npm run build
 
