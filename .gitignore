@@ -17,3 +17,11 @@ build/
 # One-off / ad-hoc scripts (only setup-pb.ts and tests/ are tracked)
 scripts/*.mjs
 scripts/*.ps1
+
+# AI tooling artifacts
+.commandcode/
+.impeccable/
+
+# Binary / media files — root-level screenshots and binaries
+/e2e-final-state.png
+/test-idea.pptx
