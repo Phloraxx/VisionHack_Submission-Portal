@@ -25,3 +25,16 @@ scripts/*.ps1
 # Binary / media files — root-level screenshots and binaries
 /e2e-final-state.png
 /test-idea.pptx
+
+# Docs / design — not needed for deployment
+references/
+docs/
+DESIGN.md
+PRODUCT.md
+Project.md
+
+# CI / config — not needed for deployment
+.github/
+vitest.config.ts
+.env.example
+.dockerignore
