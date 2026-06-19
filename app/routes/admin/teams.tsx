@@ -80,6 +80,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
     pb.collection("teams").getList<{ id: string; status: TeamStatus }>(1, COUNT_SCAN_CAP, {
       fields: "id,status",
+      $autoCancel: false,
     }),
   ]);
 
