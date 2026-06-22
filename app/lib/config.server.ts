@@ -23,7 +23,7 @@ export async function getConfig(
 
   const value: Record<string, boolean> = {};
   for (const record of records) {
-    value[record.key] = record.value;
+    value[record.key] = !!record.value;
   }
 
   return value;

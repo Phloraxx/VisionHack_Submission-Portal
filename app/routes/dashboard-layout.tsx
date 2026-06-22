@@ -413,7 +413,7 @@ export function ErrorBoundary() {
       error.status === 404
         ? "The page you are looking for does not exist or you may not have access."
         : error.data?.message || details;
-  } else if (error instanceof Error) {
+  } else if (import.meta.env.DEV && error instanceof Error) {
     details = error.message;
   }
 

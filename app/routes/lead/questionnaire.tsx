@@ -185,6 +185,10 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
   });
   if (!team) return fail({ error: "Team not found", status: 404 });
 
+  if (team.status === "withdrawn" || team.status === "rejected") {
+    return fail({ error: "Cannot submit questionnaire for a team in this status", status: 403 });
+  }
+
   // Upsert response
   const existing = await pb
     .collection("questionnaire_responses")

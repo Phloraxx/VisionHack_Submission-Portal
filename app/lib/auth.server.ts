@@ -81,6 +81,21 @@ export function clearAuthCookie(): string {
   ].join("; ");
 }
 
+/**
+ * Build a `Set-Cookie` header value that clears the CSRF cookie
+ * (immediate expiry).
+ */
+export function clearCsrfCookie(): string {
+  const secure = process.env.NODE_ENV === "production";
+  return [
+    `csrf_token=`,
+    ...(secure ? ["Secure"] : []),
+    "SameSite=Lax",
+    "Path=/",
+    "Max-Age=0",
+  ].join("; ");
+}
+
 // ---------------------------------------------------------------------------
 // Auth actions
 // ---------------------------------------------------------------------------

@@ -111,6 +111,7 @@ export function setCsrfCookie(token: string): string {
     `csrf_token=${token}`,
     ...(secure ? ["Secure"] : []),
     "SameSite=Lax",
+    "HttpOnly",
     "Path=/",
     "Max-Age=3600",
   ].join("; ");
@@ -134,6 +135,10 @@ export function validateCsrfToken(request: Request, formData: FormData): void {
 
   if (!cookieToken || !formToken) {
     throw new Response("Missing CSRF token", { status: 403 });
+  }
+
+  if (typeof formToken !== "string") {
+    throw new Response("Invalid CSRF token format", { status: 403 });
   }
 
   const cookieBuf = Buffer.from(cookieToken, "utf8");

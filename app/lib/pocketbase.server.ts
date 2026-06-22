@@ -144,6 +144,10 @@ export async function getAdminClient(): Promise<PocketBase> {
  * `getAdminClient()` call re-authenticates.
  */
 export function resetAdminClient(): void {
+  if (process.env.NODE_ENV !== "test") {
+    console.warn("[pocketbase] resetAdminClient should only be called in tests");
+    return;
+  }
   _adminClient = null;
   _adminInitPromise = null;
 }

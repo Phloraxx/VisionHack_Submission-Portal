@@ -42,6 +42,15 @@ export function getEnv(): EnvConfig {
     );
   }
 
+  const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL ?? "";
+  const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD ?? "";
+  if (!adminEmail || !adminPassword) {
+    console.warn(
+      "[env] \u26a0\ufe0f  POCKETBASE_ADMIN_EMAIL and/or POCKETBASE_ADMIN_PASSWORD is not set. " +
+      "Admin operations will fail. Check your .env file.",
+    );
+  }
+
   return {
     POCKETBASE_URL: pbUrl,
     POCKETBASE_ADMIN_EMAIL: process.env.POCKETBASE_ADMIN_EMAIL ?? "",

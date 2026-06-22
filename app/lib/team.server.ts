@@ -206,7 +206,7 @@ export async function sendStatusChangeEmail(
   try {
     await sendEmail({
       to: args.to,
-      subject: `Team "${args.teamName}" status: ${statusLabel}`,
+      subject: `Team "${escapeHtml(args.teamName)}" status: ${escapeHtml(statusLabel)}`,
       html,
     });
   } catch (err) {
@@ -252,26 +252,36 @@ export async function createCampusLead(
   } = args;
 
   const tempPassword = crypto.randomUUID();
-  const campusLead = await pb.collection("users").create({
-    email: leadEmail,
-    password: tempPassword,
-    passwordConfirm: tempPassword,
-    name: leadName,
-    role: "institution",
-  });
+  let createdUser: { id: string } | null = null;
+  try {
+    const campusLead = await pb.collection("users").create({
+      email: leadEmail,
+      password: tempPassword,
+      passwordConfirm: tempPassword,
+      name: leadName,
+      role: "institution",
+    });
+    createdUser = campusLead;
 
-  const institution = await pb.collection("institutions").create({
-    name: institutionName,
-    district,
-    code,
-    campusLeadId: campusLead.id,
-    maxTeams,
-    status: "active",
-  });
+    const institution = await pb.collection("institutions").create({
+      name: institutionName,
+      district,
+      code,
+      campusLeadId: campusLead.id,
+      maxTeams,
+      status: "active",
+    });
 
-  await pb.collection("users").update(campusLead.id, {
-    institutionId: institution.id,
-  });
+    await pb.collection("users").update(campusLead.id, {
+      institutionId: institution.id,
+    });
+  } catch (err) {
+    // Attempt to clean up the created user
+    if (createdUser) {
+      await pb.collection("users").delete(createdUser.id).catch(() => {});
+    }
+    throw err;
+  }
 
   try {
     await pb.collection("users").requestPasswordReset(leadEmail);

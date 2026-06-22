@@ -96,6 +96,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       .filter((i) => i.district === district)
       .map((i) => i.id);
     if (instIds.length > 0) {
+      // Institution IDs are PB-generated UUIDs from the database, not from user input.
+      // The district filter determines which institutions are selected; the district
+      // value itself is validated implicitly against existing institutions.
       // PB doesn't accept SQL `IN` lists; we expand to `||` clauses.
       const orChain = instIds
         .map((id) => `institutionId = "${id}"`)

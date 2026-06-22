@@ -66,6 +66,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         "id,name,teamCode,status,created,institutionId,leaderUserId,expand.institutionId.name,expand.leaderUserId.name,expand.leaderUserId.email",
     }),
     pb.collection("teams").getList<{ id: string; status: TeamStatus }>(1, COUNT_SCAN_CAP, {
+      filter,
       fields: "id,status",
       $autoCancel: false,
     }),

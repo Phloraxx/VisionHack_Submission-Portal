@@ -14,7 +14,7 @@ import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { getLeadTeam } from "~/lib/team.server";
-import { getStr, getAllStr } from "~/lib/form.server";
+import { getStr, getAllStr, isEmail } from "~/lib/form.server";
 import type { TeamRecord, MemberRecord } from "~/lib/types";
 import { canTransition } from "~/lib/types";
 import {
@@ -152,6 +152,8 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
       role.length > 100
     ) {
       fieldErrors.members = `Member ${i + 1}: one or more fields are too long`;
+    } else if (!isEmail(email)) {
+      fieldErrors.members = `Member ${i + 1}: invalid email format`;
     }
   }
 
@@ -179,16 +181,6 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
     });
     teamId = updated.id;
 
-    // Replace member roster. The rule
-    // `teamId.leaderUserId ?= @request.auth.id` allows the team lead
-    // to delete their own team's members.
-    const oldMembers = await pb.collection("members").getFullList({
-      filter: pb.filter("teamId = {:teamId}", { teamId }),
-      fields: "id",
-    });
-    await Promise.all(
-      oldMembers.map((m) => pb.collection("members").delete(m.id)),
-    );
   } else {
     const newTeam = await pb.collection("teams").create({
       name: teamName.slice(0, 100),
@@ -228,6 +220,17 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
   await Promise.all(
     memberPayloads.map((payload) => pb.collection("members").create(payload)),
   );
+
+  // Now that new members are created, safely remove the old roster.
+  if (existingTeam) {
+    const oldMembers = await pb.collection("members").getFullList({
+      filter: pb.filter("teamId = {:teamId}", { teamId }),
+      fields: "id",
+    });
+    await Promise.all(
+      oldMembers.map((m) => pb.collection("members").delete(m.id)),
+    );
+  }
 
   return ok();
 });

@@ -39,7 +39,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       await pb.collection("users").authRefresh();
       const user = pb.authStore.model as unknown as UserRecord | null;
       if (user?.role) {
-        throw redirect(ROLE_DASHBOARD_MAP[user.role]);
+        throw redirect(ROLE_DASHBOARD_MAP[user.role as keyof typeof ROLE_DASHBOARD_MAP] ?? "/login");
       }
     } catch (err) {
       // Re-throw redirects — they are not errors.

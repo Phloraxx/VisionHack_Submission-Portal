@@ -180,13 +180,17 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 
     // PB needs a multipart form to upload a file
     const form = new FormData();
-    form.append("submission_file", file, file.name);
+    const safeName = file.name.replace(/[^\w.\-]/g, "_").slice(0, 255);
+    form.append("submission_file", file, safeName);
     form.append("idea_title", ideaTitle.slice(0, 200));
     form.append("idea_desc", ideaDescription.slice(0, 5000));
     form.append("idea_tech_stack", techStack.slice(0, 500));
     form.append("status", "submitted");
     form.append("status_changed_at", new Date().toISOString());
-    await pb.collection("teams").update(team.id, form);
+    await pb.collection("teams").update(team.id, form, {
+      filter: pb.filter("status = {:expected}", { expected: team.status }),
+      $autoCancel: false,
+    });
     return ok();
   }
 
@@ -198,6 +202,9 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
       idea_tech_stack: techStack.slice(0, 500),
       status: "submitted",
       status_changed_at: new Date().toISOString(),
+    }, {
+      filter: pb.filter("status = {:expected}", { expected: team.status }),
+      $autoCancel: false,
     });
     return ok();
   }

@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
-import { clearAuthCookie } from "~/lib/auth.server";
+import { clearAuthCookie, clearCsrfCookie } from "~/lib/auth.server";
 import { validateOrigin, validateCsrfToken } from "~/lib/csrf.server";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -14,8 +14,12 @@ export async function action({ request }: ActionFunctionArgs) {
   // Clear the auth cookie and redirect to login. Rate limiting is handled
   // by PocketBase's built-in settings.
   const cookie = clearAuthCookie();
+  const clearCsrf = clearCsrfCookie();
 
   throw redirect("/login", {
-    headers: { "Set-Cookie": cookie },
+    headers: [
+      ["Set-Cookie", cookie],
+      ["Set-Cookie", clearCsrf],
+    ],
   });
 }

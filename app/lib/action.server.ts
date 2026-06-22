@@ -126,13 +126,22 @@ export function secureAction<C extends ActionContext = ActionContext>(
     }
 
     // 5. Schema validation
-
+    // NOTE: Object.fromEntries(formData.entries()) silently converts File
+    // objects to filename strings. Routes with file uploads must use
+    // formData.get("field") directly, not the schema validation path.
     if (options.schema) {
-      const result = options.schema.safeParse(Object.fromEntries(formData.entries()));
-      if (!result.success) {
-        return fail({ fieldErrors: Object.fromEntries(Object.entries(result.error.flatten().fieldErrors).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v ?? "Invalid"])) });
+      const parsed = options.schema.safeParse(Object.fromEntries(formData.entries()));
+      if (!parsed.success) {
+        return fail({
+          fieldErrors: Object.fromEntries(
+            Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
+              k,
+              Array.isArray(v) ? v[0] : v ?? "Invalid",
+            ]),
+          ),
+          status: 400,
+        });
       }
-      // Attach validated data to context for the handler
       const ctx = {
         request,
         user,
@@ -140,7 +149,7 @@ export function secureAction<C extends ActionContext = ActionContext>(
         formData,
         intent: String(formData.get("intent") ?? "").toLowerCase(),
         params: params as Record<string, string>,
-        validated: result.data,
+        validated: parsed.data,
       } as C;
 
       try {
@@ -152,7 +161,14 @@ export function secureAction<C extends ActionContext = ActionContext>(
           role: user.role,
           intent: ctx.intent,
         });
-        Sentry.captureException(err, { extra: { route: new URL(request.url).pathname, userId: user.id, role: user.role, intent: ctx.intent } });
+        Sentry.captureException(err, {
+          extra: {
+            route: new URL(request.url).pathname,
+            userId: user.id,
+            role: user.role,
+            intent: ctx.intent,
+          },
+        });
         return fail({ error: "Something went wrong. Please try again.", status: 500 });
       }
     }
