@@ -26,13 +26,14 @@ const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 const server = http.createServer(handler);
 
-server.listen(port, () => {
 process.on("uncaughtException", (err) => {
   Sentry.captureException(err);
 });
 process.on("unhandledRejection", (reason) => {
   Sentry.captureException(reason);
 });
+
+server.listen(port, () => {
   console.log(`Server listening on http://localhost:${port}`);
 });
 

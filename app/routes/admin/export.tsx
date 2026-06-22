@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus, TeamView } from "~/lib/types";
 import {
@@ -33,8 +32,7 @@ import { MetricCard } from "~/components/shared/metric-card";
 // produced by /api/export/csv. So the loader needs team metadata for the
 // filter UI and member counts only — not full member rows.
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { user } = await requireRole(request, ["admin"]);
-  const pb = createSuperuserClient();
+  const { user, pb } = await requireRole(request, ["admin"]);
 
   const [teams, members] = await Promise.all([
     pb.collection("teams").getFullList<TeamView>({

@@ -1,18 +1,26 @@
-import { Form, useActionData, useNavigation, Link } from "react-router";
+import { Form, useActionData, useNavigation, Link, useLoaderData } from "react-router";
 import { data } from "react-router";
-import type { ActionFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { createPocketBaseClient } from "~/lib/pocketbase.server";
-import { validateOrigin } from "~/lib/csrf.server";
+import { validateOrigin, validateCsrfToken, generateCsrfToken, setCsrfCookie } from "~/lib/csrf.server";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { EventMark, IdentityLockup } from "~/components/shared/event-mark";
 import { ArrowLeft, Loader2, Mail, Inbox } from "lucide-react";
 
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const csrfToken = generateCsrfToken();
+  const headers = new Headers();
+  headers.append("Set-Cookie", setCsrfCookie(csrfToken));
+  return data({ csrfToken }, { headers });
+}
 export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
 
   const formData = await request.formData();
+  validateCsrfToken(request, formData);
   const email = (formData.get("email") as string | null)?.trim() ?? "";
 
   if (!email) {
@@ -37,6 +45,7 @@ export function meta() {
 }
 
 export default function ForgotPassword() {
+  const { csrfToken } = useLoaderData() as { csrfToken: string };
   const actionData = useActionData() as
     | { sent?: boolean; error?: string }
     | undefined;
@@ -158,6 +167,7 @@ export default function ForgotPassword() {
                 </div>
 
                 <Form method="post" className="space-y-4">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
                   {actionData?.error && (
                     <div
                       role="alert"

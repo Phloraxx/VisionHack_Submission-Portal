@@ -45,10 +45,9 @@ import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from "~/lib/constants";
 // Prevents renamed .exe files from being uploaded as PDF/PPT
 const MAGIC_BYTES: Record<string, number[][]> = {
   pdf: [[0x25, 0x50, 0x44, 0x46]], // %PDF
-  ppt: [
-    [0xD0, 0xCF, 0x11, 0xE0], // OLE2 (PPT)
-    [0x50, 0x4B, 0x03, 0x04], // ZIP/OpenXML (PPTX)
-  ],
+  // Only accept OLE2-format PPT (not ZIP-based PPTX) — ZIP magic bytes would
+  // accept any .zip/.jar/.docx file renamed to .pptx, which is too permissive.
+  ppt: [[0xD0, 0xCF, 0x11, 0xE0]], // OLE2 (PPT only)
 };
 
 /**
@@ -56,7 +55,10 @@ const MAGIC_BYTES: Record<string, number[][]> = {
  * Returns true if the file passes validation.
  */
 async function validateFileSignature(file: File): Promise<boolean> {
-  const buffer = await file.slice(0, 8).arrayBuffer();
+  // Read 16 bytes for magic byte checking — sufficient for PDF (%PDF) and
+  // OLE2 PPT (D0CF11E0). Insufficient for deep MIME validation, but good
+  // enough to reject renamed .exe/.zip files.
+  const buffer = await file.slice(0, 16).arrayBuffer();
   const bytes = new Uint8Array(buffer);
 
   // Check PDF magic bytes
@@ -66,7 +68,7 @@ async function validateFileSignature(file: File): Promise<boolean> {
     );
   }
 
-  // Check PPT/PPTX magic bytes
+  // Check PPT magic bytes (OLE2 format only)
   if (
     file.type.includes("presentation") ||
     file.name.endsWith(".ppt") ||

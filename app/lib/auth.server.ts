@@ -54,10 +54,7 @@ export function getAuthFromCookie(request: Request): string | null {
  * ```
  */
 export function setAuthCookie(token: string): string {
-  // Secure flag: true if PB URL uses HTTPS, or if running in production
-  const secure =
-  getEnv().POCKETBASE_URL?.startsWith("https") ||
-  process.env.NODE_ENV === "production";
+  const secure = process.env.NODE_ENV === "production";
   return [
     `${COOKIE_NAME}=${token}`,
     "HttpOnly",
@@ -73,9 +70,7 @@ export function setAuthCookie(token: string): string {
  * (immediate expiry).
  */
 export function clearAuthCookie(): string {
-  const secure =
-  getEnv().POCKETBASE_URL?.startsWith("https") ||
-  process.env.NODE_ENV === "production";
+  const secure = process.env.NODE_ENV === "production";
   return [
     `${COOKIE_NAME}=`,
     "HttpOnly",

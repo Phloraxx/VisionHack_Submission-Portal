@@ -11,7 +11,8 @@
 
 export interface EnvConfig {
   POCKETBASE_URL: string;
-  POCKETBASE_SUPER_TOKEN: string;
+  POCKETBASE_ADMIN_EMAIL: string;
+  POCKETBASE_ADMIN_PASSWORD: string;
   ALLOWED_ORIGINS?: string;
   /** Public base URL of the app, used in outbound email links. */
   APP_URL?: string;
@@ -43,7 +44,8 @@ export function getEnv(): EnvConfig {
 
   return {
     POCKETBASE_URL: pbUrl,
-    POCKETBASE_SUPER_TOKEN: process.env.POCKETBASE_SUPER_TOKEN ?? "",
+    POCKETBASE_ADMIN_EMAIL: process.env.POCKETBASE_ADMIN_EMAIL ?? "",
+    POCKETBASE_ADMIN_PASSWORD: process.env.POCKETBASE_ADMIN_PASSWORD ?? "",
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     APP_URL: process.env.APP_URL,
     RESEND_API_KEY: process.env.RESEND_API_KEY,

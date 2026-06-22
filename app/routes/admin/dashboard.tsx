@@ -1,7 +1,6 @@
 import { Link, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { STATUS_LABELS, STATUS_COLORS } from "~/lib/team-status";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import type { TeamStatus } from "~/lib/types";
@@ -20,8 +19,9 @@ import {
 } from "lucide-react";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { user } = await requireRole(request, ["admin"]);
-  const pb = createSuperuserClient();
+  const { user, pb } = await requireRole(request, ["admin"]);
+  // PB's list rules allow admin-role clients for teams, institutions,
+  // and users — the user's own auth token is sufficient here.
 
   // All three queries are independent — run them in parallel. Only the
   // teams scan needs full rows (for per-status counts, and only the

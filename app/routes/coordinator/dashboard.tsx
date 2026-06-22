@@ -2,7 +2,6 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useLoaderData, useSearchParams, useNavigation } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
 import {
@@ -56,10 +55,9 @@ interface InstitutionRecord {
 }
 
 const PAGE_SIZE = 50;
-
+const VALID_STATUSES = ["invited", "registered", "shortlisted", "submitted", "selected", "rejected", "withdrawn"] as const;
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { user } = await requireRole(request, ["coordinator"]);
-  const pb = createSuperuserClient();
+  const { user, pb } = await requireRole(request, ["coordinator"]);
   pb.autoCancellation(false);
 
   const url = new URL(request.url);
@@ -90,7 +88,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     teamClauses.push(`(name ~ "${safe}" || teamCode ~ "${safe}")`);
   }
-  if (status && status !== "all") teamClauses.push(`status = "${status}"`);
+  if (status && status !== "all" && VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) {
+    teamClauses.push(pb.filter("status = {:status}", { status }));
+  }
   if (district && district !== "all") {
     const instIds = institutions.items
       .filter((i) => i.district === district)
@@ -124,7 +124,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
   if (institution && institution !== "all") {
-    teamClauses.push(`institutionId = "${institution}"`);
+    teamClauses.push(pb.filter("institutionId = {:id}", { id: institution }));
   }
   const teamFilter = teamClauses.length > 0 ? teamClauses.join(" && ") : undefined;
 

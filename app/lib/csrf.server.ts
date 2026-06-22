@@ -96,9 +96,7 @@ export function generateCsrfToken(): string {
  * ```
  */
 export function setCsrfCookie(token: string): string {
-  const secure =
-    getEnv().POCKETBASE_URL?.startsWith("https") ||
-    process.env.NODE_ENV === "production";
+  const secure = process.env.NODE_ENV === "production";
   return [
     `csrf_token=${token}`,
     ...(secure ? ["Secure"] : []),
@@ -121,7 +119,7 @@ export function setCsrfCookie(token: string): string {
  */
 export function validateCsrfToken(request: Request, formData: FormData): void {
   const cookies = cookieParse(request.headers.get("Cookie") || "");
-  const cookieToken = cookies["csrf_token"];
+  const cookieToken = cookies.csrf_token;
   const formToken = formData.get("csrf_token");
 
   if (!cookieToken || !formToken) {

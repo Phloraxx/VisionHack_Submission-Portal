@@ -2,7 +2,6 @@ import { useState, useRef, useMemo } from "react";
 import { useLoaderData, useSearchParams, useNavigation } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
 import { PanelHeader } from "~/components/shared/panel-header";
@@ -12,7 +11,7 @@ import { Users } from "lucide-react";
 import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 
 const PAGE_SIZE = 50;
-
+const VALID_STATUSES = ["invited", "registered", "shortlisted", "submitted", "selected", "rejected", "withdrawn"] as const;
 interface TeamWithExpand {
   id: string;
   name: string;
@@ -28,8 +27,7 @@ interface TeamWithExpand {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { user } = await requireRole(request, ["admin"]);
-  const pb = createSuperuserClient();
+  const { user, pb } = await requireRole(request, ["admin"]);
 
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
@@ -48,8 +46,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     clauses.push(`(name ~ "${safe}" || teamCode ~ "${safe}")`);
   }
-  if (status && status !== "all") {
-    clauses.push(`status = "${status}"`);
+  if (status && status !== "all" && VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) {
+    clauses.push(pb.filter("status = {:status}", { status }));
   }
   const filter = clauses.length > 0 ? clauses.join(" && ") : undefined;
 

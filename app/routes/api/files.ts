@@ -6,7 +6,7 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
+import { getAdminClient } from "~/lib/pocketbase.server";
 import { getEnv } from "~/lib/env.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -41,8 +41,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // team's record. The PB schema's `viewRule` for `teams` does this
   // already, but we re-check here so the file proxy is safe to keep
   // even if the schema rules regress.
-  const supPb = createSuperuserClient();
-  const team = await supPb.collection("teams")
+  const team = await auth.pb.collection("teams")
     .getOne(recordId, { fields: "id,institutionId,leaderUserId,submission_file" })
     .catch(() => null);
   if (!team) {
@@ -69,11 +68,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const pbUrl = getEnv().POCKETBASE_URL.replace(/\/+$/, "");
   const fileUrl = `${pbUrl}/api/files/${collection}/${recordId}/${filename}`;
 
-  // Authorization was already enforced above (role + ownership + attachment
-  // allow-list). Fetch the file with the superuser token so the proxy
-  // doesn't depend on the requesting user's own PB read rights — which the
-  // file `viewRule` may not grant directly.
-  const token = getEnv().POCKETBASE_SUPER_TOKEN;
+  // Fetch the file with the admin client so the proxy doesn't depend on
+  // the requesting user's own PB file read rights.
+  const adminPb = await getAdminClient();
+  const token = adminPb.authStore.token;
 
   try {
     const response = await fetch(fileUrl, {

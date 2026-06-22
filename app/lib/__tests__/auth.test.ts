@@ -75,14 +75,14 @@ describe("setAuthCookie", () => {
     expect(result).not.toContain("Secure");
   });
 
-  it("includes Secure flag when PB URL is HTTPS", () => {
-    const prevUrl = process.env.POCKETBASE_URL;
-    process.env.POCKETBASE_URL = "https://pb.example.com";
+  it("includes Secure flag in production environment", () => {
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
     try {
       const result = setAuthCookie("abc123");
       expect(result).toContain("Secure");
     } finally {
-      process.env.POCKETBASE_URL = prevUrl;
+      process.env.NODE_ENV = prevEnv;
     }
   });
 });
@@ -107,14 +107,14 @@ describe("clearAuthCookie", () => {
     expect(parts).toContain("Max-Age=0");
   });
 
-  it("includes Secure flag when PB URL is HTTPS", () => {
-    const prevUrl = process.env.POCKETBASE_URL;
-    process.env.POCKETBASE_URL = "https://pb.example.com";
+  it("includes Secure flag in production environment", () => {
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
     try {
       const result = clearAuthCookie();
       expect(result).toContain("Secure");
     } finally {
-      process.env.POCKETBASE_URL = prevUrl;
+      process.env.NODE_ENV = prevEnv;
     }
   });
 });

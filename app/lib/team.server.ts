@@ -141,7 +141,10 @@ export async function transitionTeamStatus(
     await pb.collection("teams").update(teamId, {
       status: to,
       status_changed_at: new Date().toISOString(),
-    }, { filter: pb.filter("status = {:expected}", { expected: team.status }) });
+    }, {
+      filter: pb.filter("status = {:expected}", { expected: team.status }),
+      $autoCancel: false,
+    });
   } catch {
     return { ok: false, response: fail({ error: "This team's status was changed by another action. Please refresh and try again.", status: 409 }) };
   }

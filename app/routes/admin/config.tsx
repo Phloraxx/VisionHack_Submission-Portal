@@ -3,7 +3,6 @@ import { useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { CsrfContext } from "~/routes/dashboard-layout";
 import { requireRole } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
@@ -37,7 +36,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export const action = secureAction(
   { roles: ["admin"] },
-  async ({ formData }) => {
+  async ({ formData, pb }) => {
     const key = (formData.get("key") as string | null) ?? "";
     const value = formData.get("value") === "true";
 
@@ -45,9 +44,8 @@ export const action = secureAction(
       return fail({ error: `Unknown config key "${key}"`, status: 400 });
     }
 
-    // Config writes require superuser — the `config` collection has null
-    // create/update rules (server-side only).
-    const pb = createSuperuserClient();
+    // Config writes use the admin user's own auth token — the config
+    // collection's create/update rules require @request.auth.role = "admin".
     const target = await pb
       .collection("config")
       .getFirstListItem(pb.filter("key = {:key}", { key }))

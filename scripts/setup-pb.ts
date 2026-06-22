@@ -163,10 +163,13 @@ const NO_RULES = {
 	deleteRule: null,
 } as const;
 
-/** Allow authenticated users to read config feature flags */
+/** Public read; admin role for writes */
 const CONFIG_RULES = {
-	listRule: '@request.auth.id != ""',
-	viewRule: '@request.auth.id != ""',
+	listRule: "",
+	viewRule: "",
+	createRule: '@request.auth.role = "admin"',
+	updateRule: '@request.auth.role = "admin"',
+	deleteRule: '@request.auth.role = "admin"',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -206,24 +209,27 @@ const TEAMS_RULES = {
 	// update teams within their institution (shortlist/unshortlist).
 	updateRule:
 		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
 		'@request.auth.role = "institution" || ' +
 		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead")',
 	// Only admin can delete teams.
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
 
-/** Member rules — members are scoped to the parent team. */
+/** Member rules — scoped to the parent team. */
 const MEMBERS_RULES = {
 	listRule:
+		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'@request.auth.role = "institution" || ' +
-		'teamId.leaderUserId ?= @request.auth.id',
+		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
+		'teamId.leaderUserId ?= @request.auth.id)',
 	viewRule:
+		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'@request.auth.role = "institution" || ' +
-		'teamId.leaderUserId ?= @request.auth.id',
+		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
+		'teamId.leaderUserId ?= @request.auth.id)',
 	createRule:
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "institution" || ' +
@@ -239,16 +245,21 @@ const MEMBERS_RULES = {
 /** Questionnaire responses — scoped to the user or admin. */
 const QUESTIONNAIRE_RULES = {
 	listRule:
+		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'userId ?= @request.auth.id',
+		'userId ?= @request.auth.id)',
 	viewRule:
+		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'userId ?= @request.auth.id',
-	createRule: 'userId ?= @request.auth.id || @request.auth.role = "admin"',
+		'userId ?= @request.auth.id)',
+	createRule:
+		'@request.auth.id != "" && (' +
+		'userId ?= @request.auth.id || @request.auth.role = "admin")',
 	updateRule:
-		'userId ?= @request.auth.id || @request.auth.role = "admin"',
+		'@request.auth.id != "" && (' +
+		'userId ?= @request.auth.id || @request.auth.role = "admin")',
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
 
@@ -277,7 +288,7 @@ const USERS_RULES = {
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
 		'@request.auth.role = "institution"',
-	createRule: '@request.auth.role = "admin"',
+	createRule: '@request.auth.role = "admin" || (@request.auth.role = "institution" && @request.body.role = "lead")',
 	updateRule:
 		'id = @request.auth.id && @request.body.role:isset = false && ' +
 		'@request.body.institutionId:isset = false',
@@ -1374,6 +1385,9 @@ async function main(): Promise<void> {
 
 	// Email is sent directly via PocketBase hooks using the built-in
 	// mail client — no email_outbox collection needed.
+
+	// Enable rate limiting
+	await ensureRateLimiting(token);
 
 	console.log("\n" + "=".repeat(50));
 	console.log("✅ PocketBase setup complete!");

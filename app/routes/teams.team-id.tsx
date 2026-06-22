@@ -1,7 +1,6 @@
 import { useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import {
   getInstitutionForUser,
   getLeadTeam,
@@ -169,13 +168,8 @@ export const action = secureAction(
 
     if (intent === "transition") {
       const toStatus = formData.get("toStatus") as TeamStatus;
-
-      // Admin & coordinator need a superuser client because the teams
-      // updateRule does NOT grant write to coordinator.
-      const actionPb =
-        user.role === "admin" || user.role === "coordinator"
-          ? createSuperuserClient()
-          : pb;
+      // Coordinator now has write access via PB updateRule — use their own client.
+      const actionPb = pb;
 
       // Resolve institutionId for the institution IDOR guard.
       let institutionId: string | undefined;

@@ -9,8 +9,8 @@ import {
 } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { getAuthFromCookie, login, setAuthCookie, ROLE_DASHBOARD_MAP } from "~/lib/auth.server";
-import { createAuthenticatedClient, createSuperuserClient } from "~/lib/pocketbase.server";
-import { validateOrigin } from "~/lib/csrf.server";
+import { createAuthenticatedClient, getAdminClient, createPocketBaseClient } from "~/lib/pocketbase.server";
+import { validateOrigin, validateCsrfToken, generateCsrfToken, setCsrfCookie } from "~/lib/csrf.server";
 import { getConfig } from "~/lib/config.server";
 import type { UserRecord } from "~/lib/types";
 import { Button } from "~/components/ui/button";
@@ -28,6 +28,7 @@ interface LoginStats {
   cachedAt: number;
 }
 let statsCache: LoginStats | null = null;
+let statsPromise: Promise<LoginStats> | null = null;
 const STATS_TTL_MS = 60_000;
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -45,50 +46,80 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  // Pull live counts for the login page's quick-stats strip. We use the
-  // superuser client because the per-collection view rules now require
-  // authentication, but the login page is public.
+  // Config phase flags are now publicly readable (collection listRule is "").
+  // Team and institution counts still need elevated access — use the
+  // server-side admin client for those.
   // Stats are cached in memory for 60s to avoid hitting PocketBase on every load.
   const now = Date.now();
   if (statsCache && now - statsCache.cachedAt < STATS_TTL_MS) {
-    return {
-      teamCount: statsCache.teamCount,
-      institutionCount: statsCache.institutionCount,
-      registrationOpen: statsCache.registrationOpen,
-      questionnaireOpen: statsCache.questionnaireOpen,
-      submissionOpen: statsCache.submissionOpen,
-    };
+    const csrfToken = generateCsrfToken();
+    const headers = new Headers();
+    headers.append("Set-Cookie", setCsrfCookie(csrfToken));
+    return data(
+      {
+        teamCount: statsCache.teamCount,
+        institutionCount: statsCache.institutionCount,
+        registrationOpen: statsCache.registrationOpen,
+        questionnaireOpen: statsCache.questionnaireOpen,
+        submissionOpen: statsCache.submissionOpen,
+        csrfToken,
+      },
+      { headers }
+    );
   }
 
-  const pb = createSuperuserClient();
-  const [teams, institutions, cfg] = await Promise.all([
-    pb.collection("teams").getList(1, 1, { fields: "id" }),
-    pb.collection("institutions").getList(1, 1, { fields: "id" }),
-    getConfig(pb),
-  ]);
-  statsCache = {
-    teamCount: teams.totalItems,
-    institutionCount: institutions.totalItems,
-    registrationOpen: !!cfg.registration_open,
-    questionnaireOpen: !!cfg.questionnaire_open,
-    submissionOpen: !!cfg.submission_open,
-    cachedAt: Date.now(),
-  };
-  return {
-    teamCount: statsCache.teamCount,
-    institutionCount: statsCache.institutionCount,
-    registrationOpen: statsCache.registrationOpen,
-    questionnaireOpen: statsCache.questionnaireOpen,
-    submissionOpen: statsCache.submissionOpen,
-  };
+  // Deduplicate concurrent cache-miss requests
+  const promise = statsPromise ?? (statsPromise = (async () => {
+    const [cfg, adminPb] = await Promise.all([
+      getConfig(createPocketBaseClient()),
+      getAdminClient(),
+    ]);
+    const [teams, institutions] = await Promise.all([
+      adminPb.collection("teams").getList(1, 1, { fields: "id" }),
+      adminPb.collection("institutions").getList(1, 1, { fields: "id" }),
+    ]);
+    const result = {
+      teamCount: teams.totalItems,
+      institutionCount: institutions.totalItems,
+      registrationOpen: !!cfg.registration_open,
+      questionnaireOpen: !!cfg.questionnaire_open,
+      submissionOpen: !!cfg.submission_open,
+      cachedAt: Date.now(),
+    };
+    statsCache = result;
+    statsPromise = null;
+    return result;
+  })());
+  const stats = await promise;
+
+  const csrfToken = generateCsrfToken();
+  const headers = new Headers();
+  headers.append("Set-Cookie", setCsrfCookie(csrfToken));
+
+  return data(
+    {
+      teamCount: stats.teamCount,
+      institutionCount: stats.institutionCount,
+      registrationOpen: stats.registrationOpen,
+      questionnaireOpen: stats.questionnaireOpen,
+      submissionOpen: stats.submissionOpen,
+      csrfToken,
+    },
+    { headers }
+  );
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request);
 
   const formData = await request.formData();
+  validateCsrfToken(request, formData);
   const email = (formData.get("email") as string | null)?.trim() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email || !emailRegex.test(email)) {
+    return data({ error: "Valid email is required." }, { status: 400 });
+  }
 
   if (!email || !password) {
     return data({ error: "Email and password are required." }, { status: 400 });
@@ -126,12 +157,13 @@ export function meta() {
 }
 
 export default function Login() {
-  const { teamCount, institutionCount, registrationOpen, questionnaireOpen, submissionOpen } = useLoaderData() as {
+  const { teamCount, institutionCount, registrationOpen, questionnaireOpen, submissionOpen, csrfToken } = useLoaderData() as {
     teamCount: number;
     institutionCount: number;
     registrationOpen: boolean;
     questionnaireOpen: boolean;
     submissionOpen: boolean;
+    csrfToken: string;
   };
   const actionData = useActionData<{ error?: string }>();
   const navigation = useNavigation();
@@ -257,6 +289,7 @@ export default function Login() {
             </div>
 
             <Form method="post" className="space-y-5">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
               {actionData?.error && (
                 <div
                   role="alert"
