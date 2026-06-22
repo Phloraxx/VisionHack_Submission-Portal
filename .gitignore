@@ -38,3 +38,4 @@ Project.md
 vitest.config.ts
 .env.example
 .dockerignore
+screens/
