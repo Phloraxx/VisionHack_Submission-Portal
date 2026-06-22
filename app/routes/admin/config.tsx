@@ -1,5 +1,5 @@
-import { useRef, useState, useContext } from "react";
-import { useLoaderData, Form } from "react-router";
+import { useState, useContext, useEffect } from "react";
+import { useLoaderData, useSubmit, useNavigation, useActionData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { CsrfContext } from "~/routes/dashboard-layout";
 import { requireRole } from "~/lib/auth.server";
@@ -98,19 +98,29 @@ export default function AdminConfig() {
     | null
     | undefined;
   const configMap = data?.configMap ?? {};
-
-  const formRefs = useRef<Record<string, HTMLFormElement | null>>({});
-  const [toggling, setToggling] = useState<string | null>(null);
   const csrfToken = useContext(CsrfContext);
+  const navigation = useNavigation();
+  const actionData = useActionData<{ key?: string; value?: boolean; error?: string }>();
+  const submit = useSubmit();
 
-  const handleToggle = (key: string, label: string, checked: boolean) => {
-    setToggling(key);
-    toast.success(`${label} ${checked ? "enabled" : "disabled"}`, {
-      duration: 1500,
-    });
-    formRefs.current[key]?.requestSubmit();
-    setTimeout(() => setToggling(null), 600);
+  // Show toast after action completes
+  useEffect(() => {
+    if (actionData?.key) {
+      const flag = FEATURE_FLAGS.find(f => f.key === actionData.key);
+      if (flag) {
+        toast.success(`${flag.label} ${actionData.value ? "enabled" : "disabled"}`, { duration: 2000 });
+      }
+    } else if (actionData?.error) {
+      toast.error(actionData.error, { duration: 3000 });
+    }
+  }, [actionData]);
+
+  const handleToggle = (key: string) => {
+    submit({ key, value: String(!configMap[key]), csrf_token: csrfToken }, { method: "post" });
   };
+
+  const submitting = (key: string) =>
+    navigation.state === "submitting" && navigation.formData?.get("key") === key;
 
   return (
     <div className="space-y-10">
@@ -124,7 +134,7 @@ export default function AdminConfig() {
         {FEATURE_FLAGS.map((flag) => {
           const Icon = FLAG_ICONS[flag.key] ?? UserPlus;
           const isEnabled = configMap[flag.key] === true;
-          const isLoading = toggling === flag.key;
+          const isLoading = submitting(flag.key);
 
           return (
             <div
@@ -147,24 +157,12 @@ export default function AdminConfig() {
                 </div>
               </div>
 
-              <Form
-                method="post"
-                ref={(el) => {
-                  formRefs.current[flag.key] = el;
-                }}
-              >
-                <input type="hidden" name="csrf_token" value={csrfToken} />
-                <input type="hidden" name="key" value={flag.key} />
-                <input type="hidden" name="value" value={String(!isEnabled)} />
-                <Switch
-                  checked={isEnabled}
-                  onCheckedChange={(checked) =>
-                    handleToggle(flag.key, flag.label, checked)
-                  }
-                  disabled={isLoading}
-                  aria-label={`Toggle ${flag.label}`}
-                />
-              </Form>
+              <Switch
+                checked={isEnabled}
+                onCheckedChange={() => handleToggle(flag.key)}
+                disabled={isLoading}
+                aria-label={`Toggle ${flag.label}`}
+              />
             </div>
           );
         })}

@@ -61,10 +61,12 @@ export function Layout({
       <body className="min-h-screen bg-background text-foreground antialiased">
         {children}
         <Toaster
-          richColors
           closeButton
-          position="top-right"
-          toastOptions={{ duration: 4000 }}
+          position="bottom-right"
+          toastOptions={{
+            duration: 4000,
+            style: { background: "#1a1a1a", color: "#f5f5f5", border: "1px solid #333" },
+          }}
         />
         <ScrollRestoration nonce={nonce} />
         <Scripts nonce={nonce} />
