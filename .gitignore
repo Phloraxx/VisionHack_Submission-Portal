@@ -39,3 +39,8 @@ vitest.config.ts
 .env.example
 .dockerignore
 screens/
+
+# Browser tool screenshot artifacts
+/*-before.png
+/*-after.png
+/*-final.png
