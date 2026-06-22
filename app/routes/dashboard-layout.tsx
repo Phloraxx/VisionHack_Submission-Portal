@@ -212,18 +212,18 @@ export default function DashboardLayout() {
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {/* Brand header — shows the event logo from public/logo.svg */}
-        <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4 vh-safe-top">
+        {/* Brand header — centered event logo */}
+        <div className="relative flex h-16 items-center justify-center border-b border-sidebar-border px-4 vh-safe-top">
           <Link
             to="/"
-            className="flex items-center gap-2.5 group"
+            className="inline-flex items-center justify-center"
             aria-label="VisionHack home"
           >
-            <img src="/logo.svg" alt="μLearn SCET · VisionHack 2026" className="h-14 w-auto" />
+            <img src="/logo.svg" alt="μLearn SCET · VisionHack 2026" className="h-16 w-auto max-w-[90%]" />
           </Link>
           <button
             type="button"
-            className="vh-touch flex h-10 w-10 items-center justify-center rounded-md text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:hidden"
+            className="vh-touch absolute right-4 flex h-10 w-10 items-center justify-center rounded-md text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:hidden"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
           >
