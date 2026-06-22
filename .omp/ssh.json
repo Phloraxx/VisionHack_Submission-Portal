@@ -1,8 +1,0 @@
-{
-  "hosts": {
-    "oracle": {
-      "host": "oracle",
-      "username": "drvij"
-    }
-  }
-}

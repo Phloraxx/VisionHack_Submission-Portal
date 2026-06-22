@@ -21,17 +21,27 @@ scripts/*.ps1
 # AI tooling artifacts
 .commandcode/
 .impeccable/
+.omp/
+.tmp/
+local/
 
 # Binary / media files — root-level screenshots and binaries
 /e2e-final-state.png
+/e2e-filled.png
+/e2e-register.png
+/e2e-result.png
 /test-idea.pptx
 
-# Docs / design — not needed for deployment
+# Docs / review artifacts — not needed for deployment
 references/
 docs/
 DESIGN.md
 PRODUCT.md
 Project.md
+DEPLOYMENT.md
+FIX-PLAN.md
+REVIEW-ALL-AGENTS.md
+REVIEW-CROSS-REFERENCED.md
 
 # CI / config — not needed for deployment
 .github/
@@ -39,6 +49,9 @@ vitest.config.ts
 .env.example
 .dockerignore
 screens/
+
+# PocketBase hooks — not needed for deployment
+pb_hooks/
 
 # Browser tool screenshot artifacts
 /*-before.png
