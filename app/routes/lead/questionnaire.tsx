@@ -404,322 +404,105 @@ export default function LeadQuestionnaire() {
 
       <Form method="post" className="space-y-6">
       <input type="hidden" name="csrf_token" value={csrfToken} />
-        {/* Section 1: Personal Info */}
-        {currentSection === "personal" && (
-          <Card key="personal" className="panel-enter" role="tabpanel" id="section-panel-personal" aria-labelledby="section-tab-personal">
-            <CardHeader>
-              <CardTitle>Personal Info</CardTitle>
-              <CardDescription>
-                Tell us about yourself
-              </CardDescription>
-            </CardHeader>
+        {/* Render ALL sections but hide non-current with CSS so all form fields submit */}
+        <div style={{ display: currentSection === "personal" ? undefined : "none" }} role="tabpanel" id="section-panel-personal" aria-labelledby="section-tab-personal">
+          <Card key="personal" className="panel-enter">
+            <CardHeader><CardTitle>Personal Info</CardTitle><CardDescription>Tell us about yourself</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="age">
-                    Age <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="age"
-                    aria-invalid={!!(errors.age || actionData?.fieldErrors?.age)}
-                    aria-describedby={errors.age || actionData?.fieldErrors?.age ? "age-error" : undefined}
-                    type="number"
-                    placeholder="Your age"
-                    {...register("age")}
-                    disabled={!questionnaireOpen}
-                    required
-                  />
-                  {(errors.age || actionData?.fieldErrors?.age) && (
-                    <p id="age-error" className="text-sm text-destructive" role="alert">
-                      {errors.age?.message ?? actionData?.fieldErrors?.age}
-                    </p>
-                  )}
+                  <Label htmlFor="age">Age <span className="text-destructive">*</span></Label>
+                  <Input id="age" aria-invalid={!!(errors.age || actionData?.fieldErrors?.age)} aria-describedby={errors.age || actionData?.fieldErrors?.age ? "age-error" : undefined} type="number" placeholder="Your age" {...register("age")} disabled={!questionnaireOpen} required />
+                  {(errors.age || actionData?.fieldErrors?.age) && (<p id="age-error" className="text-sm text-destructive" role="alert">{errors.age?.message ?? actionData?.fieldErrors?.age}</p>)}
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="gender">
-                    Gender <span className="text-destructive">*</span>
-                  </Label>
-                  <Controller
-                    control={control}
-                    name="gender"
-                    render={({ field }) => (
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                        disabled={!questionnaireOpen}
-                        name={field.name}
-                      >
-                        <SelectTrigger id="gender" aria-invalid={!!(errors.gender || actionData?.fieldErrors?.gender)} aria-describedby={errors.gender || actionData?.fieldErrors?.gender ? "gender-error" : undefined}>
-                          <SelectValue placeholder="Select gender" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Male">Male</SelectItem>
-                          <SelectItem value="Female">Female</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {(errors.gender || actionData?.fieldErrors?.gender) && (
-                    <p id="gender-error" className="text-sm text-destructive" role="alert">
-                      {errors.gender?.message ?? actionData?.fieldErrors?.gender}
-                    </p>
-                  )}
+                  <Label htmlFor="gender">Gender <span className="text-destructive">*</span></Label>
+                  <Controller control={control} name="gender" render={({ field }) => (<Select value={field.value ?? ""} onValueChange={field.onChange} disabled={!questionnaireOpen} name={field.name}><SelectTrigger id="gender" aria-invalid={!!(errors.gender || actionData?.fieldErrors?.gender)} aria-describedby={errors.gender || actionData?.fieldErrors?.gender ? "gender-error" : undefined}><SelectValue placeholder="Select gender" /></SelectTrigger><SelectContent><SelectItem value="Male">Male</SelectItem><SelectItem value="Female">Female</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select>)} />
+                  {(errors.gender || actionData?.fieldErrors?.gender) && (<p id="gender-error" className="text-sm text-destructive" role="alert">{errors.gender?.message ?? actionData?.fieldErrors?.gender}</p>)}
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="education">
-                    Education <span className="text-destructive">*</span>
-                  </Label>
-                  <Controller
-                    control={control}
-                    name="education"
-                    render={({ field }) => (
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                        disabled={!questionnaireOpen}
-                        name={field.name}
-                      >
-                        <SelectTrigger id="education" aria-invalid={!!(errors.education || actionData?.fieldErrors?.education)} aria-describedby={errors.education || actionData?.fieldErrors?.education ? "education-error" : undefined}>
-                          <SelectValue placeholder="Select education" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="High School">High School</SelectItem>
-                          <SelectItem value="Higher Secondary">Higher Secondary</SelectItem>
-                          <SelectItem value="Undergraduate">Undergraduate</SelectItem>
-                          <SelectItem value="Postgraduate">Postgraduate</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {(errors.education || actionData?.fieldErrors?.education) && (
-                    <p id="education-error" className="text-sm text-destructive" role="alert">
-                      {errors.education?.message ?? actionData?.fieldErrors?.education}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="college_name">
-                    College Name{" "}
-                    <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="college_name"
-                    aria-invalid={!!(errors.college_name || actionData?.fieldErrors?.college_name)}
-                    aria-describedby={errors.college_name || actionData?.fieldErrors?.college_name ? "college_name-error" : undefined}
-                    placeholder="Your college name"
-                    {...register("college_name")}
-                    disabled={!questionnaireOpen}
-                    required
-                  />
-                  {(errors.college_name || actionData?.fieldErrors?.college_name) && (
-                    <p id="college_name-error" className="text-sm text-destructive" role="alert">
-                      {errors.college_name?.message ?? actionData?.fieldErrors?.college_name}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="district">
-                    District <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="district"
-                    aria-invalid={!!(errors.district || actionData?.fieldErrors?.district)}
-                    aria-describedby={errors.district || actionData?.fieldErrors?.district ? "district-error" : undefined}
-                    placeholder="Your district"
-                    {...register("district")}
-                    disabled={!questionnaireOpen}
-                    required
-                  />
-                  {(errors.district || actionData?.fieldErrors?.district) && (
-                    <p id="district-error" className="text-sm text-destructive" role="alert">
-                      {errors.district?.message ?? actionData?.fieldErrors?.district}
-                    </p>
-                  )}
-                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="college_name">College Name <span className="text-destructive">*</span></Label>
+                <Input id="college_name" aria-invalid={!!(errors.college_name || actionData?.fieldErrors?.college_name)} aria-describedby={errors.college_name || actionData?.fieldErrors?.college_name ? "college_name-error" : undefined} placeholder="Your college name" {...register("college_name")} disabled={!questionnaireOpen} required />
+                {(errors.college_name || actionData?.fieldErrors?.college_name) && (<p id="college_name-error" className="text-sm text-destructive" role="alert">{errors.college_name?.message ?? actionData?.fieldErrors?.college_name}</p>)}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="education">Education <span className="text-destructive">*</span></Label>
+                <Controller control={control} name="education" render={({ field }) => (<Select value={field.value ?? ""} onValueChange={field.onChange} disabled={!questionnaireOpen} name={field.name}><SelectTrigger id="education" aria-invalid={!!(errors.education || actionData?.fieldErrors?.education)} aria-describedby={errors.education || actionData?.fieldErrors?.education ? "education-error" : undefined}><SelectValue placeholder="Select education" /></SelectTrigger><SelectContent><SelectItem value="High School">High School</SelectItem><SelectItem value="Higher Secondary">Higher Secondary</SelectItem><SelectItem value="Undergraduate">Undergraduate</SelectItem><SelectItem value="Postgraduate">Postgraduate</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select>)} />
+                {(errors.education || actionData?.fieldErrors?.education) && (<p id="education-error" className="text-sm text-destructive" role="alert">{errors.education?.message ?? actionData?.fieldErrors?.education}</p>)}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="district">District <span className="text-destructive">*</span></Label>
+                <Input id="district" aria-invalid={!!(errors.district || actionData?.fieldErrors?.distrct)} aria-describedby={errors.district || actionData?.fieldErrors?.district ? "district-error" : undefined} placeholder="Your district" {...register("district")} disabled={!questionnaireOpen} required />
+                {(errors.district || actionData?.fieldErrors?.district) && (<p id="district-error" className="text-sm text-destructive" role="alert">{errors.district?.message ?? actionData?.fieldErrors?.district}</p>)}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="year_of_graduation">Year of Graduation <span className="text-destructive">*</span></Label>
+                <Input id="year_of_graduation" type="number" placeholder="e.g. 2028" {...register("year_of_graduation")} disabled={!questionnaireOpen} required />
+                {(errors.year_of_graduation || actionData?.fieldErrors?.year_of_graduation) && (<p id="year-of-graduation-error" className="text-sm text-destructive" role="alert">{errors.year_of_graduation?.message ?? actionData?.fieldErrors?.year_of_graduation}</p>)}
               </div>
             </CardContent>
           </Card>
-        )}
-
-        {/* Section 2: Skills & Interests */}
-        {currentSection === "skills" && (
-          <Card key="skills" className="panel-enter" role="tabpanel" id="section-panel-skills" aria-labelledby="section-tab-skills">
-            <CardHeader>
-              <CardTitle>Skills &amp; Interests</CardTitle>
-              <CardDescription>
-                Tell us about your skills and interests
-              </CardDescription>
-            </CardHeader>
+        </div>
+        <div style={{ display: currentSection === "skills" ? undefined : "none" }} role="tabpanel" id="section-panel-skills" aria-labelledby="section-tab-skills">
+          <Card key="skills" className="panel-enter">
+            <CardHeader><CardTitle>Skills &amp; Interests</CardTitle><CardDescription>Tell us about your skills and interests</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="skills">Skills</Label>
-                <Textarea
-                  id="skills"
-                  maxLength={1000}
-                  placeholder="List your technical and non-technical skills (e.g., Python, UI/UX Design, Public Speaking)"
-                  {...register("skills")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[100px]"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Separate skills with commas
-                </p>
+                <Textarea id="skills" maxLength={1000} placeholder="List your technical and non-technical skills" {...register("skills")} disabled={!questionnaireOpen} className="min-h-[100px]" />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="interests">Interests</Label>
-                <Textarea
-                  id="interests"
-                  maxLength={1000}
-                  placeholder="What are you passionate about? (e.g., AI, Web Development, Social Impact)"
-                  {...register("interests")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[100px]"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Separate interests with commas
-                </p>
+                <Textarea id="interests" maxLength={1000} placeholder="What are you passionate about?" {...register("interests")} disabled={!questionnaireOpen} className="min-h-[100px]" />
               </div>
             </CardContent>
           </Card>
-        )}
-
-        {/* Section 3: Motivation */}
-        {currentSection === "motivation" && (
-          <Card key="motivation" className="panel-enter" role="tabpanel" id="section-panel-motivation" aria-labelledby="section-tab-motivation">
-            <CardHeader>
-              <CardTitle>Motivation</CardTitle>
-              <CardDescription>
-                Tell us about your journey and aspirations
-              </CardDescription>
-            </CardHeader>
+        </div>
+        <div style={{ display: currentSection === "motivation" ? undefined : "none" }} role="tabpanel" id="section-panel-motivation" aria-labelledby="section-tab-motivation">
+          <Card key="motivation" className="panel-enter">
+            <CardHeader><CardTitle>Motivation</CardTitle><CardDescription>Tell us about your journey and aspirations</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="challenges">
-                  Challenges Faced
-                </Label>
-                <Textarea
-                  id="challenges"
-                  maxLength={2000}
-                  placeholder="What challenges have you faced in your journey so far?"
-                  {...register("challenges")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[80px]"
-                />
+                <Label htmlFor="challenges">Challenges Faced</Label>
+                <Textarea id="challenges" maxLength={2000} placeholder="What challenges have you faced?" {...register("challenges")} disabled={!questionnaireOpen} className="min-h-[80px]" />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="experience">
-                  Previous Experience
-                </Label>
-                <Textarea
-                  id="experience"
-                  maxLength={2000}
-                  placeholder="Describe any previous hackathon, project, or work experience"
-                  {...register("experience")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[80px]"
-                />
+                <Label htmlFor="experience">Previous Experience</Label>
+                <Textarea id="experience" maxLength={2000} placeholder="Describe any previous hackathon, project, or work experience" {...register("experience")} disabled={!questionnaireOpen} className="min-h-[80px]" />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="motivation">
-                  Why do you want to participate?
-                </Label>
-                <Textarea
-                  id="motivation"
-                  maxLength={2000}
-                  placeholder="What motivates you to join VisionHack?"
-                  {...register("motivation")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[80px]"
-                />
+                <Label htmlFor="motivation">Why do you want to participate?</Label>
+                <Textarea id="motivation" maxLength={2000} placeholder="What motivates you to join VisionHack?" {...register("motivation")} disabled={!questionnaireOpen} className="min-h-[80px]" />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="team_experience">
-                  Teamwork Experience
-                </Label>
-                <Textarea
-                  id="team_experience"
-                  maxLength={2000}
-                  placeholder="Describe your experience working in teams"
-                  {...register("team_experience")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[80px]"
-                />
+                <Label htmlFor="team_experience">Teamwork Experience</Label>
+                <Textarea id="team_experience" maxLength={2000} placeholder="Describe your experience working in teams" {...register("team_experience")} disabled={!questionnaireOpen} className="min-h-[80px]" />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="expectations">
-                  Expectations from VisionHack
-                </Label>
-                <Textarea
-                  id="expectations"
-                  maxLength={2000}
-                  placeholder="What do you hope to gain from this hackathon?"
-                  {...register("expectations")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[80px]"
-                />
+                <Label htmlFor="expectations">Expectations from VisionHack</Label>
+                <Textarea id="expectations" maxLength={2000} placeholder="What do you hope to gain?" {...register("expectations")} disabled={!questionnaireOpen} className="min-h-[80px]" />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="additional_info">
-                  Additional Information
-                </Label>
-                <Textarea
-                  id="additional_info"
-                  maxLength={2000}
-                  placeholder="Anything else you'd like to share?"
-                  {...register("additional_info")}
-                  disabled={!questionnaireOpen}
-                  className="min-h-[80px]"
-                />
+                <Label htmlFor="additional_info">Additional Information</Label>
+                <Textarea id="additional_info" maxLength={2000} placeholder="Anything else you'd like to share?" {...register("additional_info")} disabled={!questionnaireOpen} className="min-h-[80px]" />
               </div>
             </CardContent>
           </Card>
-        )}
+        </div>
 
         {/* Navigation buttons */}
         <div className="flex items-center justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={goPrev}
-            disabled={isFirstSection}
-          >
-            <ChevronLeft className="mr-2 h-4 w-4" />
-            Previous
+          <Button type="button" variant="outline" onClick={goPrev} disabled={isFirstSection}>
+            <ChevronLeft className="mr-2 h-4 w-4" /> Previous
           </Button>
-
           {isLastSection ? (
-            <Button
-              type="submit"
-              disabled={isSubmitting || !questionnaireOpen}
-            >
-              {isSubmitting ? (
-                <Loader2 className="mr-2 h-4 w-4 vh-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              {isSubmitting
-                ? "Saving..."
-                : questionnaire
-                  ? "Update Questionnaire"
-                  : "Submit Questionnaire"}
+            <Button type="submit" disabled={isSubmitting || !questionnaireOpen}>
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 vh-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              {isSubmitting ? "Saving..." : questionnaire ? "Update Questionnaire" : "Submit Questionnaire"}
             </Button>
           ) : (
-            <Button type="button" onClick={goNext}>
-              Next
-              <ChevronRight className="ml-2 h-4 w-4" />
-            </Button>
+            <Button type="button" onClick={goNext}>Next <ChevronRight className="ml-2 h-4 w-4" /></Button>
           )}
         </div>
       </Form>

@@ -149,7 +149,10 @@ export async function action({ request }: ActionFunctionArgs) {
     // Guard against unmapped roles — redirecting to /login would loop.
     const dashboardPath = ROLE_DASHBOARD_MAP[record.role as keyof typeof ROLE_DASHBOARD_MAP];
     if (!dashboardPath) {
-      return data({ error: "Your account has no configured dashboard. Contact support.", status: 403 });
+      return data(
+        { error: "Your account has no configured dashboard. Contact support." },
+        { status: 403 },
+      );
     }
     const headers = new Headers();
     headers.append("Set-Cookie", setAuthCookie(token));

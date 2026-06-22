@@ -659,7 +659,7 @@ export default function LeadRegister() {
                           value={field.value ?? ""}
                           onValueChange={field.onChange}
                           disabled={!registrationOpen}
-                          name="memberGender"
+                          name={field.name}
                         >
                           <SelectTrigger id={`member-gender-${index}`}>
                             <SelectValue placeholder="Select gender" />

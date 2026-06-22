@@ -150,6 +150,9 @@ function completedSteps(
   if (!status || status === "invited") return 0;
   if (status === "registered") return questionnaireDone ? 2 : 1;
   if (status === "shortlisted") return 2;
+  // Withdrawn teams max out at step 2 (can't submit ideas).
+  if (status === "withdrawn") return 2;
+  // submitted/selected show all 3 steps as completed.
   return 3;
 }
 
