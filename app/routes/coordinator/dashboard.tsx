@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useLoaderData, useSearchParams, useNavigation } from "react-router";
+import { useLoaderData, useSearchParams, useNavigation, useRouteError } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
@@ -583,9 +583,14 @@ export function HydrateFallback() {
   );
 }
 
-export function ErrorBoundary({ error }: { error: Error }) {
+export function ErrorBoundary() {
+  const error = useRouteError();
   let message = "Something went wrong";
-  if (error instanceof Error) message = error.message;
+  if (error instanceof Response) {
+    message = `Error ${error.status} — ${error.statusText || "Access denied"}`;
+  } else if (error instanceof Error) {
+    message = error.message;
+  }
   return (
     <div className="flex min-h-[50vh] items-center justify-center p-8">
       <div className="mx-auto max-w-md text-center">
