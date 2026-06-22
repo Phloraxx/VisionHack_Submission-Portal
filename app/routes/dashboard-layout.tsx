@@ -212,14 +212,14 @@ export default function DashboardLayout() {
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {/* Brand header */}
+        {/* Brand header — shows the event logo from public/logo.svg */}
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4 vh-safe-top">
           <Link
             to="/"
             className="flex items-center gap-2.5 group"
             aria-label="VisionHack home"
           >
-            <EventMark size="md" tone="display" label="VisionHack" />
+            <img src="/logo.svg" alt="μLearn SCET · VisionHack 2026" className="h-14 w-auto" />
           </Link>
           <button
             type="button"
@@ -330,7 +330,7 @@ export default function DashboardLayout() {
           >
             <Menu className="h-4 w-4" />
           </button>
-          <EventMark size="sm" label="VisionHack" />
+          <img src="/logo-white.svg" alt="VisionHack" className="h-6 w-auto" />
         </header>
 
         {/* Loading bar */}
