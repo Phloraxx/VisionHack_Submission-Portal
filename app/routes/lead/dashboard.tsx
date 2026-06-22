@@ -1,6 +1,8 @@
+import { useContext } from "react";
 import { Link, Form, useActionData, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
+import { CsrfContext } from "~/routes/dashboard-layout";
 import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { getLeadTeam, transitionTeamStatus } from "~/lib/team.server";
@@ -201,6 +203,7 @@ export default function LeadDashboard() {
     nominationOpen: boolean;
     submissionOpen: boolean;
   };
+  const csrfToken = useContext(CsrfContext);
   const actionData = useActionData() as { success?: boolean; error?: string } | undefined;
 
   const status = team?.status ?? null;
@@ -528,6 +531,7 @@ export default function LeadDashboard() {
               <div className="border-t border-border pt-4">
                 <Form method="post">
                   <input type="hidden" name="intent" value="withdraw" />
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
                   <ConfirmButton
                     label="Withdraw team"
                     confirmMessage="Withdraw your team? This cannot be undone."

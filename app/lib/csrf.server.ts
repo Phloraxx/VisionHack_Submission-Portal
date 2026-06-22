@@ -98,8 +98,9 @@ export function generateCsrfToken(): string {
 /**
  * Build a `Set-Cookie` header value that stores the given CSRF token.
  *
- * NOT HttpOnly — client JS needs to read the cookie to inject its value
- * into the form body as a hidden input. Marked Secure in production.
+ * HttpOnly is safe here because the token is read server-side in the
+ * route loader and passed to the template via loader data, not by
+ * client JS reading the cookie directly. Marked Secure in production.
  *
  * ```ts
  * headers.append("Set-Cookie", setCsrfCookie(token));

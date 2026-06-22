@@ -206,7 +206,9 @@ export async function sendStatusChangeEmail(
   try {
     await sendEmail({
       to: args.to,
-      subject: `Team "${escapeHtml(args.teamName)}" status: ${escapeHtml(statusLabel)}`,
+      // Subject is plain text (not HTML), so no HTML escaping needed.
+      // The HTML body above uses escapeHtml() correctly.
+      subject: `Team "${args.teamName}" status: ${statusLabel}`,
       html,
     });
   } catch (err) {
