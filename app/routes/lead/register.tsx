@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { registerSchema } from "~/lib/schemas/register";
 import {
   useLoaderData,
   Form,
@@ -254,41 +257,45 @@ export default function LeadRegister() {
     true, // clearOnUnmount — PII should not persist after closing
   );
 
-  const [teamName, setTeamName] = useState(team?.name ?? savedData?.teamName ?? "");
-  const [leadPhone, setLeadPhone] = useState(
-    members.find((m) => m.email === user.email)?.phone ?? savedData?.leadPhone ?? "",
-  );
-  const [leadGender, setLeadGender] = useState(
-    members.find((m) => m.email === user.email)?.gender ?? savedData?.leadGender ?? "",
-  );
-  const [leadRole, setLeadRole] = useState(
-    members.find((m) => m.email === user.email)?.role ?? savedData?.leadRole ?? "",
-  );
-
+  const leadMember = members.find((m) => m.email === user.email);
   // Filter out the lead from members list
   const otherMembers = members.filter(
     (m) => m.email.toLowerCase() !== user.email.toLowerCase(),
   );
 
-  const [memberFields, setMemberFields] = useState<
-    Array<{
-      fullName: string;
-      email: string;
-      phone: string;
-      gender: string;
-      role: string;
-    }>
-  >(
-    otherMembers.length > 0
-      ? otherMembers.map((m) => ({
-          fullName: m.fullName,
-          email: m.email,
-          phone: m.phone,
-          gender: m.gender,
-          role: m.role,
-        }))
-      : [{ fullName: "", email: "", phone: "", gender: "", role: "" }],
-  );
+  const {
+    register,
+    control,
+    formState: { errors },
+    setValue,
+    getValues,
+    watch,
+  } = useForm({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      teamName: team?.name ?? savedData?.teamName ?? "",
+      leadPhone: leadMember?.phone ?? savedData?.leadPhone ?? "",
+      leadGender: leadMember?.gender ?? savedData?.leadGender ?? "",
+      leadRole: leadMember?.role ?? savedData?.leadRole ?? "",
+      memberName: otherMembers.length > 0
+        ? otherMembers.map((m) => m.fullName)
+        : [""],
+      memberEmail: otherMembers.length > 0
+        ? otherMembers.map((m) => m.email)
+        : [""],
+      memberPhone: otherMembers.length > 0
+        ? otherMembers.map((m) => m.phone)
+        : [""],
+      memberGender: otherMembers.length > 0
+        ? otherMembers.map((m) => m.gender)
+        : [""],
+      memberRole: otherMembers.length > 0
+        ? otherMembers.map((m) => m.role)
+        : [""],
+    },
+  });
+
+  const memberCount = watch("memberName")?.length ?? 0;
 
   const isApproved =
     team?.status === "shortlisted" ||
@@ -298,16 +305,24 @@ export default function LeadRegister() {
   const steps = getLeadSteps(team?.status ?? null, "/lead/register");
   const [showReview, setShowReview] = useState(false);
 
+  const watchedForm = watch();
+
   // Save on every field change
   useEffect(() => {
     save({
-      teamName,
-      leadPhone,
-      leadGender,
-      leadRole,
-      members: memberFields,
+      teamName: watchedForm.teamName ?? "",
+      leadPhone: watchedForm.leadPhone ?? "",
+      leadGender: watchedForm.leadGender ?? "",
+      leadRole: watchedForm.leadRole ?? "",
+      members: ((watchedForm.memberName ?? []) as string[]).map((_, i) => ({
+        fullName: (watchedForm.memberName ?? [])[i] ?? "",
+        email: (watchedForm.memberEmail ?? [])[i] ?? "",
+        phone: (watchedForm.memberPhone ?? [])[i] ?? "",
+        gender: (watchedForm.memberGender ?? [])[i] ?? "",
+        role: (watchedForm.memberRole ?? [])[i] ?? "",
+      })),
     });
-  }, [teamName, leadPhone, leadGender, leadRole, memberFields, save]);
+  }, [watchedForm, save]);
 
   // Clear autosave on successful submit.
   useEffect(() => {
@@ -320,28 +335,22 @@ export default function LeadRegister() {
   });
 
   const addMember = () => {
-    if (memberFields.length < 5) {
-      setMemberFields([
-        ...memberFields,
-        { fullName: "", email: "", phone: "", gender: "", role: "" },
-      ]);
-    }
+    if (memberCount >= 5) return;
+    setValue("memberName", [...(getValues("memberName") ?? []), ""]);
+    setValue("memberEmail", [...(getValues("memberEmail") ?? []), ""]);
+    setValue("memberPhone", [...(getValues("memberPhone") ?? []), ""]);
+    setValue("memberGender", [...(getValues("memberGender") ?? []), ""]);
+    setValue("memberRole", [...(getValues("memberRole") ?? []), ""]);
   };
 
   const removeMember = (index: number) => {
-    if (memberFields.length > 1) {
-      setMemberFields(memberFields.filter((_, i) => i !== index));
-    }
-  };
-
-  const updateMember = (
-    index: number,
-    field: string,
-    value: string,
-  ) => {
-    setMemberFields((prev) =>
-      prev.map((m, i) => (i === index ? { ...m, [field]: value } : m)),
-    );
+    if ((getValues("memberName") ?? []).length <= 1) return;
+    const filterArr = (arr: string[]) => arr.filter((_, i) => i !== index);
+    setValue("memberName", filterArr(getValues("memberName") ?? []));
+    setValue("memberEmail", filterArr(getValues("memberEmail") ?? []));
+    setValue("memberPhone", filterArr(getValues("memberPhone") ?? []));
+    setValue("memberGender", filterArr(getValues("memberGender") ?? []));
+    setValue("memberRole", filterArr(getValues("memberRole") ?? []));
   };
 
   if (isApproved) {
@@ -417,18 +426,16 @@ export default function LeadRegister() {
               <Label htmlFor="teamName">Team Name</Label>
               <Input
                 id="teamName"
-                aria-invalid={!!actionData?.fieldErrors?.teamName}
-                aria-describedby={actionData?.fieldErrors?.teamName ? "teamName-error" : undefined}
-                name="teamName"
+                aria-invalid={!!(errors.teamName || actionData?.fieldErrors?.teamName)}
+                aria-describedby={errors.teamName || actionData?.fieldErrors?.teamName ? "teamName-error" : undefined}
                 placeholder="Enter your team name"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
+                {...register("teamName")}
                 disabled={!registrationOpen}
                 required
               />
-              {actionData?.fieldErrors?.teamName && (
+              {(errors.teamName || actionData?.fieldErrors?.teamName) && (
                 <p id="teamName-error" className="text-sm text-destructive" role="alert">
-                  {actionData.fieldErrors.teamName}
+                  {errors.teamName?.message ?? actionData?.fieldErrors?.teamName}
                 </p>
               )}
             </div>
@@ -448,63 +455,63 @@ export default function LeadRegister() {
                 <Label htmlFor="leadPhone">Phone</Label>
                 <Input
                   id="leadPhone"
-                  aria-invalid={!!actionData?.fieldErrors?.leadPhone}
-                  name="leadPhone"
+                  aria-invalid={!!(errors.leadPhone || actionData?.fieldErrors?.leadPhone)}
+                  aria-describedby={errors.leadPhone || actionData?.fieldErrors?.leadPhone ? "leadPhone-hint leadPhone-error" : "leadPhone-hint"}
                   placeholder="+91 1234567890"
-                  aria-describedby={actionData?.fieldErrors?.leadPhone ? "leadPhone-hint leadPhone-error" : "leadPhone-hint"}
-                  value={leadPhone}
-                  onChange={(e) => setLeadPhone(e.target.value)}
+                  {...register("leadPhone")}
                   disabled={!registrationOpen}
                   required
                 />
                 <p id="leadPhone-hint" className="text-xs text-muted-foreground">
                   Enter your 10-digit phone number with country code
                 </p>
-                {actionData?.fieldErrors?.leadPhone && (
+                {(errors.leadPhone || actionData?.fieldErrors?.leadPhone) && (
                   <p id="leadPhone-error" className="text-sm text-destructive" role="alert">
-                    {actionData.fieldErrors.leadPhone}
+                    {errors.leadPhone?.message ?? actionData?.fieldErrors?.leadPhone}
                   </p>
                 )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="leadGender">Gender</Label>
-                <Select
-                  value={leadGender}
-                  onValueChange={setLeadGender}
-                  disabled={!registrationOpen}
+            <div className="space-y-2">
+                <Controller
+                  control={control}
                   name="leadGender"
-                >
-                  <SelectTrigger id="leadGender" aria-invalid={!!actionData?.fieldErrors?.leadGender} aria-describedby={actionData?.fieldErrors?.leadGender ? "leadGender-error" : undefined}>
-                    <SelectValue placeholder="Select gender" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Male">Male</SelectItem>
-                    <SelectItem value="Female">Female</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-                {actionData?.fieldErrors?.leadGender && (
+                  render={({ field }) => (
+                    <Select
+                      value={field.value ?? ""}
+                      onValueChange={field.onChange}
+                      disabled={!registrationOpen}
+                      name={field.name}
+                    >
+                      <SelectTrigger id="leadGender" aria-invalid={!!(errors.leadGender || actionData?.fieldErrors?.leadGender)} aria-describedby={errors.leadGender || actionData?.fieldErrors?.leadGender ? "leadGender-error" : undefined}>
+                        <SelectValue placeholder="Select gender" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {(errors.leadGender || actionData?.fieldErrors?.leadGender) && (
                   <p id="leadGender-error" className="text-sm text-destructive" role="alert">
-                    {actionData.fieldErrors.leadGender}
+                    {errors.leadGender?.message ?? actionData?.fieldErrors?.leadGender}
                   </p>
                 )}
               </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="leadRole">Role</Label>
+            <div className="space-y-2">
                 <Input
                   id="leadRole"
-                  aria-invalid={!!actionData?.fieldErrors?.leadRole}
-                  aria-describedby={actionData?.fieldErrors?.leadRole ? "leadRole-error" : undefined}
-                  name="leadRole"
+                  aria-invalid={!!(errors.leadRole || actionData?.fieldErrors?.leadRole)}
+                  aria-describedby={errors.leadRole || actionData?.fieldErrors?.leadRole ? "leadRole-error" : undefined}
                   placeholder="e.g., Team Lead, Full Stack Developer"
-                  value={leadRole}
-                  onChange={(e) => setLeadRole(e.target.value)}
+                  {...register("leadRole")}
                   disabled={!registrationOpen}
                   required
                 />
-                {actionData?.fieldErrors?.leadRole && (
+                {(errors.leadRole || actionData?.fieldErrors?.leadRole) && (
                   <p id="leadRole-error" className="text-sm text-destructive" role="alert">
-                    {actionData.fieldErrors.leadRole}
+                    {errors.leadRole?.message ?? actionData?.fieldErrors?.leadRole}
                   </p>
                 )}
               </div>
@@ -519,9 +526,9 @@ export default function LeadRegister() {
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <UserPlus className="h-5 w-5" />
-                Team Members ({memberFields.length})
+                Team Members ({memberCount})
               </CardTitle>
-              {memberFields.length < 5 && registrationOpen && (
+              {memberCount < 5 && registrationOpen && (
                 <Button
                   type="button"
                   variant="outline"
@@ -543,8 +550,13 @@ export default function LeadRegister() {
                 {actionData.fieldErrors.members}
               </p>
             )}
+            {errors.memberName?.root?.message && (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.memberName.root.message}
+              </p>
+            )}
 
-            {memberFields.map((member, index) => (
+            {Array.from({ length: memberCount }, (_, index) => (
               <fieldset
                 key={index}
                 className="rounded-md border border-border bg-background p-4 space-y-4"
@@ -560,7 +572,7 @@ export default function LeadRegister() {
                       </span>
                     </span>
                   </legend>
-                  {memberFields.length > 1 && registrationOpen && (
+                  {memberCount > 1 && registrationOpen && (
                     <button
                       type="button"
                       onClick={() => removeMember(index)}
@@ -572,96 +584,107 @@ export default function LeadRegister() {
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor={`member-name-${index}`}>
-                        Full Name
-                      </Label>
-                      <Input
-                        id={`member-name-${index}`}
-                        name="memberName"
-                        placeholder="Full name"
-                        value={member.fullName}
-                        onChange={(e) =>
-                          updateMember(index, "fullName", e.target.value)
-                        }
-                        disabled={!registrationOpen}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`member-email-${index}`}>
-                        Email
-                      </Label>
-                      <Input
-                        id={`member-email-${index}`}
-                        name="memberEmail"
-                        type="email"
-                        placeholder="email@example.com"
-                        value={member.email}
-                        onChange={(e) =>
-                          updateMember(index, "email", e.target.value)
-                        }
-                        disabled={!registrationOpen}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`member-phone-${index}`}>
-                        Phone
-                      </Label>
-                      <Input
-                        id={`member-phone-${index}`}
-                        name="memberPhone"
-                        placeholder="+91 1234567890"
-                        value={member.phone}
-                        onChange={(e) =>
-                          updateMember(index, "phone", e.target.value)
-                        }
-                        disabled={!registrationOpen}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`member-gender-${index}`}>
-                        Gender
-                      </Label>
-                      <Select
-                        value={member.gender}
-                        onValueChange={(value) =>
-                          updateMember(index, "gender", value)
-                        }
-                        disabled={!registrationOpen}
-                        name="memberGender"
-                      >
-                        <SelectTrigger
-                          id={`member-gender-${index}`}
-                        >
-                          <SelectValue placeholder="Select gender" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Male">Male</SelectItem>
-                          <SelectItem value="Female">Female</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor={`member-role-${index}`}>
-                        Role
-                      </Label>
-                      <Input
-                        id={`member-role-${index}`}
-                        name="memberRole"
-                        placeholder="e.g., Developer, Designer, Manager"
-                        value={member.role}
-                        onChange={(e) =>
-                          updateMember(index, "role", e.target.value)
-                        }
-                        disabled={!registrationOpen}
-                        required
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`member-name-${index}`}>
+                      Full Name
+                    </Label>
+                    <Input
+                      id={`member-name-${index}`}
+                      placeholder="Full name"
+                      {...register(`memberName.${index}`)}
+                      disabled={!registrationOpen}
+                      required
+                    />
+                    {errors.memberName?.[index]?.message && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.memberName[index]?.message}
+                      </p>
+                    )}
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`member-email-${index}`}>
+                      Email
+                    </Label>
+                    <Input
+                      id={`member-email-${index}`}
+                      type="email"
+                      placeholder="email@example.com"
+                      {...register(`memberEmail.${index}`)}
+                      disabled={!registrationOpen}
+                      required
+                    />
+                    {errors.memberEmail?.[index]?.message && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.memberEmail[index]?.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`member-phone-${index}`}>
+                      Phone
+                    </Label>
+                    <Input
+                      id={`member-phone-${index}`}
+                      placeholder="+91 1234567890"
+                      {...register(`memberPhone.${index}`)}
+                      disabled={!registrationOpen}
+                      required
+                    />
+                    {errors.memberPhone?.[index]?.message && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.memberPhone[index]?.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`member-gender-${index}`}>
+                      Gender
+                    </Label>
+                    <Controller
+                      control={control}
+                      name={`memberGender.${index}` as any}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                          disabled={!registrationOpen}
+                          name="memberGender"
+                        >
+                          <SelectTrigger id={`member-gender-${index}`}>
+                            <SelectValue placeholder="Select gender" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Male">Male</SelectItem>
+                            <SelectItem value="Female">Female</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {errors.memberGender?.[index]?.message && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.memberGender[index]?.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor={`member-role-${index}`}>
+                      Role
+                    </Label>
+                    <Input
+                      id={`member-role-${index}`}
+                      placeholder="e.g., Developer, Designer, Manager"
+                      {...register(`memberRole.${index}`)}
+                      disabled={!registrationOpen}
+                      required
+                    />
+                    {errors.memberRole?.[index]?.message && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.memberRole[index]?.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </fieldset>
             ))}
           </CardContent>
@@ -671,37 +694,42 @@ export default function LeadRegister() {
         <ReviewSummary open={showReview} onToggle={setShowReview}>
           <div>
             <p className="font-medium text-muted-foreground">Team Name</p>
-            <p>{teamName || "(not set)"}</p>
+            <p>{getValues("teamName") || "(not set)"}</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <p className="font-medium text-muted-foreground">Lead Phone</p>
-              <p>{leadPhone || "(not set)"}</p>
+              <p>{getValues("leadPhone") || "(not set)"}</p>
             </div>
             <div>
               <p className="font-medium text-muted-foreground">Lead Gender</p>
-              <p>{leadGender || "(not set)"}</p>
+              <p>{getValues("leadGender") || "(not set)"}</p>
             </div>
             <div>
               <p className="font-medium text-muted-foreground">Lead Role</p>
-              <p>{leadRole || "(not set)"}</p>
+              <p>{getValues("leadRole") || "(not set)"}</p>
             </div>
           </div>
           <div>
             <p className="font-medium text-muted-foreground">
-              Members ({memberFields.length})
+              Members ({memberCount})
             </p>
-            {memberFields.length === 0 ? (
+            {memberCount === 0 ? (
               <p className="text-muted-foreground italic">No members added</p>
             ) : (
               <ul className="mt-1 space-y-1">
-                {memberFields.map((m, i) => (
-                  <li key={i} className="flex items-center gap-1 text-muted-foreground">
-                    <span className="font-medium text-foreground">{m.fullName || `Member ${i + 1}`}</span>
-                    {m.email && <span>— {m.email}</span>}
-                    {m.role && <span>({m.role})</span>}
-                  </li>
-                ))}
+                {Array.from({ length: memberCount }, (_, i) => {
+                  const name = getValues(`memberName.${i}` as any);
+                  const email = getValues(`memberEmail.${i}` as any);
+                  const role = getValues(`memberRole.${i}` as any);
+                  return (
+                    <li key={i} className="flex items-center gap-1 text-muted-foreground">
+                      <span className="font-medium text-foreground">{name || `Member ${i + 1}`}</span>
+                      {email && <span>— {email}</span>}
+                      {role && <span>({role})</span>}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

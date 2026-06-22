@@ -1,4 +1,10 @@
 import "dotenv/config";
+import * as Sentry from "@sentry/node";
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV ?? "development",
+  enabled: !!process.env.SENTRY_DSN,
+});
 import { createRequestListener } from "@react-router/node";
 import type { ServerBuild } from "react-router";
 import http from "node:http";
@@ -21,6 +27,12 @@ const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 const server = http.createServer(handler);
 
 server.listen(port, () => {
+process.on("uncaughtException", (err) => {
+  Sentry.captureException(err);
+});
+process.on("unhandledRejection", (reason) => {
+  Sentry.captureException(reason);
+});
   console.log(`Server listening on http://localhost:${port}`);
 });
 

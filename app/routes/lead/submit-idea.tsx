@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
 import {
   useLoaderData,
   Form,
@@ -210,16 +213,20 @@ export default function LeadSubmitIdea() {
   const { team, submissionOpen } =
     useLoaderData() as LoaderData;
   const actionData = useActionData() as ActionData | undefined;
+  const {
+    register,
+    formState: { errors },
+    getValues,
+  } = useForm({
+    resolver: zodResolver(submitIdeaSchema),
+    defaultValues: {
+      ideaTitle: team?.idea_title ?? "",
+      ideaDescription: team?.idea_desc ?? "",
+      techStack: team?.idea_tech_stack ?? "",
+    },
+  });
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-
-  const [ideaTitle, setIdeaTitle] = useState(team?.idea_title ?? "");
-  const [ideaDescription, setIdeaDescription] = useState(
-    team?.idea_desc ?? "",
-  );
-  const [techStack, setTechStack] = useState(
-    team?.idea_tech_stack ?? "",
-  );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
@@ -365,19 +372,17 @@ export default function LeadSubmitIdea() {
                 </Label>
                 <Input
                   id="ideaTitle"
-                  aria-invalid={!!actionData?.fieldErrors?.ideaTitle}
-                  aria-describedby={actionData?.fieldErrors?.ideaTitle ? "ideaTitle-error" : undefined}
-                  name="ideaTitle"
-                  value={ideaTitle}
-                  onChange={(e) => setIdeaTitle(e.target.value)}
+                  aria-invalid={!!(errors.ideaTitle || actionData?.fieldErrors?.ideaTitle)}
+                  aria-describedby={errors.ideaTitle || actionData?.fieldErrors?.ideaTitle ? "ideaTitle-error" : undefined}
                   maxLength={200}
                   placeholder="Enter project title"
+                  {...register("ideaTitle")}
                   disabled={!submissionOpen}
                   required
                 />
-                {actionData?.fieldErrors?.ideaTitle && (
+                {(errors.ideaTitle || actionData?.fieldErrors?.ideaTitle) && (
                   <p id="ideaTitle-error" className="text-sm text-destructive" role="alert">
-                    {actionData.fieldErrors.ideaTitle}
+                    {errors.ideaTitle?.message ?? actionData?.fieldErrors?.ideaTitle}
                   </p>
                 )}
               </div>
@@ -389,22 +394,18 @@ export default function LeadSubmitIdea() {
                 </Label>
                 <Textarea
                   id="ideaDescription"
-                  aria-invalid={!!actionData?.fieldErrors?.ideaDescription}
-                  aria-describedby={actionData?.fieldErrors?.ideaDescription ? "ideaDescription-error" : undefined}
-                  name="ideaDescription"
-                  value={ideaDescription}
-                  onChange={(e) =>
-                    setIdeaDescription(e.target.value)
-                  }
+                  aria-invalid={!!(errors.ideaDescription || actionData?.fieldErrors?.ideaDescription)}
+                  aria-describedby={errors.ideaDescription || actionData?.fieldErrors?.ideaDescription ? "ideaDescription-error" : undefined}
                   maxLength={5000}
                   placeholder="Describe your idea briefly..."
                   className="min-h-[120px]"
+                  {...register("ideaDescription")}
                   disabled={!submissionOpen}
                   required
                 />
-                {actionData?.fieldErrors?.ideaDescription && (
+                {(errors.ideaDescription || actionData?.fieldErrors?.ideaDescription) && (
                   <p id="ideaDescription-error" className="text-sm text-destructive" role="alert">
-                    {actionData.fieldErrors.ideaDescription}
+                    {errors.ideaDescription?.message ?? actionData?.fieldErrors?.ideaDescription}
                   </p>
                 )}
               </div>
@@ -416,19 +417,17 @@ export default function LeadSubmitIdea() {
                 </Label>
                 <Input
                   id="techStack"
-                  aria-invalid={!!actionData?.fieldErrors?.techStack}
-                  aria-describedby={actionData?.fieldErrors?.techStack ? "techStack-error" : undefined}
-                  name="techStack"
-                  value={techStack}
-                  onChange={(e) => setTechStack(e.target.value)}
+                  aria-invalid={!!(errors.techStack || actionData?.fieldErrors?.techStack)}
+                  aria-describedby={errors.techStack || actionData?.fieldErrors?.techStack ? "techStack-error" : undefined}
                   maxLength={500}
                   placeholder="e.g. Next.js, Python, Flutter"
+                  {...register("techStack")}
                   disabled={!submissionOpen}
                   required
                 />
-                {actionData?.fieldErrors?.techStack && (
+                {(errors.techStack || actionData?.fieldErrors?.techStack) && (
                   <p id="techStack-error" className="text-sm text-destructive" role="alert">
-                    {actionData.fieldErrors.techStack}
+                    {errors.techStack?.message ?? actionData?.fieldErrors?.techStack}
                   </p>
                 )}
               </div>
@@ -483,16 +482,16 @@ export default function LeadSubmitIdea() {
               >
                 <div>
                   <p className="font-medium text-muted-foreground">Idea Title</p>
-                  <p>{ideaTitle || "(not set)"}</p>
+                  <p>{getValues("ideaTitle") || "(not set)"}</p>
                 </div>
                 <div>
                   <p className="font-medium text-muted-foreground">Tech Stack</p>
-                  <p>{techStack || "(not set)"}</p>
+                  <p>{getValues("techStack") || "(not set)"}</p>
                 </div>
                 <div>
                   <p className="font-medium text-muted-foreground">Description</p>
                   <p className="line-clamp-4 text-muted-foreground">
-                    {ideaDescription || "(not set)"}
+                    {getValues("ideaDescription") || "(not set)"}
                   </p>
                 </div>
                 <div>

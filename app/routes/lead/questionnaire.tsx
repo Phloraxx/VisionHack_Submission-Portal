@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { questionnaireSchema } from "~/lib/schemas/questionnaire";
 import {
   useLoaderData,
   Form,
@@ -243,25 +246,32 @@ export default function LeadQuestionnaire() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
+  // Form state
+  const {
+    register,
+    control,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(questionnaireSchema),
+    defaultValues: {
+      age: questionnaire?.age?.toString() ?? "",
+      gender: questionnaire?.gender ?? "",
+      education: questionnaire?.education ?? "",
+      college_name: questionnaire?.college_name ?? "",
+      district: questionnaire?.district ?? "",
+      skills: questionnaire?.skills ?? "",
+      interests: questionnaire?.interests ?? "",
+      challenges: questionnaire?.challenges ?? "",
+      experience: questionnaire?.experience ?? "",
+      motivation: questionnaire?.motivation ?? "",
+      team_experience: questionnaire?.team_experience ?? "",
+      expectations: questionnaire?.expectations ?? "",
+      additional_info: questionnaire?.additional_info ?? "",
+    },
+  });
+
   const [currentSection, setCurrentSection] = useState<SectionId>("personal");
   const topRef = useRef<HTMLDivElement>(null);
-
-  // Form state
-  const [formValues, setFormValues] = useState({
-    age: questionnaire?.age ?? "",
-    gender: questionnaire?.gender ?? "",
-    education: questionnaire?.education ?? "",
-    college_name: questionnaire?.college_name ?? "",
-    district: questionnaire?.district ?? "",
-    skills: questionnaire?.skills ?? "",
-    interests: questionnaire?.interests ?? "",
-    challenges: questionnaire?.challenges ?? "",
-    experience: questionnaire?.experience ?? "",
-    motivation: questionnaire?.motivation ?? "",
-    team_experience: questionnaire?.team_experience ?? "",
-    expectations: questionnaire?.expectations ?? "",
-    additional_info: questionnaire?.additional_info ?? "",
-  });
 
   useEffect(() => {
     topRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -324,9 +334,7 @@ export default function LeadQuestionnaire() {
     }
   };
 
-  const updateField = (field: string, value: string) => {
-    setFormValues((prev) => ({ ...prev, [field]: value }));
-  };
+
 
   return (
     <div className="space-y-10" ref={topRef}>
@@ -404,19 +412,17 @@ export default function LeadQuestionnaire() {
                   </Label>
                   <Input
                     id="age"
-                    aria-invalid={!!actionData?.fieldErrors?.age}
-                    aria-describedby={actionData?.fieldErrors?.age ? "age-error" : undefined}
-                    name="age"
+                    aria-invalid={!!(errors.age || actionData?.fieldErrors?.age)}
+                    aria-describedby={errors.age || actionData?.fieldErrors?.age ? "age-error" : undefined}
                     type="number"
                     placeholder="Your age"
-                    value={formValues.age}
-                    onChange={(e) => updateField("age", e.target.value)}
+                    {...register("age")}
                     disabled={!questionnaireOpen}
                     required
                   />
-                  {actionData?.fieldErrors?.age && (
+                  {(errors.age || actionData?.fieldErrors?.age) && (
                     <p id="age-error" className="text-sm text-destructive" role="alert">
-                      {actionData.fieldErrors.age}
+                      {errors.age?.message ?? actionData?.fieldErrors?.age}
                     </p>
                   )}
                 </div>
@@ -425,24 +431,30 @@ export default function LeadQuestionnaire() {
                   <Label htmlFor="gender">
                     Gender <span className="text-destructive">*</span>
                   </Label>
-                  <Select
-                    value={formValues.gender}
-                    onValueChange={(v) => updateField("gender", v)}
-                    disabled={!questionnaireOpen}
+                  <Controller
+                    control={control}
                     name="gender"
-                  >
-                    <SelectTrigger id="gender" aria-invalid={!!actionData?.fieldErrors?.gender} aria-describedby={actionData?.fieldErrors?.gender ? "gender-error" : undefined}>
-                      <SelectValue placeholder="Select gender" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Male">Male</SelectItem>
-                      <SelectItem value="Female">Female</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {actionData?.fieldErrors?.gender && (
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? ""}
+                        onValueChange={field.onChange}
+                        disabled={!questionnaireOpen}
+                        name={field.name}
+                      >
+                        <SelectTrigger id="gender" aria-invalid={!!(errors.gender || actionData?.fieldErrors?.gender)} aria-describedby={errors.gender || actionData?.fieldErrors?.gender ? "gender-error" : undefined}>
+                          <SelectValue placeholder="Select gender" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Male">Male</SelectItem>
+                          <SelectItem value="Female">Female</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {(errors.gender || actionData?.fieldErrors?.gender) && (
                     <p id="gender-error" className="text-sm text-destructive" role="alert">
-                      {actionData.fieldErrors.gender}
+                      {errors.gender?.message ?? actionData?.fieldErrors?.gender}
                     </p>
                   )}
                 </div>
@@ -451,34 +463,32 @@ export default function LeadQuestionnaire() {
                   <Label htmlFor="education">
                     Education <span className="text-destructive">*</span>
                   </Label>
-                  <Select
-                    value={formValues.education}
-                    onValueChange={(v) => updateField("education", v)}
-                    disabled={!questionnaireOpen}
+                  <Controller
+                    control={control}
                     name="education"
-                  >
-                    <SelectTrigger id="education" aria-invalid={!!actionData?.fieldErrors?.education} aria-describedby={actionData?.fieldErrors?.education ? "education-error" : undefined}>
-                      <SelectValue placeholder="Select education" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="High School">
-                        High School
-                      </SelectItem>
-                      <SelectItem value="Higher Secondary">
-                        Higher Secondary
-                      </SelectItem>
-                      <SelectItem value="Undergraduate">
-                        Undergraduate
-                      </SelectItem>
-                      <SelectItem value="Postgraduate">
-                        Postgraduate
-                      </SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {actionData?.fieldErrors?.education && (
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? ""}
+                        onValueChange={field.onChange}
+                        disabled={!questionnaireOpen}
+                        name={field.name}
+                      >
+                        <SelectTrigger id="education" aria-invalid={!!(errors.education || actionData?.fieldErrors?.education)} aria-describedby={errors.education || actionData?.fieldErrors?.education ? "education-error" : undefined}>
+                          <SelectValue placeholder="Select education" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="High School">High School</SelectItem>
+                          <SelectItem value="Higher Secondary">Higher Secondary</SelectItem>
+                          <SelectItem value="Undergraduate">Undergraduate</SelectItem>
+                          <SelectItem value="Postgraduate">Postgraduate</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {(errors.education || actionData?.fieldErrors?.education) && (
                     <p id="education-error" className="text-sm text-destructive" role="alert">
-                      {actionData.fieldErrors.education}
+                      {errors.education?.message ?? actionData?.fieldErrors?.education}
                     </p>
                   )}
                 </div>
@@ -490,20 +500,16 @@ export default function LeadQuestionnaire() {
                   </Label>
                   <Input
                     id="college_name"
-                    aria-invalid={!!actionData?.fieldErrors?.college_name}
-                    aria-describedby={actionData?.fieldErrors?.college_name ? "college_name-error" : undefined}
-                    name="college_name"
+                    aria-invalid={!!(errors.college_name || actionData?.fieldErrors?.college_name)}
+                    aria-describedby={errors.college_name || actionData?.fieldErrors?.college_name ? "college_name-error" : undefined}
                     placeholder="Your college name"
-                    value={formValues.college_name}
-                    onChange={(e) =>
-                      updateField("college_name", e.target.value)
-                    }
+                    {...register("college_name")}
                     disabled={!questionnaireOpen}
                     required
                   />
-                  {actionData?.fieldErrors?.college_name && (
+                  {(errors.college_name || actionData?.fieldErrors?.college_name) && (
                     <p id="college_name-error" className="text-sm text-destructive" role="alert">
-                      {actionData.fieldErrors.college_name}
+                      {errors.college_name?.message ?? actionData?.fieldErrors?.college_name}
                     </p>
                   )}
                 </div>
@@ -514,20 +520,16 @@ export default function LeadQuestionnaire() {
                   </Label>
                   <Input
                     id="district"
-                    aria-invalid={!!actionData?.fieldErrors?.district}
-                    aria-describedby={actionData?.fieldErrors?.district ? "district-error" : undefined}
-                    name="district"
+                    aria-invalid={!!(errors.district || actionData?.fieldErrors?.district)}
+                    aria-describedby={errors.district || actionData?.fieldErrors?.district ? "district-error" : undefined}
                     placeholder="Your district"
-                    value={formValues.district}
-                    onChange={(e) =>
-                      updateField("district", e.target.value)
-                    }
+                    {...register("district")}
                     disabled={!questionnaireOpen}
                     required
                   />
-                  {actionData?.fieldErrors?.district && (
+                  {(errors.district || actionData?.fieldErrors?.district) && (
                     <p id="district-error" className="text-sm text-destructive" role="alert">
-                      {actionData.fieldErrors.district}
+                      {errors.district?.message ?? actionData?.fieldErrors?.district}
                     </p>
                   )}
                 </div>
@@ -550,11 +552,9 @@ export default function LeadQuestionnaire() {
                 <Label htmlFor="skills">Skills</Label>
                 <Textarea
                   id="skills"
-                  name="skills"
                   maxLength={1000}
                   placeholder="List your technical and non-technical skills (e.g., Python, UI/UX Design, Public Speaking)"
-                  value={formValues.skills}
-                  onChange={(e) => updateField("skills", e.target.value)}
+                  {...register("skills")}
                   disabled={!questionnaireOpen}
                   className="min-h-[100px]"
                 />
@@ -567,13 +567,9 @@ export default function LeadQuestionnaire() {
                 <Label htmlFor="interests">Interests</Label>
                 <Textarea
                   id="interests"
-                  name="interests"
                   maxLength={1000}
                   placeholder="What are you passionate about? (e.g., AI, Web Development, Social Impact)"
-                  value={formValues.interests}
-                  onChange={(e) =>
-                    updateField("interests", e.target.value)
-                  }
+                  {...register("interests")}
                   disabled={!questionnaireOpen}
                   className="min-h-[100px]"
                 />
@@ -601,13 +597,9 @@ export default function LeadQuestionnaire() {
                 </Label>
                 <Textarea
                   id="challenges"
-                  name="challenges"
                   maxLength={2000}
                   placeholder="What challenges have you faced in your journey so far?"
-                  value={formValues.challenges}
-                  onChange={(e) =>
-                    updateField("challenges", e.target.value)
-                  }
+                  {...register("challenges")}
                   disabled={!questionnaireOpen}
                   className="min-h-[80px]"
                 />
@@ -619,13 +611,9 @@ export default function LeadQuestionnaire() {
                 </Label>
                 <Textarea
                   id="experience"
-                  name="experience"
                   maxLength={2000}
                   placeholder="Describe any previous hackathon, project, or work experience"
-                  value={formValues.experience}
-                  onChange={(e) =>
-                    updateField("experience", e.target.value)
-                  }
+                  {...register("experience")}
                   disabled={!questionnaireOpen}
                   className="min-h-[80px]"
                 />
@@ -637,13 +625,9 @@ export default function LeadQuestionnaire() {
                 </Label>
                 <Textarea
                   id="motivation"
-                  name="motivation"
                   maxLength={2000}
                   placeholder="What motivates you to join VisionHack?"
-                  value={formValues.motivation}
-                  onChange={(e) =>
-                    updateField("motivation", e.target.value)
-                  }
+                  {...register("motivation")}
                   disabled={!questionnaireOpen}
                   className="min-h-[80px]"
                 />
@@ -655,13 +639,9 @@ export default function LeadQuestionnaire() {
                 </Label>
                 <Textarea
                   id="team_experience"
-                  name="team_experience"
                   maxLength={2000}
                   placeholder="Describe your experience working in teams"
-                  value={formValues.team_experience}
-                  onChange={(e) =>
-                    updateField("team_experience", e.target.value)
-                  }
+                  {...register("team_experience")}
                   disabled={!questionnaireOpen}
                   className="min-h-[80px]"
                 />
@@ -673,13 +653,9 @@ export default function LeadQuestionnaire() {
                 </Label>
                 <Textarea
                   id="expectations"
-                  name="expectations"
                   maxLength={2000}
                   placeholder="What do you hope to gain from this hackathon?"
-                  value={formValues.expectations}
-                  onChange={(e) =>
-                    updateField("expectations", e.target.value)
-                  }
+                  {...register("expectations")}
                   disabled={!questionnaireOpen}
                   className="min-h-[80px]"
                 />
@@ -691,13 +667,9 @@ export default function LeadQuestionnaire() {
                 </Label>
                 <Textarea
                   id="additional_info"
-                  name="additional_info"
                   maxLength={2000}
                   placeholder="Anything else you'd like to share?"
-                  value={formValues.additional_info}
-                  onChange={(e) =>
-                    updateField("additional_info", e.target.value)
-                  }
+                  {...register("additional_info")}
                   disabled={!questionnaireOpen}
                   className="min-h-[80px]"
                 />

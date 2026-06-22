@@ -1,4 +1,5 @@
 import { data } from "react-router";
+import * as Sentry from "@sentry/node";
 import type { ActionFunctionArgs } from "react-router";
 import { requireRole } from "./auth.server";
 import { validateOrigin, validateCsrfToken } from "./csrf.server";
@@ -132,6 +133,7 @@ export function secureAction<C extends ActionContext = ActionContext>(
           role: user.role,
           intent: ctx.intent,
         });
+        Sentry.captureException(err, { extra: { route: new URL(request.url).pathname, userId: user.id, role: user.role, intent: ctx.intent } });
         return fail({ error: "Something went wrong. Please try again.", status: 500 });
       }
     }
@@ -158,6 +160,7 @@ export function secureAction<C extends ActionContext = ActionContext>(
         role: user.role,
         intent,
       });
+      Sentry.captureException(err, { extra: { route: new URL(request.url).pathname, userId: user.id, role: user.role, intent } });
       return fail({ error: "Something went wrong. Please try again.", status: 500 });
     }
   };
