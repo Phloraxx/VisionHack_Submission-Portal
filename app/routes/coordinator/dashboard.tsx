@@ -4,10 +4,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
-import {
-  STATUS_LABELS,
-} from "~/lib/team-status";
-import type { TeamStatus } from "~/lib/types";
+import type { TeamStatus, TeamView } from "~/lib/types";
 import {
   Card,
   CardContent,
@@ -15,11 +12,8 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { MetricCard } from "~/components/shared/metric-card";
-import { StatusBadge } from "~/components/shared/status-badge";
-import { DataList, type DataListRow } from "~/components/shared/data-list";
 import {
   Select,
   SelectContent,
@@ -28,12 +22,12 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import {
-  Search,
   Building2,
   MapPin,
   Users,
   Filter,
 } from "lucide-react";
+import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 
 interface TeamWithExpand {
   id: string;
@@ -290,10 +284,6 @@ export default function CoordinatorDashboard() {
     [institutions],
   );
 
-  const uniqueStatuses = useMemo(
-    () => (Object.keys(statusCounts) as TeamStatus[]).sort(),
-    [statusCounts],
-  );
 
   // Institutions view honors the active district filter (client-side over
   // the small institutions list is fine — it's not paginated).
@@ -407,24 +397,40 @@ export default function CoordinatorDashboard() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={
-                  viewMode === "teams"
-                    ? "Search teams…"
-                    : "Search institutions…"
-                }
-                className="pl-9"
-                value={searchInput}
-                onChange={(e) => updateQuery(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-
-            {viewMode === "teams" && (
-              <>
+          {viewMode === "teams" && (
+            <FilterableTeamList
+              contained
+              teams={teams as TeamView[]}
+              memberCounts={memberCounts}
+              statusCounts={statusCounts}
+              totalPages={totalPages}
+              currentPage={page}
+              totalItems={totalItems}
+              searchValue={searchInput}
+              statusValue={statusFilter}
+              onSearchChange={updateQuery}
+              onStatusChange={(val) => setParams({ status: val })}
+              onPageChange={goToPage}
+              basePath="/teams"
+              isLoading={isLoading}
+              renderSecondary={(team) => (
+                  <span className="flex items-center gap-2">
+                    {team.expand?.institutionId && (
+                      <span>{team.expand.institutionId.name}</span>
+                    )}
+                    {team.expand?.institutionId?.district && (
+                      <span className="text-muted-foreground/70">
+                        &middot; {team.expand.institutionId.district}
+                      </span>
+                    )}
+                    {team.expand?.leaderUserId && (
+                      <span className="text-muted-foreground/70">
+                        &middot; {team.expand.leaderUserId.name}
+                      </span>
+                    )}
+                  </span>
+                )}
+              extraFilters={
                 <Select
                   value={institutionFilter}
                   onValueChange={(val) => setParams({ institution: val })}
@@ -441,65 +447,15 @@ export default function CoordinatorDashboard() {
                     ))}
                   </SelectContent>
                 </Select>
-
-                <Select
-                  value={statusFilter}
-                  onValueChange={(val) => setParams({ status: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    {uniqueStatuses.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {STATUS_LABELS[status as TeamStatus] || status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </>
-            )}
-          </div>
+              }
+              searchPlaceholder="Search teams\u2026"
+            />
+          )}
         </CardContent>
       </Card>
 
-      {/* Content */}
-      {viewMode === "teams" ? (
-        <DataList
-          rows={teams.map<DataListRow>((team) => ({
-            id: team.id,
-            primary: team.name,
-            code: team.teamCode,
-            secondary: (
-              <span className="flex items-center gap-2">
-                {team.expand?.institutionId && (
-                  <span>{team.expand.institutionId.name}</span>
-                )}
-                {team.expand?.institutionId?.district && (
-                  <span className="text-muted-foreground/70">
-                    · {team.expand.institutionId.district}
-                  </span>
-                )}
-                {team.expand?.leaderUserId && (
-                  <span className="text-muted-foreground/70">
-                    · {team.expand.leaderUserId.name}
-                  </span>
-                )}
-              </span>
-            ),
-            metric: {
-              label: "Members",
-              value: memberCounts[team.id] || 0,
-            },
-            indicator: <StatusBadge status={team.status} />,
-            href: `/coordinator/teams/${team.id}`,
-          }))}
-          emptyMessage="No teams match your filters"
-        emptyHint="Clear the search field or set the status filter to All to see every team."
-        />
-      ) : (
-        // Institutions view
+      {/* Institutions view */}
+      {viewMode !== "teams" && (
         visibleInstitutions.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -565,33 +521,6 @@ export default function CoordinatorDashboard() {
             })}
           </div>
         )
-      )}
-
-      {/* Pagination (teams view) */}
-      {viewMode === "teams" && totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-border pt-4">
-          <p className="text-xs text-muted-foreground">
-            Page {page} of {totalPages} · {totalItems} teams
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || isLoading}
-              onClick={() => goToPage(page - 1)}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages || isLoading}
-              onClick={() => goToPage(page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
       )}
     </div>
   );

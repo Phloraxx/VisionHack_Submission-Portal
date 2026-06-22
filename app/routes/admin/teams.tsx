@@ -4,23 +4,12 @@ import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
-import { STATUS_LABELS } from "~/lib/team-status";
-import type { TeamStatus } from "~/lib/types";
-import { Input } from "~/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
-import { Button } from "~/components/ui/button";
+import type { TeamStatus, TeamView } from "~/lib/types";
 import { PanelHeader } from "~/components/shared/panel-header";
-import { DataList, type DataListRow } from "~/components/shared/data-list";
-import { StatusBadge } from "~/components/shared/status-badge";
 import { MetricCard } from "~/components/shared/metric-card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Search, Users, ChevronLeft, ChevronRight } from "lucide-react";
+import { Users } from "lucide-react";
+import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 
 const PAGE_SIZE = 50;
 
@@ -169,8 +158,6 @@ export default function AdminTeams() {
     setSearchParams(params);
   };
 
-  const uniqueStatuses = Object.keys(statusCounts).sort() as TeamStatus[];
-
   // Post-filter for the lead name/email and institution name on the
   // CURRENT page only. PB's filter doesn't support substring match on
   // expanded relations, so the loader pre-filters name/teamCode
@@ -189,33 +176,6 @@ export default function AdminTeams() {
       );
     });
   }, [teams, searchQuery]);
-
-  const rows: DataListRow[] = visibleTeams.map((team) => ({
-    id: team.id,
-    primary: team.name,
-    code: team.teamCode,
-    secondary: (
-      <span className="flex items-center gap-2 flex-wrap">
-        {team.expand?.institutionId && (
-          <span>{team.expand.institutionId.name}</span>
-        )}
-        {team.expand?.leaderUserId && (
-          <span className="text-muted-foreground">
-            · {team.expand.leaderUserId.name}
-          </span>
-        )}
-        <span className="text-muted-foreground/70">
-          · {new Date(team.created).toLocaleDateString()}
-        </span>
-      </span>
-    ),
-    metric: {
-      label: "Members",
-      value: memberCounts[team.id] || 0,
-    },
-    indicator: <StatusBadge status={team.status} />,
-    href: `/admin/teams/${team.id}`,
-  }));
 
   const isApprox = scannedCount < totalItems;
 
@@ -251,49 +211,40 @@ export default function AdminTeams() {
         />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search teams, codes, leads, institutions…"
-            className="pl-9"
-            value={searchInput}
-            onChange={(e) => updateQuery(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
-        <Select
-          value={statusFilter}
-          onValueChange={updateStatus}
-          disabled={isLoading}
-        >
-          <SelectTrigger className="sm:w-56">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {uniqueStatuses.map((status) => (
-              <SelectItem key={status} value={status}>
-                {STATUS_LABELS[status] || status}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* List — show a "filtered" hint when client-side post-filter
-          reduces the visible page below the loader's count. */}
-      {searchQuery && visibleTeams.length < teams.length && (
-        <p className="text-xs text-muted-foreground -mt-2">
-          Showing {visibleTeams.length} of {teams.length} teams on this
-          page (search filter applied to lead / institution names).
-        </p>
-      )}
-
-      {/* List */}
-      <DataList
-        rows={rows}
+      <FilterableTeamList
+        teams={visibleTeams as TeamView[]}
+        memberCounts={memberCounts}
+        statusCounts={statusCounts}
+        totalPages={totalPages}
+        currentPage={page}
+        totalItems={totalItems}
+        searchValue={searchInput}
+        statusValue={statusFilter}
+        onSearchChange={updateQuery}
+        onStatusChange={updateStatus}
+        onPageChange={goToPage}
+        basePath="/teams"
+        isLoading={isLoading}
+        renderSecondary={(team) => (
+          <span className="flex items-center gap-2 flex-wrap">
+            {team.expand?.institutionId && (
+              <span>{team.expand.institutionId.name}</span>
+            )}
+            {team.expand?.leaderUserId && (
+              <span className="text-muted-foreground">
+                &middot; {team.expand.leaderUserId.name}
+              </span>
+            )}
+            <span className="text-muted-foreground/70">
+              &middot; {new Date(team.created).toLocaleDateString()}
+            </span>
+          </span>
+        )}
+        filteredHint={
+          searchQuery && visibleTeams.length < teams.length
+            ? `Showing ${visibleTeams.length} of ${teams.length} teams on this page (search filter applied to lead / institution names).`
+            : undefined
+        }
         emptyMessage={
           searchQuery || statusFilter !== "all"
             ? "No teams match your filters"
@@ -305,35 +256,6 @@ export default function AdminTeams() {
             : "Teams appear here once leaders register them."
         }
       />
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-border pt-4">
-          <p className="text-xs text-muted-foreground">
-            Page {page} of {totalPages} · {totalItems} teams
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || isLoading}
-              onClick={() => goToPage(page - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages || isLoading}
-              onClick={() => goToPage(page + 1)}
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

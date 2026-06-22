@@ -13,23 +13,22 @@ export default [
     route("admin/campus-leads", "routes/admin/campus-leads.tsx"),
     route("admin/config", "routes/admin/config.tsx"),
     route("admin/teams", "routes/admin/teams.tsx"),
-    route("admin/teams/:teamId", "routes/admin/team-detail.tsx"),
     route("admin/export", "routes/admin/export.tsx"),
 
     // Coordinator routes
     route("coordinator/dashboard", "routes/coordinator/dashboard.tsx"),
-    route("coordinator/teams/:teamId", "routes/coordinator/team-detail.tsx"),
 
     // Institution routes
     route("institution/dashboard", "routes/institution/dashboard.tsx"),
-    route("institution/teams/:teamId", "routes/institution/team-detail.tsx"),
 
     // Lead routes
     route("lead/dashboard", "routes/lead/dashboard.tsx"),
     route("lead/register", "routes/lead/register.tsx"),
     route("lead/questionnaire", "routes/lead/questionnaire.tsx"),
     route("lead/submit-idea", "routes/lead/submit-idea.tsx"),
-    route("lead/team", "routes/lead/team-detail.tsx"),
+
+    // Shared team detail — role-scoped via loader
+    route("teams/:teamId", "routes/teams.team-id.tsx"),
   ]),
 
   // Resource routes (API)

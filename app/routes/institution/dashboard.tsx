@@ -653,7 +653,7 @@ export default function InstitutionDashboard() {
                         </div>
                         <div className="mt-2 pt-2 border-t">
                           <Link
-                            to={`/institution/teams/${team.id}`}
+                            to={`/teams/${team.id}`}
                             className="text-xs font-medium text-primary hover:underline"
                           >
                             View full details →
