@@ -26,12 +26,15 @@ const rawPort = process.env.PORT ? Number(process.env.PORT) : 3000;
 const port = Number.isFinite(rawPort) ? rawPort : 3000;
 
 const server = http.createServer(handler);
-
 process.on("uncaughtException", (err) => {
   Sentry.captureException(err);
+  console.error("[server] Uncaught exception — exiting");
+  process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
   Sentry.captureException(reason);
+  console.error("[server] Unhandled rejection — exiting");
+  process.exit(1);
 });
 
 server.listen(port, () => {

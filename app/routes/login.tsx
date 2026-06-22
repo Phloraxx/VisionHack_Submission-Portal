@@ -40,10 +40,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       await pb.collection("users").authRefresh();
       const user = pb.authStore.model as unknown as UserRecord | null;
       if (user?.role) {
-        throw redirect(ROLE_DASHBOARD_MAP[user.role as keyof typeof ROLE_DASHBOARD_MAP] ?? "/login");
+        const target = ROLE_DASHBOARD_MAP[user.role as keyof typeof ROLE_DASHBOARD_MAP];
+        if (!target) {
+          throw new Response("No dashboard configured for your account role.", { status: 403 });
+        }
+        throw redirect(target);
       }
     } catch (err) {
-      // Re-throw redirects — they are not errors.
+      // Re-throw redirects and Responses — they are not errors.
       if (err instanceof Response) throw err;
       // Invalid token — proceed to login
     }
@@ -120,7 +124,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const formData = await request.formData();
   validateCsrfToken(request, formData);
-  const email = (formData.get("email") as string | null)?.trim() ?? "";
+  const email = (formData.get("email") as string | null)?.trim()?.toLowerCase() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
 
   if (!email || !password) {
@@ -133,28 +137,28 @@ export async function action({ request }: ActionFunctionArgs) {
     return data({ error: "Valid email is required." }, { status: 400 });
   }
 
-  // App-level rate limiting (PB also has built-in limits)
+  // App-level rate limiting
   const ip = request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim()
     ?? request.headers.get("CF-Connecting-IP")
     ?? "unknown";
-  checkRateLimit(`login:ip:${ip}`, 20, 60_000);     // 20/min per IP
-  checkRateLimit(`login:email:${email}`, 5, 60_000);  // 5/min per account
+  checkRateLimit(`login:ip:${ip}`, 20, 60_000);
+  checkRateLimit(`login:email:${email}`, 5, 60_000);
+
   try {
     const { token, record } = await login(email, password);
-    // Guard against legacy users with an empty role.
-    const dashboardPath =
-      ROLE_DASHBOARD_MAP[record.role as keyof typeof ROLE_DASHBOARD_MAP] ?? "/login";
+    // Guard against unmapped roles — redirecting to /login would loop.
+    const dashboardPath = ROLE_DASHBOARD_MAP[record.role as keyof typeof ROLE_DASHBOARD_MAP];
+    if (!dashboardPath) {
+      return data({ error: "Your account has no configured dashboard. Contact support.", status: 403 });
+    }
     const headers = new Headers();
     headers.append("Set-Cookie", setAuthCookie(token));
     throw redirect(dashboardPath, { headers });
   } catch (err) {
     // Re-throw redirects — they are not errors.
     if (err instanceof Response) throw err;
-    // Log without the password (only the email mask and error kind).
-    // Mask the local part: keep the first char and replace the rest
-    // before the @. The regex always matches (`.+` after the first
-    // char), so a 1-char local part becomes "a***@…".
-    const masked = email.replace(/^(.).+?(@.*)$/, "$1***$2");
+    // Mask the local part: keep the first char, replace the rest
+    const masked = email.replace(/^(.).*?(@.*)$/, "$1***$2");
     console.error("[login] Auth failed for", masked);
     return data(
       { error: "Invalid email or password. Please try again." },

@@ -23,7 +23,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const formData = await request.formData();
   validateCsrfToken(request, formData);
-  const email = (formData.get("email") as string | null)?.trim() ?? "";
+  const email = (formData.get("email") as string | null)?.trim()?.toLowerCase() ?? "";
 
   if (!email) {
     return data({ error: "Email is required." }, { status: 400 });

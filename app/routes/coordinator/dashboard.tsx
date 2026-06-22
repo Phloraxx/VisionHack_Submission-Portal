@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useLoaderData, useSearchParams, useNavigation, useRouteError } from "react-router";
+import { isRouteErrorResponse, useLoaderData, useSearchParams, useNavigation, useRouteError } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
@@ -586,7 +586,7 @@ export function HydrateFallback() {
 export function ErrorBoundary() {
   const error = useRouteError();
   let message = "Something went wrong";
-  if (error instanceof Response) {
+  if (isRouteErrorResponse(error)) {
     message = `Error ${error.status} — ${error.statusText || "Access denied"}`;
   } else if (error instanceof Error) {
     message = error.message;

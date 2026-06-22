@@ -130,8 +130,9 @@ export async function getAdminClient(): Promise<PocketBase> {
     _adminInitPromise = null;
     return pb;
   }).catch((err) => {
-    // Clear the promise so subsequent calls can retry instead of
-    // being stuck with a cached rejection.
+    // Clear both the promise AND the cached client so the next
+    // caller retries from scratch (the client may be half-initialized).
+    _adminClient = null;
     _adminInitPromise = null;
     throw err;
   });

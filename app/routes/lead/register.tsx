@@ -8,6 +8,7 @@ import {
   useNavigation,
   useActionData,
   useRouteError,
+  isRouteErrorResponse,
 } from "react-router";
 import { CsrfContext } from "~/routes/dashboard-layout";
 import type { LoaderFunctionArgs } from "react-router";
@@ -783,7 +784,7 @@ export function HydrateFallback() {
 export function ErrorBoundary() {
   const error = useRouteError();
   let message = "Something went wrong";
-  if (error instanceof Response) {
+  if (isRouteErrorResponse(error)) {
     message = `Error ${error.status} — ${error.statusText || "Access denied"}`;
   } else if (error instanceof Error) {
     message = error.message;

@@ -898,8 +898,7 @@ async function ensureMembersCollection(
 				type: "text",
 				required: true,
 				min: null,
-				max: null,
-				maxLength: 200,
+				max: 200,
 				pattern: "",
 			},
 			{
@@ -907,8 +906,7 @@ async function ensureMembersCollection(
 				type: "email",
 				required: true,
 				min: null,
-				max: null,
-				maxLength: 320,
+				max: 320,
 				pattern: "",
 			},
 			{
@@ -916,8 +914,7 @@ async function ensureMembersCollection(
 				type: "text",
 				required: false,
 				min: null,
-				max: null,
-				maxLength: 20,
+				max: 20,
 				pattern: "",
 			},
 			{
