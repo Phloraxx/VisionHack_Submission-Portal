@@ -34,17 +34,26 @@ import { MetricCard } from "~/components/shared/metric-card";
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user, pb } = await requireRole(request, ["admin"]);
 
-  const [teams, members] = await Promise.all([
-    pb.collection("teams").getFullList<TeamView>({
+  const MAX_SAFE_LIST = 500;
+  const [teamsResult, membersResult] = await Promise.all([
+    pb.collection("teams").getList<TeamView>(1, MAX_SAFE_LIST, {
       expand: "institutionId,leaderUserId",
       sort: "-created",
       fields:
         "id,name,teamCode,status,institutionId,leaderUserId,created,updated,expand.institutionId.name,expand.institutionId.district,expand.leaderUserId.name,expand.leaderUserId.email",
     }),
-    pb.collection("members").getFullList<{ teamId: string }>({
+    pb.collection("members").getList<{ teamId: string }>(1, MAX_SAFE_LIST, {
       fields: "teamId",
     }),
   ]);
+  const teams = teamsResult.items;
+  const members = membersResult.items;
+  if (teamsResult.totalItems > MAX_SAFE_LIST) {
+    console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
+  }
+  if (membersResult.totalItems > MAX_SAFE_LIST) {
+    console.warn(`[members] More than ${MAX_SAFE_LIST} items — pagination needed`);
+  }
 
   const memberCounts = countByKey(members, (m) => m.teamId);
   const totalMembers = members.length;

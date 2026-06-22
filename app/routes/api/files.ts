@@ -92,6 +92,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       disposition ?? `attachment; filename="${filename}"`,
     );
 
+    // Forward Content-Length so clients can show progress bars
+    const contentLength = response.headers.get("Content-Length");
+    if (contentLength) headers.set("Content-Length", contentLength);
+
     // Files are served only to authenticated users; cache privately for an hour.
     headers.set("Cache-Control", "private, max-age=3600");
 

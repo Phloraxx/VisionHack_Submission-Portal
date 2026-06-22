@@ -69,20 +69,3 @@ export function getAppUrl(): string {
   const raw = getEnv().APP_URL || "https://visionhack.mulearn.org";
   return raw.replace(/\/+$/, "");
 }
-
-/**
- * @deprecated No-op kept for backward compatibility.
- * Environment is now read from `process.env` directly.
- */
-export function initEnv(_overrides?: Partial<EnvConfig>): void {
-  // no-op
-}
-
-
-/**
- * @deprecated No-op kept for backward compatibility.
- * Environment is now read from `process.env` directly.
- */
-export function resetEnv(): void {
-  // no-op
-}

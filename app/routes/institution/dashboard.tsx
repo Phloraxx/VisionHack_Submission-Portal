@@ -82,8 +82,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   // Load teams + config in parallel. Field-trim expand to keep payload small.
-  const [teams, flags] = await Promise.all([
-    pb.collection("teams").getFullList<TeamWithExpand>({
+  const MAX_SAFE_LIST = 500;
+  const [teamsResult, flags] = await Promise.all([
+    pb.collection("teams").getList<TeamWithExpand>(1, MAX_SAFE_LIST, {
       filter: pb.filter("institutionId = {:institutionId}", {
         institutionId: institution.id,
       }),
@@ -94,16 +95,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
     getConfig(pb),
   ]);
+  const teams = teamsResult.items;
+  if (teamsResult.totalItems > MAX_SAFE_LIST) {
+    console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
+  }
 
-  // Members: single getFullList for the institution's teams. Uses
+  // Members: capped getList for the institution's teams. Uses
   // parameterized filter bindings (not string interpolation).
   const allMembers = teams.length > 0
-    ? await pb.collection("members").getFullList<MemberRecord>({
-        filter: pb.filter(
-          teams.map((_, i) => `teamId = {:t${i}}`).join(" || "),
-          Object.fromEntries(teams.map((t, i) => [`t${i}`, t.id])),
-        ),
-      })
+    ? (
+        await pb.collection("members").getList<MemberRecord>(1, MAX_SAFE_LIST, {
+          filter: pb.filter(
+            teams.map((_, i) => `teamId = {:t${i}}`).join(" || "),
+            Object.fromEntries(teams.map((t, i) => [`t${i}`, t.id])),
+          ),
+        })
+      ).items
     : [];
 
   const membersByTeam: Record<string, MemberRecord[]> = {};

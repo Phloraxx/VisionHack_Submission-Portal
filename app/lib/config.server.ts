@@ -16,10 +16,15 @@ import type PocketBase from "pocketbase";
 export async function getConfig(
   pb: PocketBase,
 ): Promise<Record<string, boolean>> {
-  const records = await pb.collection("config").getFullList<{
+  const MAX_SAFE_LIST = 100;
+  const result = await pb.collection("config").getList<{
     key: string;
     value: boolean;
-  }>();
+  }>(1, MAX_SAFE_LIST);
+  if (result.totalItems > MAX_SAFE_LIST) {
+    console.warn(`[config] More than ${MAX_SAFE_LIST} items — pagination needed`);
+  }
+  const records = result.items;
 
   const value: Record<string, boolean> = {};
   for (const record of records) {

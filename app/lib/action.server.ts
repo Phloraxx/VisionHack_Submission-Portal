@@ -119,8 +119,15 @@ export function secureAction<C extends ActionContext = ActionContext>(
       pb = auth.pb;
       user = auth.user;
     } catch (err) {
-      if (err instanceof Response && err.status >= 300 && err.status < 400) {
-        return fail({ error: "Authentication required", status: 401 });
+      if (err instanceof Response) {
+        // 401 = not authenticated (redirect to login), 403 = wrong role
+        if (err.status === 401) {
+          return fail({ error: "Authentication required", status: 401 });
+        }
+        // For any other redirect or error status, pass the status through
+        if (err.status === 403) {
+          return fail({ error: "Insufficient permissions", status: 403 });
+        }
       }
       throw err;
     }
@@ -155,12 +162,14 @@ export function secureAction<C extends ActionContext = ActionContext>(
       try {
         return (await handler(ctx)) as ActionResult;
       } catch (err) {
-        console.error("[secureAction]", err, {
-          route: new URL(request.url).pathname,
-          userId: user.id,
-          role: user.role,
-          intent: ctx.intent,
-        });
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[secureAction]", err, {
+            route: new URL(request.url).pathname,
+            userId: user.id,
+            role: user.role,
+            intent: ctx.intent,
+          });
+        }
         Sentry.captureException(err, {
           extra: {
             route: new URL(request.url).pathname,
@@ -189,12 +198,14 @@ export function secureAction<C extends ActionContext = ActionContext>(
     } catch (err) {
       // Surface server-side errors uniformly. Don't leak the message
       // to the client.
-      console.error("[secureAction]", err, {
-        route: new URL(request.url).pathname,
-        userId: user.id,
-        role: user.role,
-        intent,
-      });
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[secureAction]", err, {
+          route: new URL(request.url).pathname,
+          userId: user.id,
+          role: user.role,
+          intent,
+        });
+      }
       Sentry.captureException(err, { extra: { route: new URL(request.url).pathname, userId: user.id, role: user.role, intent } });
       return fail({ error: "Something went wrong. Please try again.", status: 500 });
     }

@@ -39,7 +39,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Push the status filter into PocketBase instead of fetching everything
   // and filtering in JS.
-  const filtered = await pb.collection("teams").getFullList<TeamView>({
+  const MAX_SAFE_LIST = 500;
+  const filteredResult = await pb.collection("teams").getList<TeamView>(1, MAX_SAFE_LIST, {
     filter:
       filterStatus !== "all"
         ? pb.filter("status = {:status}", { status: filterStatus })
@@ -47,17 +48,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
     expand: "institutionId,leaderUserId",
     sort: "-created",
   });
+  const filtered = filteredResult.items;
+  if (filteredResult.totalItems > MAX_SAFE_LIST) {
+    console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
+  }
 
   // Fetch only the members of the teams we're exporting.
   const teamIds = filtered.map((t) => t.id);
   const members =
     teamIds.length > 0
-      ? await pb.collection("members").getFullList<MemberRecord>({
-          filter: pb.filter(
-            teamIds.map((_, i) => `teamId = {:t${i}}`).join(" || "),
-            Object.fromEntries(teamIds.map((id, i) => [`t${i}`, id])),
-          ),
-        })
+      ? (
+          await pb.collection("members").getList<MemberRecord>(1, MAX_SAFE_LIST, {
+            filter: pb.filter(
+              teamIds.map((_, i) => `teamId = {:t${i}}`).join(" || "),
+              Object.fromEntries(teamIds.map((id, i) => [`t${i}`, id])),
+            ),
+          })
+        ).items
       : [];
 
   const membersByTeam: Record<string, MemberRecord[]> = {};

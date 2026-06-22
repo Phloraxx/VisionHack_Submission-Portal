@@ -30,11 +30,21 @@ export function getStr(
   return value;
 }
 
-/** Read all repeated string fields (e.g. `memberName`). */
-export function getAllStr(formData: FormData, key: string): string[] {
-  return formData.getAll(key).map((v) => String(v));
+/** Read all repeated string fields with optional trim/max. */
+export function getAllStr(
+  formData: FormData,
+  key: string,
+  opts: GetStrOptions = {},
+): string[] {
+  const { trim = true, lower = false, max } = opts;
+  return formData.getAll(key).map((v) => {
+    let value = String(v ?? "");
+    if (trim) value = value.trim();
+    if (lower) value = value.toLowerCase();
+    if (typeof max === "number") value = value.slice(0, max);
+    return value;
+  });
 }
-
 /** Read a numeric field. Returns NaN when absent/invalid. */
 export function getNum(formData: FormData, key: string): number {
   return Number(String(formData.get(key) ?? "").trim());

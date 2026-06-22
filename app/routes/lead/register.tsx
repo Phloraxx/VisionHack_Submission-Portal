@@ -86,10 +86,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     getConfig(pb),
   ]);
 
+  const MAX_SAFE_LIST = 500;
   const members: MemberRecord[] = team
-    ? await pb.collection("members").getFullList<MemberRecord>({
-        filter: pb.filter("teamId = {:teamId}", { teamId: team.id }),
-      })
+    ? (
+        await pb.collection("members").getList<MemberRecord>(1, MAX_SAFE_LIST, {
+          filter: pb.filter("teamId = {:teamId}", { teamId: team.id }),
+        })
+      ).items
     : [];
 
   return {

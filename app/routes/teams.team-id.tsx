@@ -168,6 +168,10 @@ export const action = secureAction(
 
     if (intent === "transition") {
       const toStatus = formData.get("toStatus") as TeamStatus;
+      const VALID_TRANSITION_STATUSES = ["shortlisted", "selected", "rejected", "withdrawn"] as const;
+      if (!VALID_TRANSITION_STATUSES.includes(toStatus as typeof VALID_TRANSITION_STATUSES[number])) {
+        return fail({ error: "Invalid target status", status: 400 });
+      }
       // Coordinator now has write access via PB updateRule — use their own client.
       const actionPb = pb;
 

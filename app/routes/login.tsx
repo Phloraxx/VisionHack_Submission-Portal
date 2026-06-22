@@ -12,6 +12,7 @@ import { getAuthFromCookie, login, setAuthCookie, ROLE_DASHBOARD_MAP } from "~/l
 import { createAuthenticatedClient, getAdminClient, createPocketBaseClient } from "~/lib/pocketbase.server";
 import { validateOrigin, validateCsrfToken, generateCsrfToken, setCsrfCookie } from "~/lib/csrf.server";
 import { getConfig } from "~/lib/config.server";
+import { checkRateLimit } from "~/lib/rate-limiter.server";
 import type { UserRecord } from "~/lib/types";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -132,6 +133,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return data({ error: "Valid email is required." }, { status: 400 });
   }
 
+  // App-level rate limiting (PB also has built-in limits)
+  const ip = request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim()
+    ?? request.headers.get("CF-Connecting-IP")
+    ?? "unknown";
+  checkRateLimit(`login:ip:${ip}`, 20, 60_000);     // 20/min per IP
+  checkRateLimit(`login:email:${email}`, 5, 60_000);  // 5/min per account
   try {
     const { token, record } = await login(email, password);
     // Guard against legacy users with an empty role.
