@@ -219,7 +219,7 @@ export default function DashboardLayout() {
             className="inline-flex items-center justify-center"
             aria-label="VisionHack home"
           >
-            <img src="/logo-white.svg" alt="μLearn SCET · VisionHack 2026" className="h-16 w-auto max-w-[90%]" />
+            <img src="/logo.svg" alt="μLearn SCET · VisionHack 2026" className="h-16 w-auto max-w-[90%]" />
           </Link>
           <button
             type="button"
