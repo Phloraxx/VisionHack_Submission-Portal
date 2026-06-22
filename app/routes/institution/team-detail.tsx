@@ -74,20 +74,14 @@ export const action = secureAction(
 
     const institution = await getInstitutionForUser(pb, user.id, { fields: "id" });
     if (!institution) return fail({ error: "Institution not found", status: 404 });
-
     if (intent === "transition") {
       const toStatus = formData.get("toStatus") as TeamStatus;
 
-      // Fetch with the lead expand up front so we can reuse it for the
-      // notification email — no second round-trip.
-      let team: TeamView;
-      try {
-        team = await pb
-          .collection("teams")
-          .getOne<TeamView>(teamId, { expand: "leaderUserId" });
-      } catch {
-        return fail({ error: "Team not found", status: 404 });
-      }
+      // Re-fetch team with leader info for the notification email.
+      const team = await pb
+        .collection("teams")
+        .getOne(teamId, { expand: "leaderUserId", fields: "id,name,leaderUserId,expand.leaderUserId.email,expand.leaderUserId.name" })
+        .catch(() => null);
 
       const result = await transitionTeamStatus(pb, {
         teamId,
@@ -97,19 +91,15 @@ export const action = secureAction(
       });
       if (!result.ok) return result.response;
 
-      // Notify the lead by email. Best-effort; failure does not block.
-      const leadUser = team.expand?.leaderUserId;
-      if (leadUser?.email) {
-        try {
-          await sendStatusChangeEmail({
-            to: leadUser.email,
-            leadName: leadUser.name || "Team Lead",
-            teamName: team.name,
-            status: toStatus,
-          });
-        } catch (err) {
-          console.error("[institution/team-detail] notify email failed:", err);
-        }
+      // Send notification email best-effort.
+      if (team?.expand?.leaderUserId) {
+        const lead = team.expand.leaderUserId;
+        sendStatusChangeEmail({
+          to: lead.email,
+          leadName: lead.name || "Team Lead",
+          teamName: team.name,
+          status: toStatus,
+        }).catch(() => {}); // Already handled inside function
       }
 
       return ok({ newStatus: toStatus });

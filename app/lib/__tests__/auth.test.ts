@@ -1,12 +1,25 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   getAuthFromCookie,
   setAuthCookie,
   clearAuthCookie,
 } from "../auth.server";
-import { resetEnv } from "../env.server";
 
-// ---------------------------------------------------------------------------
+const ORIG_PB_URL = process.env.POCKETBASE_URL;
+const ORIG_APP_URL = process.env.APP_URL;
+const ORIG_NODE_ENV = process.env.NODE_ENV;
+
+beforeEach(() => {
+  process.env.POCKETBASE_URL = "http://localhost:5173";
+  process.env.APP_URL = "https://visionhack.mulearn.org";
+  process.env.NODE_ENV = "test";
+});
+
+afterEach(() => {
+  process.env.POCKETBASE_URL = ORIG_PB_URL;
+  process.env.APP_URL = ORIG_APP_URL;
+  process.env.NODE_ENV = ORIG_NODE_ENV;
+});
 // getAuthFromCookie
 // ---------------------------------------------------------------------------
 describe("getAuthFromCookie", () => {
@@ -62,17 +75,14 @@ describe("setAuthCookie", () => {
     expect(result).not.toContain("Secure");
   });
 
-  it("includes Secure flag in production", () => {
-    // Simulate production via https POCKETBASE_URL
-    const original = process.env.POCKETBASE_URL;
+  it("includes Secure flag when PB URL is HTTPS", () => {
+    const prevUrl = process.env.POCKETBASE_URL;
     process.env.POCKETBASE_URL = "https://pb.example.com";
-    resetEnv();
     try {
       const result = setAuthCookie("abc123");
       expect(result).toContain("Secure");
     } finally {
-      process.env.POCKETBASE_URL = original;
-      resetEnv();
+      process.env.POCKETBASE_URL = prevUrl;
     }
   });
 });
@@ -97,17 +107,14 @@ describe("clearAuthCookie", () => {
     expect(parts).toContain("Max-Age=0");
   });
 
-  it("includes Secure flag in production", () => {
-    // Simulate production via https POCKETBASE_URL
-    const original = process.env.POCKETBASE_URL;
+  it("includes Secure flag when PB URL is HTTPS", () => {
+    const prevUrl = process.env.POCKETBASE_URL;
     process.env.POCKETBASE_URL = "https://pb.example.com";
-    resetEnv();
     try {
       const result = clearAuthCookie();
       expect(result).toContain("Secure");
     } finally {
-      process.env.POCKETBASE_URL = original;
-      resetEnv();
+      process.env.POCKETBASE_URL = prevUrl;
     }
   });
 });

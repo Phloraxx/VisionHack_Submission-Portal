@@ -2,10 +2,10 @@
   "files": [],
   "references": [
     { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.cloudflare.json" }
+    { "path": "./tsconfig.app.json" }
   ],
   "compilerOptions": {
-    "checkJs": true,
+    "checkJs": false,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "strict": true,

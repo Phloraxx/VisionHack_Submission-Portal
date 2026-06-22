@@ -1,18 +1,8 @@
 import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 import { renderToReadableStream } from "react-dom/server";
-import { initEnv } from "./lib/env.server";
 
-// Initialize environment from process.env (set via .env file).
-// In dev mode without the Cloudflare plugin, env vars aren't automatically
-// injected as Cloudflare bindings, so we load them from process.env.
-// In production (Cloudflare Workers), this is called from worker/app.ts.
-initEnv({
-  POCKETBASE_URL: process.env.POCKETBASE_URL,
-  POCKETBASE_SUPER_TOKEN: process.env.POCKETBASE_SUPER_TOKEN,
-  ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
-  APP_URL: process.env.APP_URL,
-});
+
 
 export default async function handleRequest(
   request: Request,
@@ -63,8 +53,7 @@ export default async function handleRequest(
   // <script> emitted by ServerRouter with the nonce we pass in. The
   // theme script in app/root.tsx must also be nonce-stamped — we do
   // that in the layout via `nonce={...}` on the <script> tag.
-  const isProd =
-    typeof import.meta !== "undefined" && import.meta.env?.PROD;
+  const isProd = process.env.NODE_ENV === "production";
 
   // Strict nonce-based CSP only in production — Vite's HMR injects
   // unnonce-stamped inline scripts in dev that would all be blocked.
@@ -73,8 +62,8 @@ export default async function handleRequest(
       "Content-Security-Policy",
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline'",
-        "style-src 'self' 'unsafe-inline'",
+        `script-src 'self' 'nonce-${nonce}'`,
+        `style-src 'self' 'nonce-${nonce}'`,
         "img-src 'self' data:",
         "font-src 'self' data:",
         "frame-ancestors 'none'",

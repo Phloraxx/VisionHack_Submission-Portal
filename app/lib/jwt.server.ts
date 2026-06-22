@@ -46,12 +46,11 @@ export function decodeJwtPayload(token: string): PbJwtPayload | null {
 }
 
 /**
- * True when the token is already expired or will expire within
- * `skewSeconds` (default 24h). Used to decide whether to refresh.
+ * `skewSeconds` (default 5 min). Used to decide whether to refresh.
  */
 export function isExpiringSoon(
   payload: PbJwtPayload | null,
-  skewSeconds = 86400,
+  skewSeconds = 300,
 ): boolean {
   if (!payload || typeof payload.exp !== "number") return true;
   const nowSeconds = Date.now() / 1000;

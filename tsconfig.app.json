@@ -1,27 +1,19 @@
 {
   "extends": "./tsconfig.json",
-  "include": [
-    ".react-router/types/**/*",
-    "app/**/*",
-    "app/**/.server/**/*",
-    "app/**/.client/**/*",
-    "worker/**/*",
-    "worker-configuration.d.ts"
-  ],
+  "include": ["app/**/*", ".react-router/types/**/*"],
+  "exclude": ["build/**/*", "node_modules/**/*"],
   "compilerOptions": {
     "composite": true,
     "strict": true,
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "types": ["@cloudflare/workers-types/2023-07-01", "vite/client", "node"],
+    "types": ["node", "vite/client"],
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "baseUrl": ".",
+    "paths": { "~/*": ["./app/*"] },
     "rootDirs": [".", "./.react-router/types"],
-    "paths": {
-      "~/*": ["./app/*"]
-    },
     "esModuleInterop": true,
     "resolveJsonModule": true
   }

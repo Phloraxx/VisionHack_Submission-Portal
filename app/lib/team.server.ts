@@ -13,9 +13,10 @@ import type {
   TeamView,
   InstitutionRecord,
 } from "./types";
-import { countByKey, escapeHtml } from "./utils";
-import { sendEmail } from "./email.server";
+import { countByKey } from "./utils";
 import { getAppUrl } from "./env.server";
+import { sendEmail } from "./email.server";
+import { escapeHtml } from "./utils";
 import { STATUS_LABELS } from "./team-status";
 
 // ---------------------------------------------------------------------------
@@ -135,40 +136,47 @@ export async function transitionTeamStatus(
     };
   }
 
-  await pb.collection("teams").update(teamId, {
-    status: to,
-    status_changed_at: new Date().toISOString(),
-  });
+  try {
+    await pb.collection("teams").update(teamId, {
+      status: to,
+      status_changed_at: new Date().toISOString(),
+    }, { filter: pb.filter("status = {:expected}", { expected: team.status }) });
+  } catch {
+    return { ok: false, response: fail({ error: "This team's status was changed by another action. Please refresh and try again.", status: 409 }) };
+  }
 
   return { ok: true };
 }
 
+
 // ---------------------------------------------------------------------------
-// Email
+// Status-change notification email
 // ---------------------------------------------------------------------------
 
-/**
- * Send a "your team status changed" notification to the team lead.
- * Best-effort: callers should wrap in try/catch so a mail failure never
- * blocks the status change.
- */
-export async function sendStatusChangeEmail(args: {
+export interface SendStatusChangeEmailArgs {
   to: string;
   leadName: string;
   teamName: string;
-  status: TeamStatus | string;
-}): Promise<void> {
-  const { to, leadName, teamName, status } = args;
-  const statusLabel =
-    STATUS_LABELS[status as TeamStatus] ?? String(status);
+  status: TeamStatus;
+}
+
+/**
+ * Send a status-change notification email to the team lead.
+ * Best-effort: failures are logged but not thrown.
+ */
+export async function sendStatusChangeEmail(
+  args: SendStatusChangeEmailArgs,
+): Promise<void> {
+  const statusLabel = STATUS_LABELS[args.status] || args.status;
   const dashboardUrl = `${getAppUrl()}/lead/dashboard`;
+
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
       <h1 style="font-size: 18px; margin: 0 0 16px;">Team Status Update — VisionHack 2026</h1>
-      <p>Hello <strong>${escapeHtml(leadName)}</strong>,</p>
-      <p>The status of your team <strong>${escapeHtml(teamName)}</strong> has been updated to <strong>${escapeHtml(statusLabel)}</strong>.</p>
+      <p>Hello <strong>${escapeHtml(args.leadName)}</strong>,</p>
+      <p>The status of your team <strong>${escapeHtml(args.teamName)}</strong> has been updated to <strong>${escapeHtml(statusLabel)}</strong>.</p>
       <p style="margin: 16px 0;">
-        <a href="${dashboardUrl}"
+        <a href="${escapeHtml(dashboardUrl)}"
            style="display: inline-block; background: #18181b; color: #fff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-size: 14px;">
           Check Your Dashboard
         </a>
@@ -177,12 +185,18 @@ export async function sendStatusChangeEmail(args: {
       <p style="margin: 0; font-size: 12px; color: #71717a;">VisionHack Team</p>
     </div>
   `.trim();
-  await sendEmail({
-    to,
-    subject: `Team "${teamName}" status: ${statusLabel}`,
-    html,
-  });
+
+  try {
+    await sendEmail({
+      to: args.to,
+      subject: `Team "${args.teamName}" status: ${statusLabel}`,
+      html,
+    });
+  } catch (err) {
+    console.error("[email] Failed to send status change notification:", err);
+  }
 }
+
 
 // ---------------------------------------------------------------------------
 // Campus lead creation

@@ -1105,74 +1105,6 @@ async function ensureQuestionnaireResponsesCollection(
 	});
 }
 
-async function ensureEmailOutboxCollection(
-	token: string,
-	collectionIds: Map<string, string>,
-): Promise<void> {
-	console.log("\n🔧 Ensuring «email_outbox» collection…");
-
-	const usersId = collectionIds.get("users");
-	const existing = await getCollection(token, "email_outbox");
-
-	if (existing) {
-		const fields = existing.fields ?? [];
-		let changed = false;
-		// Ensure status is a select (idempotent migration)
-		const statusIdx = fields.findIndex((f: any) => f.name === "status");
-		if (statusIdx >= 0 && fields[statusIdx].type !== "select") {
-			fields[statusIdx] = {
-				name: "status",
-				type: "select",
-				required: true,
-				maxSelect: 1,
-				values: ["pending", "sent", "failed"],
-			};
-			changed = true;
-		}
-		// Ensure next_attempt_at date field exists (for retry backoff)
-		if (!fields.some((f: any) => f.name === "next_attempt_at")) {
-			fields.push({
-				name: "next_attempt_at",
-				type: "date",
-				required: false,
-			});
-			changed = true;
-		}
-		if (changed) {
-			await updateCollection(token, "email_outbox", { fields });
-		} else {
-			console.log("  ✅ «email_outbox» collection already correct");
-		}
-		return;
-	}
-
-	await createCollection(token, {
-		name: "email_outbox",
-		type: "base",
-		fields: [
-			{ name: "to", type: "email", required: true },
-			{ name: "subject", type: "text", required: true, max: 200 },
-			{ name: "html", type: "text", required: true, max: 65535 },
-			{
-				name: "status",
-				type: "select",
-				required: true,
-				maxSelect: 1,
-				values: ["pending", "sent", "failed"],
-			},
-			{ name: "attempts", type: "number", required: false, min: 0, onlyInt: true },
-			{ name: "last_error", type: "text", required: false, max: 2000 },
-			{ name: "next_attempt_at", type: "date", required: false },
-			{ name: "sent_at", type: "date", required: false },
-		],
-		indexes: [
-			"CREATE INDEX idx_outbox_status ON email_outbox (status)",
-		],
-		// Only the server (superuser) can read/write; authed users have
-		// no direct access.
-		...NO_RULES,
-	});
-}
 
 // ---------------------------------------------------------------------------
 // Main
@@ -1347,11 +1279,8 @@ async function main(): Promise<void> {
 	// Protect users collection against self-role-escalation AND apply read scope
 	await ensureUsersCollection(token);
 
-	// Ensure rate limiting is enabled
-	await ensureRateLimiting(token);
-
-	// Email outbox
-	await ensureEmailOutboxCollection(token, refreshedIds);
+	// Email is sent directly via PocketBase hooks using the built-in
+	// mail client — no email_outbox collection needed.
 
 	console.log("\n" + "=".repeat(50));
 	console.log("✅ PocketBase setup complete!");

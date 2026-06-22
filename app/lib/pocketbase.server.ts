@@ -1,31 +1,51 @@
 import PocketBase from "pocketbase";
 import { getEnv } from "./env.server";
 
-// ---------------------------------------------------------------------------
-// Dev-mode fetch stability
-// ---------------------------------------------------------------------------
-// workerd's built-in fetch has intermittent DNS timeouts in Miniflare.
-// We simply extend the timeout and retry once on failure.
+/**
+ * Custom fetch wrapper that adds a 20-second timeout.
+ * Respects existing AbortSignals (e.g., PocketBase auto-cancellation).
+ */
+function fetchWithTimeout(
+  url: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs = 20000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-if (import.meta.env.DEV) {
-  const origFetch = globalThis.fetch.bind(globalThis);
-  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    try {
-      return await origFetch(input, { ...init, signal: controller.signal });
-    } catch (firstErr) {
+  const existingSignal = init?.signal;
+  if (existingSignal) {
+    if (existingSignal.aborted) {
       clearTimeout(timeout);
-      const retryTimeout = setTimeout(() => controller.abort(), 20000);
-      try {
-        return await origFetch(input, { ...init, signal: controller.signal });
-      } finally {
-        clearTimeout(retryTimeout);
-      }
-    } finally {
-      clearTimeout(timeout);
+      return Promise.reject(
+        existingSignal.reason || new DOMException("Aborted", "AbortError"),
+      );
     }
+    existingSignal.addEventListener(
+      "abort",
+      () => controller.abort(existingSignal.reason),
+      { once: true },
+    );
+  }
+
+  return fetch(url, { ...init, signal: controller.signal }).finally(() =>
+    clearTimeout(timeout),
+  );
+}
+
+/**
+ * Create a PocketBase client with a custom fetch that applies a 20-second
+ * timeout to every request. Uses the `beforeSend` hook to inject the custom
+ * fetch into each request's SendOptions (the SDK reads `options.fetch`).
+ */
+function createBaseClient(baseURL: string): PocketBase {
+  const pb = new PocketBase(baseURL);
+  pb.beforeSend = (url, options) => {
+    options.fetch = (input: RequestInfo | URL, config?: RequestInit) =>
+      fetchWithTimeout(input, config);
+    return { url, options };
   };
+  return pb;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,11 +53,11 @@ if (import.meta.env.DEV) {
 // ---------------------------------------------------------------------------
 
 export function createPocketBaseClient(): PocketBase {
-  return new PocketBase(getEnv().POCKETBASE_URL);
+  return createBaseClient(getEnv().POCKETBASE_URL);
 }
 
 export function createAuthenticatedClient(token: string): PocketBase {
-  const pb = new PocketBase(getEnv().POCKETBASE_URL);
+  const pb = createBaseClient(getEnv().POCKETBASE_URL);
   pb.authStore.save(token, null);
   return pb;
 }
@@ -49,7 +69,7 @@ export function createAuthenticatedClient(token: string): PocketBase {
  */
 export function createSuperuserClient(): PocketBase {
   const env = getEnv();
-  const pb = new PocketBase(env.POCKETBASE_URL);
+  const pb = createBaseClient(env.POCKETBASE_URL);
   pb.authStore.save(env.POCKETBASE_SUPER_TOKEN, null);
   return pb;
 }

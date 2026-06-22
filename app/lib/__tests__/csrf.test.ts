@@ -1,26 +1,22 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { validateOrigin } from "../csrf.server";
-import { resetEnv } from "../env.server";
 
-const DEFAULT_ALLOWED = "http://localhost:5173,http://localhost:3000,https://visionhack.mulearn.org";
+const ORIG_ALLOWED = process.env.ALLOWED_ORIGINS;
+const ORIG_NODE_ENV = process.env.NODE_ENV;
+const ORIG_PB_URL = process.env.POCKETBASE_URL;
 
 describe("validateOrigin", () => {
-  const originalEnv = process.env.ALLOWED_ORIGINS;
-
-  beforeAll(() => {
-    // Ensure we're testing against the default origins
-    delete process.env.ALLOWED_ORIGINS;
-  });
-
   beforeEach(() => {
-    // Clear cached env so getEnv() re-reads from process.env
-    resetEnv();
+    delete process.env.ALLOWED_ORIGINS;
+    process.env.NODE_ENV = "test";
+    process.env.POCKETBASE_URL = "http://localhost:8090";
   });
 
-  afterAll(() => {
-    process.env.ALLOWED_ORIGINS = originalEnv;
+  afterEach(() => {
+    process.env.ALLOWED_ORIGINS = ORIG_ALLOWED;
+    process.env.NODE_ENV = ORIG_NODE_ENV;
+    process.env.POCKETBASE_URL = ORIG_PB_URL;
   });
-
   // -----------------------------------------------------------------------
   // Valid origins
   // -----------------------------------------------------------------------

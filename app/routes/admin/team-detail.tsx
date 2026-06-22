@@ -3,10 +3,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
-import {
-  transitionTeamStatus,
-  sendStatusChangeEmail,
-} from "~/lib/team.server";
+import { transitionTeamStatus, sendStatusChangeEmail } from "~/lib/team.server";
 import { getValidTransitions } from "~/lib/team-status";
 import type {
   TeamStatus,
@@ -101,16 +98,11 @@ export const action = secureAction(
     if (intent === "transition") {
       const toStatus = formData.get("toStatus") as TeamStatus;
 
-      // Fetch with the lead expand up front so we can reuse it for the
-      // notification email — no second round-trip.
-      let team: TeamView;
-      try {
-        team = await pb
-          .collection("teams")
-          .getOne<TeamView>(teamId, { expand: "leaderUserId" });
-      } catch {
-        return fail({ error: "Team not found", status: 404 });
-      }
+      // Re-fetch team with leader info for the notification email.
+      const team = await pb
+        .collection("teams")
+        .getOne(teamId, { expand: "leaderUserId", fields: "id,name,leaderUserId,expand.leaderUserId.email,expand.leaderUserId.name" })
+        .catch(() => null);
 
       const result = await transitionTeamStatus(pb, {
         teamId,
@@ -119,19 +111,15 @@ export const action = secureAction(
       });
       if (!result.ok) return result.response;
 
-      // Best-effort notification email — reuse the expand from above.
-      const leadUser = team.expand?.leaderUserId;
-      if (leadUser?.email) {
-        try {
-          await sendStatusChangeEmail({
-            to: leadUser.email,
-            leadName: leadUser.name || "Team Lead",
-            teamName: team.name,
-            status: toStatus,
-          });
-        } catch (err) {
-          console.error("[admin/team-detail] notify email failed:", err);
-        }
+      // Send notification email best-effort.
+      if (team?.expand?.leaderUserId) {
+        const lead = team.expand.leaderUserId;
+        sendStatusChangeEmail({
+          to: lead.email,
+          leadName: lead.name || "Team Lead",
+          teamName: team.name,
+          status: toStatus,
+        }).catch(() => {}); // Already handled inside function
       }
 
       return ok({ newStatus: toStatus });

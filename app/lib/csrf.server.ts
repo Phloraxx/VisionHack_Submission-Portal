@@ -6,7 +6,6 @@ import { getEnv } from "./env.server";
 
 const DEFAULT_ALLOWED_ORIGINS: string[] = [
   "http://localhost:5173",
-  "http://localhost:3000",
   "https://visionhack.mulearn.org",
 ];
 
@@ -33,12 +32,11 @@ function getAllowedOrigins(): string[] {
  * malicious origins. For defense-in-depth, consider adding a token-based
  * CSRF check (double-submit cookie pattern) on sensitive actions.
  *
- * In development mode (import.meta.env.DEV), allows any localhost origin
- * so the dev server can run on any port without reconfiguration.
+ * In development mode (NODE_ENV !== 'production'), allows only the known Vite
+ * dev-server ports (5173, 5174, 5175) on localhost and 127.0.0.1.
  *
  * In production, reads `ALLOWED_ORIGINS` from the environment (comma-separated).
- * Falls back to the default set (`localhost:5173`, `localhost:3000`, the
- * production domain).
+ * Falls back to the default set (`localhost:5173`, the production domain).
  *
  * - **Missing Origin:** throws a 403 response.
  * - **Mismatched Origin:** throws a 403 response.
@@ -50,11 +48,15 @@ export function validateOrigin(request: Request): void {
     throw new Response("Missing Origin header", { status: 403 });
   }
 
-  // In development, allow any localhost origin
-  if (typeof import.meta !== "undefined" && import.meta.env?.DEV) {
-    if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
-      return;
-    }
+  // In development, allow only the known Vite dev-server ports
+  if (process.env.NODE_ENV !== "production") {
+    const devPorts = [5173, 5174, 5175];
+    const isAllowedDevOrigin = devPorts.some(
+      (port) =>
+        origin === `http://localhost:${port}` ||
+        origin === `http://127.0.0.1:${port}`,
+    );
+    if (isAllowedDevOrigin) return;
   }
 
   const allowedOrigins = getAllowedOrigins();
