@@ -110,19 +110,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  validateOrigin(request);
+  validateOrigin(request, true);
 
   const formData = await request.formData();
   validateCsrfToken(request, formData);
   const email = (formData.get("email") as string | null)?.trim() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!email || !emailRegex.test(email)) {
-    return data({ error: "Valid email is required." }, { status: 400 });
-  }
 
   if (!email || !password) {
     return data({ error: "Email and password are required." }, { status: 400 });
+  }
+
+  // Validate email format after confirming it's non-empty
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return data({ error: "Valid email is required." }, { status: 400 });
   }
 
   try {

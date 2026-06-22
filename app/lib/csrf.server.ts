@@ -34,23 +34,33 @@ function getAllowedOrigins(): string[] {
  * malicious origins. For defense-in-depth, consider adding a token-based
  * CSRF check (double-submit cookie pattern) on sensitive actions.
  *
+ * When `requireOrigin` is true, a missing Origin header causes a 403.
+ * Use `requireOrigin: true` on endpoints that do not validate the
+ * double-submit CSRF token (login, forgot-password) so they are not
+ * bypassed by attackers omitting the Origin header.
+ *
  * In development mode (NODE_ENV !== 'production'), allows only the known Vite
  * dev-server ports (5173, 5174, 5175) on localhost and 127.0.0.1.
  *
  * In production, reads `ALLOWED_ORIGINS` from the environment (comma-separated).
  * Falls back to the default set (`localhost:5173`, the production domain).
  *
- * - **Missing Origin:** throws a 403 response.
+ * - **Missing Origin:** throws a 403 when `requireOrigin` is true; allowed
+ *   when false (CSRF token is expected to cover it).
  * - **Mismatched Origin:** throws a 403 response.
  */
-export function validateOrigin(request: Request): void {
+export function validateOrigin(request: Request, requireOrigin = false): void {
   const origin = request.headers.get("Origin");
 
   if (!origin) {
-    // Missing Origin is allowed — the double-submit CSRF token is the
-    // primary defense. Some browsers (especially headless/automated)
-    // omit Origin on same-origin POST requests from JS. The token
-    // validation in validateCsrfToken covers CSRF for those cases.
+    if (requireOrigin) {
+      throw new Response("Missing Origin header", { status: 403 });
+    }
+    // Missing Origin is allowed when requireOrigin is false — the
+    // double-submit CSRF token is the primary defense. Some browsers
+    // (especially headless/automated) omit Origin on same-origin POST
+    // requests from JS. The token validation in validateCsrfToken covers
+    // CSRF for those cases.
     return;
   }
 

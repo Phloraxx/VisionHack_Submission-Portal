@@ -16,8 +16,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   headers.append("Set-Cookie", setCsrfCookie(csrfToken));
   return data({ csrfToken }, { headers });
 }
+
 export async function action({ request }: ActionFunctionArgs) {
-  validateOrigin(request);
+  validateOrigin(request, true);
 
   const formData = await request.formData();
   validateCsrfToken(request, formData);
@@ -29,8 +30,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const pb = createPocketBaseClient();
 
-  // Always succeed (don't reveal whether the email exists). PB's own
-  // rate limits and the Origin check are the abuse defenses.
+  // Always succeed (don't reveal whether the email exists). Origin and
+  // CSRF token validation above prevent abuse.
   try {
     await pb.collection("users").requestPasswordReset(email);
   } catch {
