@@ -41,7 +41,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       if (user?.role) {
         throw redirect(ROLE_DASHBOARD_MAP[user.role]);
       }
-    } catch {
+    } catch (err) {
+      // Re-throw redirects — they are not errors.
+      if (err instanceof Response) throw err;
       // Invalid token — proceed to login
     }
   }
@@ -70,25 +72,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Deduplicate concurrent cache-miss requests
   const promise = statsPromise ?? (statsPromise = (async () => {
-    const [cfg, adminPb] = await Promise.all([
-      getConfig(createPocketBaseClient()),
-      getAdminClient(),
-    ]);
-    const [teams, institutions] = await Promise.all([
-      adminPb.collection("teams").getList(1, 1, { fields: "id" }),
-      adminPb.collection("institutions").getList(1, 1, { fields: "id" }),
-    ]);
-    const result = {
-      teamCount: teams.totalItems,
-      institutionCount: institutions.totalItems,
-      registrationOpen: !!cfg.registration_open,
-      questionnaireOpen: !!cfg.questionnaire_open,
-      submissionOpen: !!cfg.submission_open,
-      cachedAt: Date.now(),
-    };
-    statsCache = result;
-    statsPromise = null;
-    return result;
+    try {
+      const [cfg, adminPb] = await Promise.all([
+        getConfig(createPocketBaseClient()),
+        getAdminClient(),
+      ]);
+      const [teams, institutions] = await Promise.all([
+        adminPb.collection("teams").getList(1, 1, { fields: "id" }),
+        adminPb.collection("institutions").getList(1, 1, { fields: "id" }),
+      ]);
+      const result = {
+        teamCount: teams.totalItems,
+        institutionCount: institutions.totalItems,
+        registrationOpen: !!cfg.registration_open,
+        questionnaireOpen: !!cfg.questionnaire_open,
+        submissionOpen: !!cfg.submission_open,
+        cachedAt: Date.now(),
+      };
+      statsCache = result;
+      return result;
+    } finally {
+      statsPromise = null;
+    }
   })());
   const stats = await promise;
 

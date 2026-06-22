@@ -79,14 +79,12 @@ Key variables:
 |---|---|---|---|
 | `PORT` | No | `3000` | HTTP listen port |
 | `POCKETBASE_URL` | **Yes** | — | URL of the PocketBase instance |
-| `POCKETBASE_SUPER_TOKEN` | **Yes** | — | Superuser admin token for schema migrations |
 | `POCKETBASE_ADMIN_EMAIL` | **Yes** | — | Admin email used during setup |
 | `POCKETBASE_ADMIN_PASSWORD` | **Yes** | — | Admin password used during setup |
 | `ALLOWED_ORIGINS` | No | — | Comma-separated list of allowed CORS origins |
 | `APP_URL` | No | — | Public-facing application URL |
 | `RESEND_API_KEY` | No | — | Resend API key for transactional emails |
-
-**Never commit secrets (`POCKETBASE_SUPER_TOKEN`, `RESEND_API_KEY`, etc.) to version control.**
+**Never commit secrets (`POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD`, `RESEND_API_KEY`, etc.) to version control.**
 
 ## PocketBase Schema
 

@@ -43,8 +43,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // so the post-filter is cheap.
   const clauses: string[] = [];
   if (search) {
-    const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    clauses.push(`(name ~ "${safe}" || teamCode ~ "${safe}")`);
+    const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
+    clauses.push(pb.filter('(name ~ {:search} || teamCode ~ {:search})', { search: safe }));
   }
   if (status && status !== "all" && VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) {
     clauses.push(pb.filter("status = {:status}", { status }));

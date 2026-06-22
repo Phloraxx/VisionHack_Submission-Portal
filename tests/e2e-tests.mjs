@@ -7,8 +7,21 @@ for (const line of readFileSync(".env", "utf8").split("\n")) {
 }
 const APP = "http://localhost:5173";
 const PB = env.POCKETBASE_URL;
-const SUPER = env.POCKETBASE_SUPER_TOKEN;
+const ADMIN_EMAIL = env.POCKETBASE_ADMIN_EMAIL;
+const ADMIN_PASSWORD = env.POCKETBASE_ADMIN_PASSWORD;
 const PW = "REDACTED_TEST_PW";
+let _superToken = null;
+async function getSuperToken() {
+  if (_superToken) return _superToken;
+  const r = await fetch(`${PB}/api/admins/auth-with-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identity: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
+  });
+  const data = await r.json();
+  _superToken = data.token;
+  return _superToken;
+}
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -247,7 +260,7 @@ console.log("\n=========== TEST 7: IDOR ===========");
 // Get all teams as admin first
 {
   const teams = await fetch(`${PB}/api/collections/pbc_1568971955/records?perPage=50&fields=id,name,institutionId`, {
-    headers: { "Authorization": SUPER },
+    headers: { "Authorization": await getSuperToken() },
   }).then(r => r.json());
   const teamIds = teams.items.map(t => t.id);
   PASS(`discovered ${teamIds.length} teams: ${teamIds.join(", ")}`);
@@ -262,7 +275,7 @@ console.log("Meera's institutionId:", meeraInst.record?.institutionId);
 
 // Try to access team detail for a team that belongs to a different institution
 const teamsRaw = await fetch(`${PB}/api/collections/pbc_1568971955/records?perPage=50`, {
-  headers: { "Authorization": SUPER },
+  headers: { "Authorization": await getSuperToken() },
 }).then(r => r.json());
 const meerasInstId = meeraInst.record?.institutionId;
 const otherInstTeams = teamsRaw.items.filter(t => t.institutionId !== meerasInstId);

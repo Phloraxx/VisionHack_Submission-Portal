@@ -7,8 +7,21 @@ for (const line of readFileSync(".env", "utf8").split("\n")) {
 }
 const APP = "http://localhost:5173";
 const PB = env.POCKETBASE_URL;
-const SUPER = env.POCKETBASE_SUPER_TOKEN;
+const ADMIN_EMAIL = env.POCKETBASE_ADMIN_EMAIL;
+const ADMIN_PASSWORD = env.POCKETBASE_ADMIN_PASSWORD;
 const PW = "REDACTED_TEST_PW";
+let _superToken = null;
+async function getSuperToken() {
+  if (_superToken) return _superToken;
+  const r = await fetch(`${PB}/api/admins/auth-with-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identity: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
+  });
+  const data = await r.json();
+  _superToken = data.token;
+  return _superToken;
+}
 
 let cookies = "";
 async function call(path, opts = {}) {
@@ -42,7 +55,7 @@ const r4 = await call("/admin/config", { method: "POST", body: "key=submission_o
 console.log(`enable submission: ${r4.status}`);
 
 // Verify
-const cfg = await fetch(`${PB}/api/collections/pbc_3818476082/records?perPage=10`, { headers: { "Authorization": SUPER } }).then(r => r.json());
+const cfg = await fetch(`${PB}/api/collections/pbc_3818476082/records?perPage=10`, { headers: { "Authorization": await getSuperToken() } }).then(r => r.json());
 console.log("\nCurrent config:");
 for (const c of cfg.items) {
   console.log(`  ${c.key} = ${c.value}`);

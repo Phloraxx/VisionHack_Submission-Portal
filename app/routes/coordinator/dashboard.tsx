@@ -85,8 +85,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const teamClauses: string[] = [];
   if (search) {
-    const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    teamClauses.push(`(name ~ "${safe}" || teamCode ~ "${safe}")`);
+    const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
+    teamClauses.push(pb.filter('(name ~ {:search} || teamCode ~ {:search})', { search: safe }));
   }
   if (status && status !== "all" && VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) {
     teamClauses.push(pb.filter("status = {:status}", { status }));

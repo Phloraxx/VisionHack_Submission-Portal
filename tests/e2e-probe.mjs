@@ -6,8 +6,21 @@ for (const line of readFileSync(".env", "utf8").split("\n")) {
   if (m) env[m[1]] = m[2];
 }
 const PB = env.POCKETBASE_URL;
-const SUPER = env.POCKETBASE_SUPER_TOKEN;
+const ADMIN_EMAIL = env.POCKETBASE_ADMIN_EMAIL;
+const ADMIN_PASSWORD = env.POCKETBASE_ADMIN_PASSWORD;
 const APP = "http://localhost:5173";
+let _superToken = null;
+async function getSuperToken() {
+  if (_superToken) return _superToken;
+  const r = await fetch(`${PB}/api/admins/auth-with-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identity: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
+  });
+  const data = await r.json();
+  _superToken = data.token;
+  return _superToken;
+}
 
 async function call(path, opts = {}) {
   opts.headers = { ...(opts.headers || {}) };
@@ -17,7 +30,7 @@ async function call(path, opts = {}) {
 
 async function list(collection, query = "") {
   return call(`/api/collections/${collection}/records?perPage=500${query ? "&" + query : ""}`, {
-    headers: { "Authorization": SUPER },
+    headers: { "Authorization": await getSuperToken() },
   });
 }
 

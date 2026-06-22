@@ -175,7 +175,7 @@ const CONFIG_RULES = {
 // ---------------------------------------------------------------------------
 // Role-scoped rules — close IDOR on cross-team reads.
 //
-// All app code uses createSuperuserClient() for writes and the user's own
+// All app code uses getAdminClient() for writes and the user's own
 // client for reads, so the rules below restrict *direct* PB REST access
 // (i.e. from a leaked JWT or a developer mistake) to the minimum each role
 // legitimately needs.
@@ -231,15 +231,18 @@ const MEMBERS_RULES = {
 		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
 		'teamId.leaderUserId ?= @request.auth.id)',
 	createRule:
+		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "institution" || ' +
-		'teamId.leaderUserId ?= @request.auth.id',
+		'teamId.leaderUserId ?= @request.auth.id)',
 	updateRule:
+		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
-		'teamId.leaderUserId ?= @request.auth.id',
+		'teamId.leaderUserId ?= @request.auth.id)',
 	deleteRule:
+		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
-		'teamId.leaderUserId ?= @request.auth.id',
+		'teamId.leaderUserId ?= @request.auth.id)',
 } as const;
 
 /** Questionnaire responses — scoped to the user or admin. */
@@ -1258,7 +1261,7 @@ async function ensureRateLimiting(token: string): Promise<void> {
  *    `role` field accepts any string and is a privilege-escalation surface.
  * 3. Update the rule to block setting the `role` or `institutionId`
  *    fields from regular user updates. Superuser operations (via
- *    createSuperuserClient()) bypass API rules entirely, so admin flows
+ *    getAdminClient()) bypass API rules entirely, so admin flows
  *    still work.
  */
 async function ensureUsersCollection(token: string): Promise<void> {

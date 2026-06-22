@@ -7,7 +7,20 @@ for (const line of readFileSync(".env", "utf8").split("\n")) {
 }
 const APP = "http://localhost:5173";
 const PB = env.POCKETBASE_URL;
-const SUPER = env.POCKETBASE_SUPER_TOKEN;
+const ADMIN_EMAIL = env.POCKETBASE_ADMIN_EMAIL;
+const ADMIN_PASSWORD = env.POCKETBASE_ADMIN_PASSWORD;
+let _superToken = null;
+async function getSuperToken() {
+  if (_superToken) return _superToken;
+  const r = await fetch(`${PB}/api/admins/auth-with-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identity: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
+  });
+  const data = await r.json();
+  _superToken = data.token;
+  return _superToken;
+}
 
 let cookies = "";
 async function call(path, opts = {}) {
@@ -33,7 +46,7 @@ console.log(`login: ${r1.status}`);
 // Create a direct email_outbox record (simulating what sendEmail does)
 const create = await fetch(`${PB}/api/collections/pbc_1088766598/records`, {
   method: "POST",
-  headers: { "Authorization": SUPER, "Content-Type": "application/json" },
+  headers: { "Authorization": await getSuperToken(), "Content-Type": "application/json" },
   body: JSON.stringify({
     to: "test-recipient@blackbox-test.com",
     subject: "Test from drain test",
@@ -51,7 +64,7 @@ console.log(`drain: ${drain.status} ${drain.body.slice(0, 200)}`);
 
 // Check outbox
 const outbox = await fetch(`${PB}/api/collections/pbc_1088766598/records?perPage=5`, {
-  headers: { "Authorization": SUPER },
+  headers: { "Authorization": await getSuperToken() },
 }).then(r => r.json());
 for (const m of (outbox.items ?? [])) {
   console.log(`  ${m.id} | to=${m.to} | status=${m.status} | attempts=${m.attempts} | next_attempt_at=${m.next_attempt_at || "-"}`);
