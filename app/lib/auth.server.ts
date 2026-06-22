@@ -92,6 +92,7 @@ export function clearCsrfCookie(): string {
     ...(secure ? ["Secure"] : []),
     "SameSite=Lax",
     "Path=/",
+    "HttpOnly",
     "Max-Age=0",
   ].join("; ");
 }

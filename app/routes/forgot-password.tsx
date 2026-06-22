@@ -3,6 +3,7 @@ import { data } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { createPocketBaseClient } from "~/lib/pocketbase.server";
 import { validateOrigin, validateCsrfToken, generateCsrfToken, setCsrfCookie } from "~/lib/csrf.server";
+import { checkRateLimit } from "~/lib/rate-limiter.server";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -27,6 +28,13 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!email) {
     return data({ error: "Email is required." }, { status: 400 });
   }
+
+  // Rate limiting
+  const ip = request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim()
+    ?? request.headers.get("CF-Connecting-IP")
+    ?? "unknown";
+  checkRateLimit(`forgot:ip:${ip}`, 10, 60_000);     // 10/min per IP
+  checkRateLimit(`forgot:email:${email}`, 3, 60_000); // 3/min per account
 
   const pb = createPocketBaseClient();
 

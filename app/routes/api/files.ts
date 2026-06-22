@@ -87,9 +87,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (contentType) headers.set("Content-Type", contentType);
 
     const disposition = response.headers.get("Content-Disposition");
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
     headers.set(
       "Content-Disposition",
-      disposition ?? `attachment; filename="${filename}"`,
+      disposition ?? `attachment; filename="${safeFilename}"`,
     );
 
     // Forward Content-Length so clients can show progress bars

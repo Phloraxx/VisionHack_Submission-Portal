@@ -219,12 +219,8 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
       }))
       .filter((m) => m.email !== leadEmailLower),
   ];
-
-  await Promise.all(
-    memberPayloads.map((payload) => pb.collection("members").create(payload)),
-  );
-
-  // Now that new members are created, safely remove the old roster.
+  // Delete OLD members first, then create new ones.
+  // Creating-then-deleting caused a bug where all members (old + new) were deleted.
   if (existingTeam) {
     const oldMembers = await pb.collection("members").getFullList({
       filter: pb.filter("teamId = {:teamId}", { teamId }),
@@ -234,6 +230,10 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
       oldMembers.map((m) => pb.collection("members").delete(m.id)),
     );
   }
+
+  const creates = await Promise.all(
+    memberPayloads.map((payload) => pb.collection("members").create(payload)),
+  );
 
   return ok();
 });

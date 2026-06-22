@@ -22,7 +22,8 @@ const handler = createRequestListener({
   getLoadContext: () => ({}),
 });
 
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+const rawPort = process.env.PORT ? Number(process.env.PORT) : 3000;
+const port = Number.isFinite(rawPort) ? rawPort : 3000;
 
 const server = http.createServer(handler);
 
