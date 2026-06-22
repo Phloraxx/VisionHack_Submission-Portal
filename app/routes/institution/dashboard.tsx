@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useLoaderData, Form, useNavigation, useActionData, Link } from "react-router";
+import { useState, useContext } from "react";
+import { useLoaderData, Form, useNavigation, useActionData, Link, useRouteError, isRouteErrorResponse } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
+import { CsrfContext } from "~/routes/dashboard-layout";
 import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
@@ -72,6 +73,7 @@ interface TeamWithExpand {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { pb, user } = await requireRole(request, ["institution"]);
+  pb.autoCancellation(false);
 
   // Resolve this institution via the user's id (no full scan).
   const institution = await getInstitutionForUser(pb, user.id);
@@ -267,6 +269,7 @@ export default function InstitutionDashboard() {
   const navigation = useNavigation();
   const actionData = useActionData() as { success?: boolean; error?: string } | undefined;
   const isSubmitting = navigation.state === "submitting";
+  const csrfToken = useContext(CsrfContext);
 
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
@@ -402,6 +405,7 @@ export default function InstitutionDashboard() {
               </div>
             )}
             <Form method="post">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
               <input type="hidden" name="intent" value="invite-lead" />
               <input type="hidden" name="name" value={inviteName} />
               <input type="hidden" name="email" value={inviteEmail} />
@@ -581,6 +585,7 @@ export default function InstitutionDashboard() {
                         <div className="space-y-2">
                           {team.status === "registered" && (
                             <Form method="post">
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
                               <input
                                 type="hidden"
                                 name="intent"
@@ -606,6 +611,7 @@ export default function InstitutionDashboard() {
                           )}
                           {team.status === "shortlisted" && (
                             <Form method="post">
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
                               <input
                                 type="hidden"
                                 name="intent"
@@ -761,9 +767,18 @@ export function HydrateFallback() {
   );
 }
 
-export function ErrorBoundary({ error }: { error: Error }) {
+export function ErrorBoundary() {
+  const error = useRouteError();
   let message = "Something went wrong";
-  if (error instanceof Error) message = error.message;
+
+  if (isRouteErrorResponse(error)) {
+    message = error.data && typeof error.data === "string"
+      ? error.data
+      : `${error.status} ${error.statusText}`;
+  } else if (error instanceof Error) {
+    message = error.message;
+  }
+
   return (
     <div className="flex min-h-[50vh] items-center justify-center p-8">
       <div className="mx-auto max-w-md text-center">

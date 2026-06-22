@@ -50,15 +50,9 @@ describe("validateOrigin", () => {
     }
   });
 
-  it("rejects a request with no Origin header", () => {
+  it("allows a request with no Origin header (CSRF cookie is primary defense)", () => {
     const request = new Request("http://localhost:5173/test");
-    try {
-      validateOrigin(request);
-      expect.fail("Expected validateOrigin to throw");
-    } catch (e) {
-      expect(e).toBeInstanceOf(Response);
-      expect((e as Response).status).toBe(403);
-    }
+    expect(() => validateOrigin(request)).not.toThrow();
   });
 
   // -----------------------------------------------------------------------

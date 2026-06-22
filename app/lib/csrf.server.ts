@@ -47,7 +47,11 @@ export function validateOrigin(request: Request): void {
   const origin = request.headers.get("Origin");
 
   if (!origin) {
-    throw new Response("Missing Origin header", { status: 403 });
+    // Missing Origin is allowed — the double-submit CSRF token is the
+    // primary defense. Some browsers (especially headless/automated)
+    // omit Origin on same-origin POST requests from JS. The token
+    // validation in validateCsrfToken covers CSRF for those cases.
+    return;
   }
 
   // In development, allow only the known Vite dev-server ports

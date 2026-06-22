@@ -60,6 +60,7 @@ const PAGE_SIZE = 50;
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user } = await requireRole(request, ["coordinator"]);
   const pb = createSuperuserClient();
+  pb.autoCancellation(false);
 
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);

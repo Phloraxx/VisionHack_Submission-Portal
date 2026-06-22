@@ -89,8 +89,12 @@ export function secureAction<C extends ActionContext = ActionContext>(
   handler: Handler<C>,
 ) {
   return async ({ request, params }: ActionFunctionArgs): Promise<ActionResult> => {
-    // 1. CSRF
-    validateOrigin(request);
+    // 1. CSRF (Origin header)
+    try {
+      validateOrigin(request);
+    } catch {
+      return fail({ error: "Invalid request origin", status: 403 });
+    }
 
     // 2. Form parse
     let formData: FormData;
@@ -100,11 +104,26 @@ export function secureAction<C extends ActionContext = ActionContext>(
       return fail({ error: "Invalid form data", status: 400 });
     }
 
-    // 3. CSRF token (double-submit)
-    validateCsrfToken(request, formData);
+    // 3. CSRF token (double-submit cookie pattern)
+    try {
+      validateCsrfToken(request, formData);
+    } catch {
+      return fail({ error: "Invalid CSRF token", status: 403 });
+    }
 
-    // 4. Auth + role
-    const { pb, user } = await requireRole(request, options.roles);
+    // 4. Auth + role — catch redirects and return JSON instead
+    let pb: PocketBase;
+    let user: UserRecord;
+    try {
+      const auth = await requireRole(request, options.roles);
+      pb = auth.pb;
+      user = auth.user;
+    } catch (err) {
+      if (err instanceof Response && err.status >= 300 && err.status < 400) {
+        return fail({ error: "Authentication required", status: 401 });
+      }
+      throw err;
+    }
 
     // 5. Schema validation
 

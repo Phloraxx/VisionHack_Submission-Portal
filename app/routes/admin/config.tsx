@@ -1,12 +1,14 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useContext } from "react";
 import { useLoaderData, Form } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
+import { CsrfContext } from "~/routes/dashboard-layout";
 import { requireRole } from "~/lib/auth.server";
 import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { Switch } from "~/components/ui/switch";
+import { Skeleton } from "~/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   UserPlus,
@@ -63,13 +65,45 @@ export function meta() {
   return [{ title: "Event Config — VisionHack" }];
 }
 
+export function HydrateFallback() {
+  return (
+    <div className="space-y-10">
+      <div>
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="mt-2 h-7 w-32" />
+        <Skeleton className="mt-1 h-4 w-72" />
+      </div>
+      <div className="max-w-lg space-y-1">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between rounded-lg px-4 py-3"
+          >
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 rounded-lg" />
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-40" />
+              </div>
+            </div>
+            <Skeleton className="h-5 w-9 rounded-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminConfig() {
-  const { configMap } = useLoaderData() as {
-    configMap: Record<string, boolean>;
-  };
+  const data = useLoaderData() as
+    | { configMap: Record<string, boolean> }
+    | null
+    | undefined;
+  const configMap = data?.configMap ?? {};
 
   const formRefs = useRef<Record<string, HTMLFormElement | null>>({});
   const [toggling, setToggling] = useState<string | null>(null);
+  const csrfToken = useContext(CsrfContext);
 
   const handleToggle = (key: string, label: string, checked: boolean) => {
     setToggling(key);
@@ -121,6 +155,7 @@ export default function AdminConfig() {
                   formRefs.current[flag.key] = el;
                 }}
               >
+                <input type="hidden" name="csrf_token" value={csrfToken} />
                 <input type="hidden" name="key" value={flag.key} />
                 <input type="hidden" name="value" value={String(!isEnabled)} />
                 <Switch

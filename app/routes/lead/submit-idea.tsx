@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
@@ -8,6 +8,7 @@ import {
   useNavigation,
   useActionData,
 } from "react-router";
+import { CsrfContext } from "~/routes/dashboard-layout";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
@@ -227,6 +228,7 @@ export default function LeadSubmitIdea() {
   });
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+  const csrfToken = useContext(CsrfContext);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
@@ -365,6 +367,7 @@ export default function LeadSubmitIdea() {
           </CardHeader>
           <CardContent>
             <Form method="post" encType="multipart/form-data" className="space-y-6">
+            <input type="hidden" name="csrf_token" value={csrfToken} />
               <div className="space-y-2">
                 <Label htmlFor="ideaTitle">
                   Idea Title{" "}

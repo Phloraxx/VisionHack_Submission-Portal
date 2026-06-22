@@ -1,3 +1,6 @@
+import { useContext } from "react";
+import { CsrfContext } from "~/routes/dashboard-layout";
+
 import { Form, Link } from "react-router";
 import {
   STATUS_LABELS,
@@ -139,6 +142,7 @@ export default function TeamDetail({
 }: TeamDetailProps) {
   const inst = team.expand?.institutionId;
   const leader = team.expand?.leaderUserId;
+  const csrfToken = useContext(CsrfContext);
 
   return (
     <div>
@@ -372,6 +376,7 @@ export default function TeamDetail({
                 validTransitions.map((nextStatus) => {
                   return (
                     <Form method="post" key={nextStatus}>
+                      <input type="hidden" name="csrf_token" value={csrfToken} />
                       <input type="hidden" name="intent" value="transition" />
                       <input
                         type="hidden"
