@@ -4,7 +4,6 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus, TeamView, MemberRecord } from "~/lib/types";
 import { escapeCsv } from "~/lib/utils";
@@ -36,7 +35,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ? (rawStatus as TeamStatus)
     : "all";
 
-  const pb = createSuperuserClient();
+  const pb = auth.pb;
 
   // Push the status filter into PocketBase instead of fetching everything
   // and filtering in JS.

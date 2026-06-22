@@ -88,6 +88,7 @@ export const action = secureAction(
         to: toStatus,
         role: user.role,
         institutionId: institution.id,
+        actorUserId: user.id,
       });
       if (!result.ok) return result.response;
 

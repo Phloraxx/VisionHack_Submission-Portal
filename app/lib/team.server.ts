@@ -89,6 +89,7 @@ export interface TransitionArgs {
   role: Role;
   /** When set, enforces the team belongs to this institution (IDOR guard). */
   institutionId?: string;
+  actorUserId: string;
 }
 
 /**
@@ -111,7 +112,7 @@ export type TransitionResult =
  */
 export async function transitionTeamStatus(
   pb: PocketBase,
-  { teamId, to, role, institutionId }: TransitionArgs,
+  { teamId, to, role, institutionId, actorUserId }: TransitionArgs,
 ): Promise<TransitionResult> {
   let team: TeamRecord;
   try {
@@ -143,6 +144,19 @@ export async function transitionTeamStatus(
     }, { filter: pb.filter("status = {:expected}", { expected: team.status }) });
   } catch {
     return { ok: false, response: fail({ error: "This team's status was changed by another action. Please refresh and try again.", status: 409 }) };
+  }
+  // Best-effort audit log — failures are logged but don't fail the transition.
+  try {
+    await pb.collection("status_transitions").create({
+      teamId,
+      actorUserId,
+      fromStatus: team.status,
+      toStatus: to,
+      role,
+      at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("[audit] Failed to log status transition:", err);
   }
 
   return { ok: true };

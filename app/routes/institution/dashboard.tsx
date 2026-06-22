@@ -232,6 +232,7 @@ export const action = secureAction({ roles: ["institution"] }, async ({ formData
         to,
         role: "institution",
         institutionId: institution.id,
+        actorUserId: user.id,
       });
       if (!result.ok) return result.response;
       return ok();

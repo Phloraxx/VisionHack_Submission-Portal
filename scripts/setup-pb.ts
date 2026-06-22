@@ -843,6 +843,9 @@ async function ensureInstitutionsCollection(
 				values: ["active", "suspended"],
 			},
 		],
+		indexes: [
+			"CREATE UNIQUE INDEX idx_institutions_code ON institutions (code)",
+		],
 		...NO_RULES,
 	});
 }
@@ -856,7 +859,7 @@ async function ensureMembersCollection(
 	const existing = await getCollection(token, "members");
 	if (existing) {
 		console.log(
-			"  ✅ «members» collection already exists — skipping creation",
+			"  ⚠️  Existing members collection — index not added (run manually if needed)",
 		);
 		return;
 	}
@@ -917,6 +920,9 @@ async function ensureMembersCollection(
 				pattern: "",
 			},
 		],
+		indexes: [
+			"CREATE INDEX idx_members_team ON members (teamId)",
+		],
 		...NO_RULES,
 	});
 }
@@ -975,6 +981,9 @@ async function ensureConfigCollection(token: string): Promise<void> {
 				type: "bool",
 				required: false, // required:true prevents saving `false` values
 			},
+		],
+		indexes: [
+			"CREATE UNIQUE INDEX idx_config_key ON config (key)",
 		],
 		...CONFIG_RULES,
 	});
@@ -1106,6 +1115,90 @@ async function ensureQuestionnaireResponsesCollection(
 }
 
 
+async function ensureStatusTransitionsCollection(
+	token: string,
+	collectionIds: Map<string, string>,
+): Promise<void> {
+	console.log("\n🔧 Ensuring «status_transitions» collection…");
+
+	const existing = await getCollection(token, "status_transitions");
+	if (existing) {
+		console.log(
+			"  ✅ «status_transitions» collection already exists — skipping creation",
+		);
+		return;
+	}
+
+	const teamsId = collectionIds.get("teams");
+	const usersId = collectionIds.get("users");
+
+	if (!teamsId || !usersId) {
+		throw new Error(
+			"Cannot resolve collection IDs for relations (teams or users missing).",
+		);
+	}
+
+	await createCollection(token, {
+		name: "status_transitions",
+		type: "base",
+		fields: [
+			{
+				name: "teamId",
+				type: "relation",
+				required: true,
+				collectionId: teamsId ?? "",
+				cascadeDelete: true,
+				maxSelect: 1,
+				minSelect: null,
+			},
+			{
+				name: "actorUserId",
+				type: "relation",
+				required: true,
+				collectionId: usersId ?? "",
+				cascadeDelete: false,
+				maxSelect: 1,
+				minSelect: null,
+			},
+			{
+				name: "fromStatus",
+				type: "text",
+				required: true,
+				min: null,
+				max: 20,
+				pattern: "",
+			},
+			{
+				name: "toStatus",
+				type: "text",
+				required: true,
+				min: null,
+				max: 20,
+				pattern: "",
+			},
+			{
+				name: "role",
+				type: "text",
+				required: true,
+				min: null,
+				max: 20,
+				pattern: "",
+			},
+			{
+				name: "at",
+				type: "date",
+				required: true,
+			},
+		],
+		indexes: [
+			"CREATE INDEX idx_st_team ON status_transitions (teamId)",
+			"CREATE INDEX idx_st_at ON status_transitions (at)",
+		],
+		...NO_RULES,
+	});
+}
+
+[scripts/setup-pb.ts#F4E3]
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -1262,6 +1355,7 @@ async function main(): Promise<void> {
 	await ensureMembersCollection(token, refreshedIds);
 	await ensureQuestionnaireResponsesCollection(token, refreshedIds);
 	await ensureConfigCollection(token);
+	await ensureStatusTransitionsCollection(token, refreshedIds);
 
 	// Apply role-scoped API rules (closes cross-team IDOR on direct PB access).
 	console.log("\n🔧 Applying role-scoped API rules…");

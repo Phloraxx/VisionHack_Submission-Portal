@@ -28,8 +28,7 @@ const FLAG_ICONS: Record<string, LucideIcon> = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { user } = await requireRole(request, ["admin"]);
-  const pb = createSuperuserClient();
+  const { user, pb } = await requireRole(request, ["admin"]);
   const configMap = await getConfig(pb);
   return { user, configMap };
 }

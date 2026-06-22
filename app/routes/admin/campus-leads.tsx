@@ -7,7 +7,6 @@ import {
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
-import { createSuperuserClient } from "~/lib/pocketbase.server";
 import { createCampusLead } from "~/lib/team.server";
 import { getStr } from "~/lib/form.server";
 import {
@@ -57,9 +56,7 @@ function parseCsvLine(line: string): string[] {
 // ---------------------------------------------------------------------------
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { user } = await requireRole(request, ["admin"]);
-  const pb = createSuperuserClient();
-
+  const { user, pb } = await requireRole(request, ["admin"]);
   const institutions = await pb.collection("institutions").getFullList<{
     id: string;
     name: string;
@@ -85,8 +82,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 // Action
 // ---------------------------------------------------------------------------
 
-export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent }) => {
-  const pb = createSuperuserClient();
+export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent, pb }) => {
 
   if (intent === "create-single") {
     const institutionName = getStr(formData, "institutionName");

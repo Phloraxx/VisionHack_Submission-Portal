@@ -48,8 +48,7 @@ interface LoaderData {
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const role = detectRole(request.url);
-  const { user } = await requireRole(request, [role]);
-  const pb = createSuperuserClient();
+  const { user, pb } = await requireRole(request, [role]);
   const teamId = params.teamId as string;
 
   // Team, members, and questionnaire are independent reads — run together.
@@ -108,6 +107,7 @@ export const action = secureAction(
         teamId,
         to: toStatus,
         role: user.role,
+        actorUserId: user.id,
       });
       if (!result.ok) return result.response;
 

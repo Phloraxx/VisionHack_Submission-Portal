@@ -122,6 +122,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ user, pb, inten
       teamId: team.id,
       to: "withdrawn",
       role: "lead",
+      actorUserId: user.id,
     });
     if (!result.ok) return result.response;
     return ok();
