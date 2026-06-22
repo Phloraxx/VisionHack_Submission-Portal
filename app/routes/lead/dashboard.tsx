@@ -20,6 +20,8 @@ import { ProgressBar } from "~/components/shared/progress-bar";
 import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { ConfirmButton } from "~/components/shared/confirm-button";
+import { Row } from "~/components/shared/row";
+import { Callout } from "~/components/shared/callout";
 import {
   UserPlus,
   FileText,
@@ -480,23 +482,20 @@ export default function LeadDashboard() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Row label="Team name" value={team.name} />
-              {team.teamCode && <Row label="Team code" value={team.teamCode} mono />}
-              {institutionName && <Row label="Institution" value={institutionName} />}
+              <Row label="Team name">{team.name}</Row>
+              {team.teamCode && <Row label="Team code">{team.teamCode}</Row>}
+              {institutionName && <Row label="Institution">{institutionName}</Row>}
               {campusLeadName && (
-                <Row
-                  label="Campus lead"
-                  value={
-                    <span>
-                      {campusLeadName}
-                      {campusLeadEmail && (
-                        <span className="block text-xs text-muted-foreground">
-                          {campusLeadEmail}
-                        </span>
-                      )}
-                    </span>
-                  }
-                />
+                <Row label="Campus lead">
+                  <span>
+                    {campusLeadName}
+                    {campusLeadEmail && (
+                      <span className="block text-xs text-muted-foreground">
+                        {campusLeadEmail}
+                      </span>
+                    )}
+                  </span>
+                </Row>
               )}
             </div>
 
@@ -556,43 +555,7 @@ export default function LeadDashboard() {
   );
 }
 
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={`text-sm font-medium text-right ${mono ? "font-mono" : ""}`}>
-        {value}
-      </span>
-    </div>
-  );
-}
 
-function Callout({
-  tone,
-  children,
-}: {
-  tone: "info" | "success" | "danger";
-  children: React.ReactNode;
-}) {
-  const styles = {
-    info: "border-info/30 bg-info/8 text-info",
-    success: "border-success/30 bg-success/8 text-success",
-    danger: "border-danger/30 bg-danger/8 text-danger",
-  }[tone];
-  return (
-    <div className={`rounded-md border px-3 py-2.5 text-sm ${styles}`}>
-      {children}
-    </div>
-  );
-}
 
 export function HydrateFallback() {
   return (

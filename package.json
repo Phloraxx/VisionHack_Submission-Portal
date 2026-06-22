@@ -10,7 +10,10 @@
 		"start:prod": "NODE_ENV=production node server.ts",
 		"setup:pb": "tsx scripts/setup-pb.ts",
 		"test": "vitest run",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"lint:fix": "biome check --apply ."
 	},
 	"dependencies": {
 		"@fontsource-variable/geist": "^5.2.9",

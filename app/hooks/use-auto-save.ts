@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 
 /**
- * Auto-saves form state to sessionStorage at a given interval.
+ * Auto-saves form state to sessionStorage using a debounced write.
  *
  * sessionStorage survives page refresh but is cleared on tab close —
  * the right scope for a form draft (PII shouldn't persist across sessions
@@ -14,13 +14,11 @@ import { useEffect, useRef, useCallback, useState } from "react";
 export function useAutoSave<T>(
   /** Unique key used as the storage key. */
   key: string,
-  /** Auto-save interval in ms (default: 5000). */
-  intervalMs = 5000,
   /** Whether to auto-clear saved data when the component unmounts. */
   clearOnUnmount = false,
 ) {
   const dataRef = useRef<T | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const storageKey = `autosave:${key}`;
 
@@ -36,16 +34,21 @@ export function useAutoSave<T>(
     }
   });
 
-  // Persist current data to sessionStorage
+  // Persist current data to sessionStorage (debounced — 500ms after last call).
   const save = useCallback(
     (data: T) => {
       dataRef.current = data;
       if (typeof window === "undefined") return;
-      try {
-        sessionStorage.setItem(storageKey, JSON.stringify(data));
-      } catch {
-        // sessionStorage full or unavailable — silently fail
-      }
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(dataRef.current));
+        } catch {
+          if (import.meta.env.DEV) {
+            console.warn("useAutoSave: sessionStorage.setItem failed", storageKey);
+          }
+        }
+      }, 500);
     },
     [storageKey],
   );
@@ -53,6 +56,7 @@ export function useAutoSave<T>(
   // Clear saved data
   const clearSaved = useCallback(() => {
     dataRef.current = null;
+    if (timerRef.current) clearTimeout(timerRef.current);
     if (typeof window === "undefined") return;
     try {
       sessionStorage.removeItem(storageKey);
@@ -61,19 +65,13 @@ export function useAutoSave<T>(
     }
   }, [storageKey]);
 
-  // Periodic auto-save
+  // Cleanup on unmount
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      if (dataRef.current !== null) {
-        save(dataRef.current);
-      }
-    }, intervalMs);
-
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
       if (clearOnUnmount) clearSaved();
     };
-  }, [intervalMs, clearOnUnmount, save, clearSaved]);
+  }, [clearOnUnmount, clearSaved]);
 
   return { savedData: initial, save, clearSaved } as const;
 }

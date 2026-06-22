@@ -37,4 +37,5 @@ export default [
   route("api/institutions", "routes/api/institutions.ts"),
   route("api/export/csv", "routes/api/export/csv.ts"),
   route("api/files/:collection/:recordId/:filename", "routes/api/files.ts"),
+  route("api/health", "routes/api/health.ts"),
 ] satisfies RouteConfig;

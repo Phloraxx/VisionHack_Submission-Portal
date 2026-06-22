@@ -35,17 +35,7 @@ import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator"
 import { PanelHeader } from "~/components/shared/panel-header";
 import { ReviewSummary } from "~/components/shared/review-summary";
 import { useActionToast } from "~/hooks/use-action-toast";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_MIME_TYPES = [
-  "application/pdf",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-];
+import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from "~/lib/constants";
 
 // Magic bytes for file type verification (first bytes of the file)
 // Prevents renamed .exe files from being uploaded as PDF/PPT
@@ -166,7 +156,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
     if (file.size > MAX_FILE_SIZE) {
       return fail({ fieldErrors: { file: "File must be less than 10 MB" } });
     }
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
       return fail({ fieldErrors: { file: "Only PDF and PPT files are allowed" } });
     }
     if (!(await validateFileSignature(file))) {
@@ -258,9 +248,7 @@ export default function LeadSubmitIdea() {
         e.target.value = "";
         return;
       }
-      if (
-        !ALLOWED_MIME_TYPES.includes(file.type)
-      ) {
+      if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
         setFileError("Only PDF and PPT files are allowed");
         e.target.value = "";
         return;
@@ -377,6 +365,8 @@ export default function LeadSubmitIdea() {
                 </Label>
                 <Input
                   id="ideaTitle"
+                  aria-invalid={!!actionData?.fieldErrors?.ideaTitle}
+                  aria-describedby={actionData?.fieldErrors?.ideaTitle ? "ideaTitle-error" : undefined}
                   name="ideaTitle"
                   value={ideaTitle}
                   onChange={(e) => setIdeaTitle(e.target.value)}
@@ -386,7 +376,7 @@ export default function LeadSubmitIdea() {
                   required
                 />
                 {actionData?.fieldErrors?.ideaTitle && (
-                  <p className="text-sm text-destructive">
+                  <p id="ideaTitle-error" className="text-sm text-destructive" role="alert">
                     {actionData.fieldErrors.ideaTitle}
                   </p>
                 )}
@@ -399,6 +389,8 @@ export default function LeadSubmitIdea() {
                 </Label>
                 <Textarea
                   id="ideaDescription"
+                  aria-invalid={!!actionData?.fieldErrors?.ideaDescription}
+                  aria-describedby={actionData?.fieldErrors?.ideaDescription ? "ideaDescription-error" : undefined}
                   name="ideaDescription"
                   value={ideaDescription}
                   onChange={(e) =>
@@ -411,7 +403,7 @@ export default function LeadSubmitIdea() {
                   required
                 />
                 {actionData?.fieldErrors?.ideaDescription && (
-                  <p className="text-sm text-destructive">
+                  <p id="ideaDescription-error" className="text-sm text-destructive" role="alert">
                     {actionData.fieldErrors.ideaDescription}
                   </p>
                 )}
@@ -424,6 +416,8 @@ export default function LeadSubmitIdea() {
                 </Label>
                 <Input
                   id="techStack"
+                  aria-invalid={!!actionData?.fieldErrors?.techStack}
+                  aria-describedby={actionData?.fieldErrors?.techStack ? "techStack-error" : undefined}
                   name="techStack"
                   value={techStack}
                   onChange={(e) => setTechStack(e.target.value)}
@@ -433,7 +427,7 @@ export default function LeadSubmitIdea() {
                   required
                 />
                 {actionData?.fieldErrors?.techStack && (
-                  <p className="text-sm text-destructive">
+                  <p id="techStack-error" className="text-sm text-destructive" role="alert">
                     {actionData.fieldErrors.techStack}
                   </p>
                 )}
@@ -446,10 +440,11 @@ export default function LeadSubmitIdea() {
                 <div className="relative rounded-lg border-2 border-dashed border-border p-6 transition-colors hover:bg-muted/50">
                   <Input
                     id="file"
+                    aria-invalid={!!(fileError || actionData?.fieldErrors?.file)}
                     name="file"
                     type="file"
                     accept=".pdf,.ppt,.pptx"
-                    aria-describedby="file-hint"
+                    aria-describedby={(fileError || actionData?.fieldErrors?.file) ? "file-hint file-error" : "file-hint"}
                     onChange={handleFileChange}
                     className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                     disabled={!submissionOpen}
@@ -469,12 +464,12 @@ export default function LeadSubmitIdea() {
                   </div>
                 </div>
                 {fileError && (
-                  <p className="text-sm text-destructive mt-2" role="alert">
+                  <p id="file-error" className="text-sm text-destructive mt-2" role="alert">
                     {fileError}
                   </p>
                 )}
                 {actionData?.fieldErrors?.file && (
-                  <p className="text-sm text-destructive">
+                  <p id="file-error" className="text-sm text-destructive" role="alert">
                     {actionData.fieldErrors.file}
                   </p>
                 )}
@@ -528,6 +523,28 @@ export default function LeadSubmitIdea() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div className="flex items-center justify-center p-8">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+export function ErrorBoundary({ error }: { error: Error }) {
+  let message = "Something went wrong";
+  if (error instanceof Error) message = error.message;
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center p-8">
+      <div className="mx-auto max-w-md text-center">
+        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
+        <h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
+        <button onClick={() => window.location.reload()} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">Try again</button>
+      </div>
     </div>
   );
 }

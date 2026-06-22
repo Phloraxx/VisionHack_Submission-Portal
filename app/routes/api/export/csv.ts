@@ -77,49 +77,61 @@ export async function loader({ request }: LoaderFunctionArgs) {
     "Member 5 Name", "Member 5 Email", "Member 5 Phone", "Member 5 Gender", "Member 5 Role",
   ];
 
-  const rows = filtered.map((team) => {
-    const inst = team.expand?.institutionId;
-    const leader = team.expand?.leaderUserId;
-    const teamMembers = membersByTeam[team.id] || [];
+/**
+ * Build a single CSV row from a team and its members.
+ */
+function buildRow(team: TeamView, members: MemberRecord[]): string {
+  const inst = team.expand?.institutionId;
+  const leader = team.expand?.leaderUserId;
 
-    const row = [
-      escapeCsv(team.name),
-      escapeCsv(team.teamCode || ""),
-      escapeCsv(STATUS_LABELS[team.status] || team.status),
-      escapeCsv(inst?.name || ""),
-      escapeCsv(inst?.district || ""),
-      escapeCsv(leader?.name || ""),
-      escapeCsv(leader?.email || ""),
-      escapeCsv(team.idea_title || ""),
-      escapeCsv(team.idea_desc || ""),
-      escapeCsv(team.idea_tech_stack || ""),
-      escapeCsv(team.submission_file || ""),
-      escapeCsv(team.created || ""),
-      String(teamMembers.length),
-    ];
+  const row = [
+    escapeCsv(team.name),
+    escapeCsv(team.teamCode || ""),
+    escapeCsv(STATUS_LABELS[team.status] || team.status),
+    escapeCsv(inst?.name || ""),
+    escapeCsv(inst?.district || ""),
+    escapeCsv(leader?.name || ""),
+    escapeCsv(leader?.email || ""),
+    escapeCsv(team.idea_title || ""),
+    escapeCsv(team.idea_desc || ""),
+    escapeCsv(team.idea_tech_stack || ""),
+    escapeCsv(team.submission_file || ""),
+    escapeCsv(team.created || ""),
+    String(members.length),
+  ];
 
-    for (let i = 0; i < 5; i++) {
-      const m = teamMembers[i];
-      row.push(
-        escapeCsv(m?.fullName || ""),
-        escapeCsv(m?.email || ""),
-        escapeCsv(m?.phone || ""),
-        escapeCsv(m?.gender || ""),
-        escapeCsv(m?.role || ""),
-      );
+  for (let i = 0; i < 5; i++) {
+    const m = members[i];
+    row.push(
+      escapeCsv(m?.fullName || ""),
+      escapeCsv(m?.email || ""),
+      escapeCsv(m?.phone || ""),
+      escapeCsv(m?.gender || ""),
+      escapeCsv(m?.role || ""),
+    );
+  }
+  return row.join(",");
+}
+
+const encoder = new TextEncoder();
+const stream = new ReadableStream({
+  start(controller) {
+    controller.enqueue(encoder.encode("\uFEFF" + headers.join(",") + "\n"));
+    for (const team of filtered) {
+      const row = buildRow(team, membersByTeam[team.id] || []);
+      controller.enqueue(encoder.encode(row + "\n"));
     }
-    return row.join(",");
-  });
+    controller.close();
+  },
+});
 
-  const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-
-  return new Response(csv, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="teams_export_${new Date().toISOString().split("T")[0]}.csv"`,
-      // PII export — never cache.
-      "Cache-Control": "no-store",
-    },
-  });
+return new Response(stream, {
+  status: 200,
+  headers: {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="teams_export_${new Date().toISOString().split("T")[0]}.csv"`,
+    // PII export — never cache.
+    "Cache-Control": "no-store",
+  },
+});
 }

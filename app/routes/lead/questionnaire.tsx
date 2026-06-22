@@ -307,6 +307,23 @@ export default function LeadQuestionnaire() {
     }
   };
 
+  const handleTabKeyDown = (
+    e: React.KeyboardEvent,
+    sectionIds: SectionId[],
+    currentIdx: number,
+  ) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const nextIdx =
+        e.key === "ArrowRight"
+          ? Math.min(currentIdx + 1, sectionIds.length - 1)
+          : Math.max(currentIdx - 1, 0);
+      if (nextIdx !== currentIdx) {
+        setCurrentSection(sectionIds[nextIdx]);
+      }
+    }
+  };
+
   const updateField = (field: string, value: string) => {
     setFormValues((prev) => ({ ...prev, [field]: value }));
   };
@@ -340,13 +357,22 @@ export default function LeadQuestionnaire() {
           {actionData.error}
         </div>
       )}
-
-      {/* Section navigation */}
-      <div className="flex gap-2">
+      <div
+        className="flex gap-2"
+        role="tablist"
+        onKeyDown={(e) =>
+          handleTabKeyDown(e, sectionIds, currentIdx)
+        }
+      >
         {SECTIONS.map((s, i) => (
           <button
             key={s.id}
             type="button"
+            role="tab"
+            id={`section-tab-${s.id}`}
+            aria-selected={currentSection === s.id}
+            aria-controls={`section-panel-${s.id}`}
+            tabIndex={currentSection === s.id ? 0 : -1}
             onClick={() => setCurrentSection(s.id)}
             className={`flex-1 rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors ${
               currentSection === s.id
@@ -359,10 +385,11 @@ export default function LeadQuestionnaire() {
         ))}
       </div>
 
+
       <Form method="post" className="space-y-6">
         {/* Section 1: Personal Info */}
         {currentSection === "personal" && (
-          <Card key="personal" className="panel-enter">
+          <Card key="personal" className="panel-enter" role="tabpanel" id="section-panel-personal" aria-labelledby="section-tab-personal">
             <CardHeader>
               <CardTitle>Personal Info</CardTitle>
               <CardDescription>
@@ -377,6 +404,8 @@ export default function LeadQuestionnaire() {
                   </Label>
                   <Input
                     id="age"
+                    aria-invalid={!!actionData?.fieldErrors?.age}
+                    aria-describedby={actionData?.fieldErrors?.age ? "age-error" : undefined}
                     name="age"
                     type="number"
                     placeholder="Your age"
@@ -386,7 +415,7 @@ export default function LeadQuestionnaire() {
                     required
                   />
                   {actionData?.fieldErrors?.age && (
-                    <p className="text-sm text-destructive">
+                    <p id="age-error" className="text-sm text-destructive" role="alert">
                       {actionData.fieldErrors.age}
                     </p>
                   )}
@@ -402,7 +431,7 @@ export default function LeadQuestionnaire() {
                     disabled={!questionnaireOpen}
                     name="gender"
                   >
-                    <SelectTrigger id="gender">
+                    <SelectTrigger id="gender" aria-invalid={!!actionData?.fieldErrors?.gender} aria-describedby={actionData?.fieldErrors?.gender ? "gender-error" : undefined}>
                       <SelectValue placeholder="Select gender" />
                     </SelectTrigger>
                     <SelectContent>
@@ -412,7 +441,7 @@ export default function LeadQuestionnaire() {
                     </SelectContent>
                   </Select>
                   {actionData?.fieldErrors?.gender && (
-                    <p className="text-sm text-destructive">
+                    <p id="gender-error" className="text-sm text-destructive" role="alert">
                       {actionData.fieldErrors.gender}
                     </p>
                   )}
@@ -428,7 +457,7 @@ export default function LeadQuestionnaire() {
                     disabled={!questionnaireOpen}
                     name="education"
                   >
-                    <SelectTrigger id="education">
+                    <SelectTrigger id="education" aria-invalid={!!actionData?.fieldErrors?.education} aria-describedby={actionData?.fieldErrors?.education ? "education-error" : undefined}>
                       <SelectValue placeholder="Select education" />
                     </SelectTrigger>
                     <SelectContent>
@@ -448,7 +477,7 @@ export default function LeadQuestionnaire() {
                     </SelectContent>
                   </Select>
                   {actionData?.fieldErrors?.education && (
-                    <p className="text-sm text-destructive">
+                    <p id="education-error" className="text-sm text-destructive" role="alert">
                       {actionData.fieldErrors.education}
                     </p>
                   )}
@@ -461,6 +490,8 @@ export default function LeadQuestionnaire() {
                   </Label>
                   <Input
                     id="college_name"
+                    aria-invalid={!!actionData?.fieldErrors?.college_name}
+                    aria-describedby={actionData?.fieldErrors?.college_name ? "college_name-error" : undefined}
                     name="college_name"
                     placeholder="Your college name"
                     value={formValues.college_name}
@@ -471,7 +502,7 @@ export default function LeadQuestionnaire() {
                     required
                   />
                   {actionData?.fieldErrors?.college_name && (
-                    <p className="text-sm text-destructive">
+                    <p id="college_name-error" className="text-sm text-destructive" role="alert">
                       {actionData.fieldErrors.college_name}
                     </p>
                   )}
@@ -483,6 +514,8 @@ export default function LeadQuestionnaire() {
                   </Label>
                   <Input
                     id="district"
+                    aria-invalid={!!actionData?.fieldErrors?.district}
+                    aria-describedby={actionData?.fieldErrors?.district ? "district-error" : undefined}
                     name="district"
                     placeholder="Your district"
                     value={formValues.district}
@@ -493,7 +526,7 @@ export default function LeadQuestionnaire() {
                     required
                   />
                   {actionData?.fieldErrors?.district && (
-                    <p className="text-sm text-destructive">
+                    <p id="district-error" className="text-sm text-destructive" role="alert">
                       {actionData.fieldErrors.district}
                     </p>
                   )}
@@ -505,7 +538,7 @@ export default function LeadQuestionnaire() {
 
         {/* Section 2: Skills & Interests */}
         {currentSection === "skills" && (
-          <Card key="skills" className="panel-enter">
+          <Card key="skills" className="panel-enter" role="tabpanel" id="section-panel-skills" aria-labelledby="section-tab-skills">
             <CardHeader>
               <CardTitle>Skills &amp; Interests</CardTitle>
               <CardDescription>
@@ -554,7 +587,7 @@ export default function LeadQuestionnaire() {
 
         {/* Section 3: Motivation */}
         {currentSection === "motivation" && (
-          <Card key="motivation" className="panel-enter">
+          <Card key="motivation" className="panel-enter" role="tabpanel" id="section-panel-motivation" aria-labelledby="section-tab-motivation">
             <CardHeader>
               <CardTitle>Motivation</CardTitle>
               <CardDescription>
@@ -709,6 +742,28 @@ export default function LeadQuestionnaire() {
           )}
         </div>
       </Form>
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div className="flex items-center justify-center p-8">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+export function ErrorBoundary({ error }: { error: Error }) {
+  let message = "Something went wrong";
+  if (error instanceof Error) message = error.message;
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center p-8">
+      <div className="mx-auto max-w-md text-center">
+        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
+        <h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
+        <button onClick={() => window.location.reload()} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">Try again</button>
+      </div>
     </div>
   );
 }

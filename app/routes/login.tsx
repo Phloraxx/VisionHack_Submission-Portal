@@ -19,6 +19,16 @@ import { Label } from "~/components/ui/label";
 import { EventMark } from "~/components/shared/event-mark";
 import { ArrowRight, Loader2, KeyRound, Mail } from "lucide-react";
 import { AnimatedGrid } from "~/components/ui/animated-grid";
+interface LoginStats {
+  teamCount: number;
+  institutionCount: number;
+  registrationOpen: boolean;
+  questionnaireOpen: boolean;
+  submissionOpen: boolean;
+  cachedAt: number;
+}
+let statsCache: LoginStats | null = null;
+const STATS_TTL_MS = 60_000;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const token = getAuthFromCookie(request);
@@ -38,18 +48,38 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Pull live counts for the login page's quick-stats strip. We use the
   // superuser client because the per-collection view rules now require
   // authentication, but the login page is public.
+  // Stats are cached in memory for 60s to avoid hitting PocketBase on every load.
+  const now = Date.now();
+  if (statsCache && now - statsCache.cachedAt < STATS_TTL_MS) {
+    return {
+      teamCount: statsCache.teamCount,
+      institutionCount: statsCache.institutionCount,
+      registrationOpen: statsCache.registrationOpen,
+      questionnaireOpen: statsCache.questionnaireOpen,
+      submissionOpen: statsCache.submissionOpen,
+    };
+  }
+
   const pb = createSuperuserClient();
   const [teams, institutions, cfg] = await Promise.all([
     pb.collection("teams").getList(1, 1, { fields: "id" }),
     pb.collection("institutions").getList(1, 1, { fields: "id" }),
     getConfig(pb),
   ]);
-  return {
+  statsCache = {
     teamCount: teams.totalItems,
     institutionCount: institutions.totalItems,
     registrationOpen: !!cfg.registration_open,
     questionnaireOpen: !!cfg.questionnaire_open,
     submissionOpen: !!cfg.submission_open,
+    cachedAt: Date.now(),
+  };
+  return {
+    teamCount: statsCache.teamCount,
+    institutionCount: statsCache.institutionCount,
+    registrationOpen: statsCache.registrationOpen,
+    questionnaireOpen: statsCache.questionnaireOpen,
+    submissionOpen: statsCache.submissionOpen,
   };
 }
 

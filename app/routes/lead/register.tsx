@@ -251,7 +251,6 @@ export default function LeadRegister() {
   // draft for cross-device resume), restore drafts on mount.
   const { savedData, save, clearSaved } = useAutoSave<RegisterFormData>(
     `register-form-${user.id}`,
-    3000,
     true, // clearOnUnmount — PII should not persist after closing
   );
 
@@ -418,6 +417,8 @@ export default function LeadRegister() {
               <Label htmlFor="teamName">Team Name</Label>
               <Input
                 id="teamName"
+                aria-invalid={!!actionData?.fieldErrors?.teamName}
+                aria-describedby={actionData?.fieldErrors?.teamName ? "teamName-error" : undefined}
                 name="teamName"
                 placeholder="Enter your team name"
                 value={teamName}
@@ -426,7 +427,7 @@ export default function LeadRegister() {
                 required
               />
               {actionData?.fieldErrors?.teamName && (
-                <p className="text-sm text-destructive">
+                <p id="teamName-error" className="text-sm text-destructive" role="alert">
                   {actionData.fieldErrors.teamName}
                 </p>
               )}
@@ -447,9 +448,10 @@ export default function LeadRegister() {
                 <Label htmlFor="leadPhone">Phone</Label>
                 <Input
                   id="leadPhone"
+                  aria-invalid={!!actionData?.fieldErrors?.leadPhone}
                   name="leadPhone"
                   placeholder="+91 1234567890"
-                  aria-describedby="leadPhone-hint"
+                  aria-describedby={actionData?.fieldErrors?.leadPhone ? "leadPhone-hint leadPhone-error" : "leadPhone-hint"}
                   value={leadPhone}
                   onChange={(e) => setLeadPhone(e.target.value)}
                   disabled={!registrationOpen}
@@ -459,7 +461,7 @@ export default function LeadRegister() {
                   Enter your 10-digit phone number with country code
                 </p>
                 {actionData?.fieldErrors?.leadPhone && (
-                  <p className="text-sm text-destructive">
+                  <p id="leadPhone-error" className="text-sm text-destructive" role="alert">
                     {actionData.fieldErrors.leadPhone}
                   </p>
                 )}
@@ -472,7 +474,7 @@ export default function LeadRegister() {
                   disabled={!registrationOpen}
                   name="leadGender"
                 >
-                  <SelectTrigger id="leadGender">
+                  <SelectTrigger id="leadGender" aria-invalid={!!actionData?.fieldErrors?.leadGender} aria-describedby={actionData?.fieldErrors?.leadGender ? "leadGender-error" : undefined}>
                     <SelectValue placeholder="Select gender" />
                   </SelectTrigger>
                   <SelectContent>
@@ -482,7 +484,7 @@ export default function LeadRegister() {
                   </SelectContent>
                 </Select>
                 {actionData?.fieldErrors?.leadGender && (
-                  <p className="text-sm text-destructive">
+                  <p id="leadGender-error" className="text-sm text-destructive" role="alert">
                     {actionData.fieldErrors.leadGender}
                   </p>
                 )}
@@ -491,6 +493,8 @@ export default function LeadRegister() {
                 <Label htmlFor="leadRole">Role</Label>
                 <Input
                   id="leadRole"
+                  aria-invalid={!!actionData?.fieldErrors?.leadRole}
+                  aria-describedby={actionData?.fieldErrors?.leadRole ? "leadRole-error" : undefined}
                   name="leadRole"
                   placeholder="e.g., Team Lead, Full Stack Developer"
                   value={leadRole}
@@ -499,7 +503,7 @@ export default function LeadRegister() {
                   required
                 />
                 {actionData?.fieldErrors?.leadRole && (
-                  <p className="text-sm text-destructive">
+                  <p id="leadRole-error" className="text-sm text-destructive" role="alert">
                     {actionData.fieldErrors.leadRole}
                   </p>
                 )}
@@ -535,7 +539,7 @@ export default function LeadRegister() {
           </CardHeader>
           <CardContent className="space-y-6">
             {actionData?.fieldErrors?.members && (
-              <p className="text-sm text-destructive">
+              <p id="members-error" className="text-sm text-destructive" role="alert">
                 {actionData.fieldErrors.members}
               </p>
             )}
@@ -726,6 +730,28 @@ export default function LeadRegister() {
           </Button>
         )}
       </Form>
+    </div>
+  );
+}
+
+export function HydrateFallback() {
+  return (
+    <div className="flex items-center justify-center p-8">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+export function ErrorBoundary({ error }: { error: Error }) {
+  let message = "Something went wrong";
+  if (error instanceof Error) message = error.message;
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center p-8">
+      <div className="mx-auto max-w-md text-center">
+        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
+        <h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
+        <button onClick={() => window.location.reload()} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">Try again</button>
+      </div>
     </div>
   );
 }
