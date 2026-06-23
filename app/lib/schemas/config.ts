@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { FEATURE_FLAG_KEYS } from "~/lib/feature-flags";
 
 export const configUpdateSchema = z.object({
-	key: z.string().min(1, "Key is required"),
+	key: z.enum(FEATURE_FLAG_KEYS as [string, ...string[]]),
 	value: z
 		.string()
 		.transform((v) => v === "true" || v === "1"),

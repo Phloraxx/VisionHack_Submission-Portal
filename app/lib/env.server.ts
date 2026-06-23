@@ -51,7 +51,7 @@ export function getEnv(): EnvConfig {
 		);
 	}
 
-	return {
+	const config: EnvConfig = {
 		POCKETBASE_URL: pbUrl,
 		POCKETBASE_ADMIN_EMAIL: process.env.POCKETBASE_ADMIN_EMAIL ?? "",
 		POCKETBASE_ADMIN_PASSWORD: process.env.POCKETBASE_ADMIN_PASSWORD ?? "",
@@ -59,6 +59,13 @@ export function getEnv(): EnvConfig {
 		RESEND_API_KEY: process.env.RESEND_API_KEY,
 		SENTRY_DSN: process.env.SENTRY_DSN,
 	};
+
+	// Mark admin credentials as non-enumerable so they don't leak via
+	// console.log() / JSON.stringify() — only pocketbase.server.ts reads them.
+	Object.defineProperty(config, "POCKETBASE_ADMIN_EMAIL", { enumerable: false });
+	Object.defineProperty(config, "POCKETBASE_ADMIN_PASSWORD", { enumerable: false });
+
+	return config;
 }
 
 /**

@@ -10,18 +10,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const auth = await requireAuthJson(request);
 	if (auth instanceof Response) return auth;
 
-	// Use the requesting user's own auth token. The institutions list rule
-	// (`@request.auth.id != ""`) allows any authenticated user.
 	const pb = auth.pb;
+	const user = auth.user;
 
 	try {
-		const institutions = await pb.collection("institutions").getList<InstitutionRecord>(1, 1000, {
-			sort: "name",
-			fields: "id,name,district,code",
-		});
+		// Admin/coordinator: full list with institution codes
+		if (user.role === "admin" || user.role === "coordinator") {
+			const institutions = await pb
+				.collection("institutions")
+				.getList<InstitutionRecord>(1, 1000, {
+					sort: "name",
+					fields: "id,name,district,code",
+				});
+
+			return Response.json(
+				{ institutions: institutions.items },
+				{
+					status: 200,
+					headers: {
+						"Cache-Control": "public, max-age=60, s-maxage=120",
+					},
+				},
+			);
+		}
+
+		// Other authenticated roles: return only their own institution, no code
+		const institution = await pb
+			.collection("institutions")
+			.getOne<InstitutionRecord>(user.institutionId, {
+				fields: "id,name,district",
+			});
 
 		return Response.json(
-			{ institutions: institutions.items },
+			{ institutions: [institution] },
 			{
 				status: 200,
 				headers: {

@@ -35,10 +35,10 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) =>
 export const action = secureAction(
 	{ roles: ["admin"], schema: configUpdateSchema },
 	async ({ formData, pb, validated }) => {
-		const { key, value } = validated as { key: string; value: string };
+		const { key } = validated as { key: string };
 
 		if (!FEATURE_FLAGS.some((f) => f.key === key)) {
-			return fail({ error: `Unknown config key "${key}"`, status: 400 });
+		return fail({ error: 'Invalid configuration key' });
 		}
 
 		// Config writes use the admin user's own auth token — the config
@@ -51,8 +51,14 @@ export const action = secureAction(
 			return fail({ error: `Config key "${key}" not found`, status: 404 });
 		}
 
-		await pb.collection("config").update(target.id, { value });
-		return ok({ key, value });
+		// Server-authoritative toggle: read the current value from the DB and flip it.
+		// This eliminates the TOCTOU race where two admins clicking simultaneously
+		// would both trust a stale client-side value.
+		const currentValue = target.value === "true" || target.value === true;
+		const newValue = !currentValue;
+
+		await pb.collection("config").update(target.id, { value: newValue });
+		return ok({ key, value: newValue });
 	},
 );
 

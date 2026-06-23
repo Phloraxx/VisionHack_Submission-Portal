@@ -162,6 +162,9 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 		}
 
 		const lines = text.trim().split("\n");
+		if (lines.length > 101) {
+			return fail({ error: "CSV too many rows (max 100)" });
+		}
 		if (lines.length < 2) {
 			return fail({ error: "CSV must have a header row and at least one data row" });
 		}

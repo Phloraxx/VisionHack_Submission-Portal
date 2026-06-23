@@ -115,6 +115,7 @@ export const loader = secureLoader(
 				const team = await pb.collection("teams").getOne<TeamView>(teamId, {
 					expand: "institutionId,leaderUserId",
 				});
+				if (!team) throw new Response("Team not found", { status: 404 });
 
 				const [members, questionnaire] = await Promise.all([
 					pb.collection("members").getList<MemberRecord>(1, 100, {

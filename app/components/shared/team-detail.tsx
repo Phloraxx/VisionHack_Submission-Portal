@@ -103,7 +103,7 @@ export function downloadTeamCSV(
 	document.body.appendChild(a);
 	a.click();
 	document.body.removeChild(a);
-	URL.revokeObjectURL(url);
+	setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ export default function TeamDetail({
 									<p className="text-sm font-medium text-muted-foreground mb-1">Submission File</p>
 									<Button variant="outline" size="sm" asChild>
 										<a
-											href={`/api/files/teams/${team.id}/${encodeURIComponent(team.submission_file)}`}
+											href={`/api/files/teams/${encodeURIComponent(team.id)}/${encodeURIComponent(team.submission_file)}`}
 											target="_blank"
 											rel="noopener noreferrer"
 										>

@@ -198,7 +198,8 @@ async function resolveAuth(request: Request): Promise<AuthResult> {
 		}
 		const user = pb.authStore.model as unknown as UserRecord | null;
 		if (!user) throw redirect("/login");
-		return { pb, user, token: pb.authStore.token || token };
+		if (!pb.authStore.token) throw redirect("/login");
+		return { pb, user, token: pb.authStore.token };
 	}
 
 	// Healthy token: skip the refresh round-trip. Load the user record once

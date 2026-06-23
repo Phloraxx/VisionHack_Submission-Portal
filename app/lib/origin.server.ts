@@ -36,9 +36,8 @@ function getAllowedOrigins(): string[] {
  * layout (login, forgot-password) so they are not bypassed by attackers
  * omitting the Origin header.
  *
- * In development mode (NODE_ENV !== 'production'), allows only the known Vite
+ * In development mode (NODE_ENV === 'development'), allows only the known Vite
  * dev-server ports (5173, 5174, 5175) on localhost and 127.0.0.1.
- *
  * In production, reads `ALLOWED_ORIGINS` from the environment (comma-separated).
  * Falls back to the default set (`localhost:5173`, the production domain).
  *
@@ -61,7 +60,7 @@ export function validateOrigin(request: Request, requireOrigin = false): void {
 	}
 
 	// In development, allow only the known Vite dev-server ports
-	if (process.env.NODE_ENV !== "production") {
+	if (process.env.NODE_ENV === "development") {
 		const devPorts = [5173, 5174, 5175];
 		const isAllowedDevOrigin = devPorts.some(
 			(port) => origin === `http://localhost:${port}` || origin === `http://127.0.0.1:${port}`,

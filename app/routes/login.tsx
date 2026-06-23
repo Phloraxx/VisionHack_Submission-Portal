@@ -78,8 +78,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	// App-level rate limiting
 	const ip =
-		request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
 		request.headers.get("CF-Connecting-IP") ??
+		request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
+		request.headers.get("x-real-ip") ??
 		"unknown";
 	checkRateLimit(`login:ip:${ip}`, 20, 60_000);
 	checkRateLimit(`login:email:${email}`, 5, 60_000);

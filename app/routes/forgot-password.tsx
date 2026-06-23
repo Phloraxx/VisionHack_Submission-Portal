@@ -26,8 +26,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	// Rate limiting
 	const ip =
-		request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
 		request.headers.get("CF-Connecting-IP") ??
+		request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
+		request.headers.get("x-real-ip") ??
 		"unknown";
 	checkRateLimit(`forgot:ip:${ip}`, 10, 60_000); // 10/min per IP
 	checkRateLimit(`forgot:email:${email}`, 3, 60_000); // 3/min per account

@@ -26,7 +26,7 @@ export async function getConfig(pb: PocketBase): Promise<Record<string, boolean>
 
 	const value: Record<string, boolean> = {};
 	for (const record of records) {
-		value[record.key] = !!record.value;
+		value[record.key] = record.value === true;
 	}
 
 	return value;

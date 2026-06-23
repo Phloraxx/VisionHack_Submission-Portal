@@ -67,7 +67,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	}
 
 	const pbUrl = getEnv().POCKETBASE_URL.replace(/\/+$/, "");
-	const fileUrl = `${pbUrl}/api/files/${collection}/${recordId}/${filename}`;
+	const fileUrl = `${pbUrl}/api/files/${collection}/${recordId}/${encodeURIComponent(filename)}`;
 
 	// Fetch the file with the admin client so the proxy doesn't depend on
 	// the requesting user's own PB file read rights.

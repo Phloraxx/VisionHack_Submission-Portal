@@ -46,6 +46,12 @@ const server = http.createServer((req, res) => {
 	// through to the React Router SSR handler.
 	// -----------------------------------------------------------------------
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+	if (url.pathname.includes("\0")) {
+		res.writeHead(400);
+		res.end("Bad Request");
+		return;
+	}
+
 
 	// Only attempt static serving for GET/HEAD on paths without a file extension
 	// that maps to our MIME table. Anything without a recognized extension
@@ -55,8 +61,11 @@ const server = http.createServer((req, res) => {
 		const filePath = path.join(clientDir, url.pathname);
 
 		// Prevent directory traversal — the resolved path must be inside clientDir.
+		// Resolve symlinks so that a symlink outside clientDir can't bypass the check.
 		const resolved = path.resolve(filePath);
-		if (resolved.startsWith(clientDir)) {
+		const realResolved = fs.realpathSync(resolved);
+		const realClientDir = fs.realpathSync(clientDir);
+		if (realResolved.startsWith(realClientDir + path.sep)) {
 			try {
 				const stat = fs.statSync(resolved);
 				if (stat.isFile()) {

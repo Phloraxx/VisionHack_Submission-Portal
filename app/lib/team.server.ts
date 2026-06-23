@@ -184,7 +184,7 @@ export async function sendStatusChangeEmail(args: SendStatusChangeEmailArgs): Pr
       <p>Hello <strong>${escapeHtml(args.leadName)}</strong>,</p>
       <p>The status of your team <strong>${escapeHtml(args.teamName)}</strong> has been updated to <strong>${escapeHtml(statusLabel)}</strong>.</p>
       <p style="margin: 16px 0;">
-        <a href="${escapeHtml(dashboardUrl)}"
+        <a href="${dashboardUrl}"
            style="display: inline-block; background: #18181b; color: #fff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-size: 14px;">
           Check Your Dashboard
         </a>
@@ -199,7 +199,7 @@ export async function sendStatusChangeEmail(args: SendStatusChangeEmailArgs): Pr
 			to: args.to,
 			// Subject is plain text (not HTML), so no HTML escaping needed.
 			// The HTML body above uses escapeHtml() correctly.
-			subject: `Team "${args.teamName}" status: ${statusLabel}`,
+			subject: `Team "${args.teamName.replace(/[\r\n]/g, '')}" status: ${statusLabel.replace(/[\r\n]/g, '')}`,
 			html,
 		});
 	} catch (err) {

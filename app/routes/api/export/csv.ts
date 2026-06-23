@@ -40,7 +40,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		sort: "-created",
 	});
 	const filtered = filteredResult.items;
-	if (filteredResult.totalItems > MAX_SAFE_LIST) {
+	const truncated = filteredResult.totalItems > MAX_SAFE_LIST;
+	if (truncated) {
 		console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
 
@@ -141,9 +142,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	}
 
 	const encoder = new TextEncoder();
+	const csvPrefix = truncated
+		? `# WARNING: Data truncated. Showing ${MAX_SAFE_LIST} of ${filteredResult.totalItems} total items.\n`
+		: "";
 	const stream = new ReadableStream({
 		start(controller) {
-			controller.enqueue(encoder.encode(`\uFEFF${headers.join(",")}\n`));
+			controller.enqueue(encoder.encode(`\uFEFF${csvPrefix}${headers.join(",")}\n`));
 			for (const team of filtered) {
 				const row = buildRow(team, membersByTeam[team.id] || []);
 				controller.enqueue(encoder.encode(`${row}\n`));
@@ -151,14 +155,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
 			controller.close();
 		},
 	});
-
+	
+	const responseHeaders: Record<string, string> = {
+		"Content-Type": "text/csv; charset=utf-8",
+		"Content-Disposition": `attachment; filename="teams_export_${new Date().toISOString().split("T")[0]}.csv"`,
+		// PII export — never cache.
+		"Cache-Control": "no-store",
+		"X-Total-Count": String(filteredResult.totalItems),
+	};
+	
 	return new Response(stream, {
 		status: 200,
-		headers: {
-			"Content-Type": "text/csv; charset=utf-8",
-			"Content-Disposition": `attachment; filename="teams_export_${new Date().toISOString().split("T")[0]}.csv"`,
-			// PII export — never cache.
-			"Cache-Control": "no-store",
-		},
+		headers: responseHeaders,
 	});
+
 }
