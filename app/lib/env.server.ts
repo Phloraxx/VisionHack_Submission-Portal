@@ -36,9 +36,10 @@ export function getEnv(): EnvConfig {
 	// (nginx + Let's Encrypt) or Cloudflare Tunnel.
 	const isDev = process.env.NODE_ENV !== "production";
 	if (pbUrl && !isDev && !pbUrl.startsWith("https://")) {
-		throw new Error(
-			"POCKETBASE_URL must use HTTPS in production. " +
-				"Set POCKETBASE_URL to an https:// URL, or disable this check in development.",
+		console.warn(
+			"[env] \u26a0\ufe0f  POCKETBASE_URL is using plain HTTP in production. " +
+				"Traffic between the server and PocketBase is not encrypted. " +
+				"Use HTTPS when PocketBase is accessed over the network.",
 		);
 	}
 
