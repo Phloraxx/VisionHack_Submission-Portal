@@ -83,7 +83,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	}
 
 	return (
-		<main className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
+		<main className="flex min-h-screen flex-col items-center justify-center bg-background text-foreground p-8">
 			<div className="mx-auto max-w-md text-center">
 				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">
 					{isRouteErrorResponse(error) ? `Error ${error.status}` : "Error"}

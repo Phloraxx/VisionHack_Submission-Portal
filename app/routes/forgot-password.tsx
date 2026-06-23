@@ -142,7 +142,7 @@ export default function ForgotPassword() {
 					</span>
 				</div>
 
-				<div className="flex flex-1 items-center justify-center px-5 py-10 sm:px-6 sm:py-12 lg:px-12">
+				<div className="flex flex-1 items-start justify-center px-5 pt-8 pb-10 sm:px-6 sm:pt-10 sm:pb-12 md:items-center md:pt-0 lg:px-12">
 					<div className="w-full max-w-sm">
 						{actionData?.sent ? (
 							<div className="page-enter">
