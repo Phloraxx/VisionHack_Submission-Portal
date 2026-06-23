@@ -18,17 +18,18 @@ import type { Role, TeamStatus } from "./types";
  *  - withdrawn   → neutral   (out of the system)
  */
 
+const ALL_STATUSES: TeamStatus[] = [
+	"invited",
+	"registered",
+	"shortlisted",
+	"submitted",
+	"selected",
+	"rejected",
+	"withdrawn",
+];
+
 export function getValidTransitions(currentStatus: TeamStatus, role: Role): TeamStatus[] {
-	const allStatuses: TeamStatus[] = [
-		"invited",
-		"registered",
-		"shortlisted",
-		"submitted",
-		"selected",
-		"rejected",
-		"withdrawn",
-	];
-	return allStatuses.filter((next) => canTransition(currentStatus, next, role));
+	return ALL_STATUSES.filter((next) => canTransition(currentStatus, next, role));
 }
 
 export const STATUS_LABELS: Record<TeamStatus, string> = {

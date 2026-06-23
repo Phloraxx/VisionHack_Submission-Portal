@@ -10,8 +10,7 @@ import { getAppUrl } from "./env.server";
 import { STATUS_LABELS } from "./team-status";
 import { canTransition } from "./transitions";
 import type { InstitutionRecord, Role, TeamRecord, TeamStatus, TeamView } from "./types";
-import { countByKey } from "./utils";
-import { escapeHtml } from "./utils";
+import { countByKey, escapeHtml } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Lookups

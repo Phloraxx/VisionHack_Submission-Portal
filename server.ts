@@ -27,6 +27,7 @@ const MIME: Record<string, string> = {
 };
 
 const clientDir = path.resolve(import.meta.dirname, "build", "client");
+const realClientDir = fs.realpathSync(clientDir);
 
 let buildPromise: Promise<ServerBuild> | null = null;
 const getBuild = (): Promise<ServerBuild> => {
@@ -47,8 +48,15 @@ const server = http.createServer((req, res) => {
 	// Static file serving — serve build/client/ assets before falling
 	// through to the React Router SSR handler.
 	// -----------------------------------------------------------------------
-	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-	if (url.pathname.includes("\0")) {
+	let url: URL;
+	try {
+		url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+		if (url.pathname.includes("\0")) {
+			res.writeHead(400);
+			res.end("Bad Request");
+			return;
+		}
+	} catch {
 		res.writeHead(400);
 		res.end("Bad Request");
 		return;
@@ -66,7 +74,6 @@ const server = http.createServer((req, res) => {
 		// Resolve symlinks so that a symlink outside clientDir can't bypass the check.
 		const resolved = path.resolve(filePath);
 		const realResolved = fs.realpathSync(resolved);
-		const realClientDir = fs.realpathSync(clientDir);
 		if (realResolved.startsWith(realClientDir + path.sep)) {
 			try {
 				const stat = fs.statSync(resolved);
@@ -75,9 +82,10 @@ const server = http.createServer((req, res) => {
 						"Content-Type": MIME[ext],
 						"Content-Length": stat.size,
 						"Cache-Control": ext === ".html" ? "no-cache" : url.pathname.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache",
+						"X-Content-Type-Options": "nosniff",
 					});
 					if (req.method === "GET") {
-						fs.createReadStream(resolved).pipe(res);
+						fs.createReadStream(resolved).on("error", () => { try { res.destroy(); } catch {} }).pipe(res);
 					} else {
 						res.end();
 					}
@@ -114,7 +122,12 @@ server.listen(port, () => {
 
 function gracefulShutdown(signal: string): void {
 	console.log(`\n${signal} received. Shutting down gracefully...`);
+	const forceExit = setTimeout(() => {
+		console.error("[server] Forced exit after timeout");
+		process.exit(1);
+	}, 10000);
 	server.close(() => {
+		clearTimeout(forceExit);
 		console.log("HTTP server closed.");
 		process.exit(0);
 	});

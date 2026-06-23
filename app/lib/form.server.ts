@@ -37,10 +37,6 @@ export function getAllStr(formData: FormData, key: string, opts: GetStrOptions =
 		return value;
 	});
 }
-/** Read a numeric field. Returns NaN when absent/invalid. */
-export function getNum(formData: FormData, key: string): number {
-	return Number(String(formData.get(key) ?? "").trim());
-}
 
 /** Basic email shape check (not exhaustive, just a sanity gate). */
 export function isEmail(value: string): boolean {

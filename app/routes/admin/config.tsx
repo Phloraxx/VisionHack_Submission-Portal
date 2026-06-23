@@ -1,12 +1,11 @@
+export { default as ErrorBoundary } from '~/components/shared/route-error-boundary';
 import { FileText, Loader2, ShieldCheck, Upload, UserPlus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-	isRouteErrorResponse,
 	useActionData,
 	useLoaderData,
 	useNavigation,
-	useRouteError,
 	useSubmit,
 } from "react-router";
 import { toast } from "sonner";
@@ -48,7 +47,7 @@ export const action = secureAction(
 			.getFirstListItem(pb.filter("key = {:key}", { key }))
 			.catch(() => null);
 		if (!target) {
-			return fail({ error: `Config key "${key}" not found`, status: 404 });
+		return fail({ error: 'Configuration key not found' });
 		}
 
 		// Server-authoritative toggle: read the current value from the DB and flip it.
@@ -141,34 +140,3 @@ export default function AdminConfig() {
 	);
 }
 
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-	let details = "An unexpected error occurred while loading this page.";
-
-	if (isRouteErrorResponse(error)) {
-		message = error.status === 404 ? "Page not found" : `${error.status}: ${error.statusText}`;
-		details = error.data?.message || details;
-	} else if (import.meta.env.DEV && error instanceof Error) {
-		details = error.message;
-	}
-
-	return (
-		<div className="flex min-h-[50vh] items-center justify-center p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">
-					Error
-				</p>
-				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
-				<p className="text-sm text-muted-foreground">{details}</p>
-				<button
-					type="button"
-					onClick={() => window.location.reload()}
-					className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}

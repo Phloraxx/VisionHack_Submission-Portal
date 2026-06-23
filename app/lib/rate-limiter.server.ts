@@ -40,6 +40,7 @@ export function checkRateLimit(key: string, maxAttempts: number, windowMs: numbe
 		if (entry.count >= maxAttempts) {
 			throw new Response("Too many attempts. Please try again later.", {
 				status: 429,
+				headers: { "Retry-After": String(Math.ceil((entry.resetAt - Date.now()) / 1000)) },
 			});
 		}
 		entry.count++;

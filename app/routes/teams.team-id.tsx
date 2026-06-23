@@ -208,7 +208,7 @@ export const action = secureAction(
 					leadName: lead.name || "Team Lead",
 					teamName: team.name,
 					status: toStatus,
-				}).catch(() => {}); // Already handled inside function
+			});
 			}
 
 			return ok({ newStatus: toStatus });

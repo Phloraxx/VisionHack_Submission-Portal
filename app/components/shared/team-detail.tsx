@@ -20,7 +20,6 @@ import { STATUS_LABELS } from "~/lib/team-status";
 import type { MemberRecord, QuestionnaireResponseRecord, TeamStatus, TeamView } from "~/lib/types";
 import { QUESTIONNAIRE_EXCLUDE_KEYS } from "~/lib/utils";
 import { ConfirmButton } from "./confirm-button";
-import { downloadTeamCSV } from "~/lib/csv-export";
 
 // ---------------------------------------------------------------------------
 // Props

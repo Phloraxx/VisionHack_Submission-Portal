@@ -3,7 +3,7 @@ import type PocketBase from "pocketbase";
 import { data } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import type { ZodSchema } from "zod";
-import { requireRole } from "./auth.server";
+import { getAuthFromCookie, requireRole, setAuthCookie } from "./auth.server";
 import { validateOrigin } from "./origin.server";
 import type { Role, UserRecord } from "./types";
 import { extractFieldErrors } from "./utils";
@@ -55,6 +55,29 @@ export function fail(args: {
 }
 
 /**
+ * If the auth token rotated (e.g. after a refresh), add a Set-Cookie header
+ * to propagate the new token to the client. Otherwise return the result as-is.
+ */
+function withTokenCookie(result: unknown, token: string, originalToken: string | null): ActionResult {
+	if (token === originalToken) return result as ActionResult;
+	const cookie = setAuthCookie(token);
+	// RR7's data() returns an internal { init, data } shape — add cookie header to init.
+	if (result && typeof result === "object" && "init" in result && result.init && typeof result.init === "object") {
+		const ri = result.init as Record<string, unknown>;
+		const existing = ri.headers ?? new Headers();
+		const h = existing instanceof Headers ? existing : new Headers();
+		h.append("Set-Cookie", cookie);
+		ri.headers = h;
+		return result as ActionResult;
+	}
+	if (result instanceof Response) {
+		result.headers.append("Set-Cookie", cookie);
+		return result;
+	}
+	return data(result, { headers: new Headers([["Set-Cookie", cookie]]) });
+}
+
+/**
  * Wrap a route action with the security checks every action MUST run.
  *
  *  1. **Origin check** — Origin header validated against allow-list; 403 on mismatch.
@@ -103,10 +126,15 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 		// 3. Auth + role — catch redirects and return JSON instead
 		let pb: PocketBase;
 		let user: UserRecord;
+		let token: string;
+		// 3a. Save original token for rotation detection
+		const originalToken = getAuthFromCookie(request);
+
 		try {
 			const auth = await requireRole(request, options.roles);
 			pb = auth.pb;
 			user = auth.user;
+			token = auth.token;
 		} catch (err) {
 			if (err instanceof Response) {
 				// 403 = wrong role; unauthenticated users get a 302 redirect to
@@ -152,7 +180,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			} satisfies ActionContext;
 
 			try {
-				return (await handler(ctx)) as ActionResult;
+					return withTokenCookie(await handler(ctx), token, originalToken);
 			} catch (err) {
 				if (process.env.NODE_ENV !== "production") {
 					console.error("[secureAction]", err, {
@@ -186,7 +214,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 		} satisfies ActionContext;
 
 		try {
-			return (await handler(ctx)) as ActionResult;
+			return withTokenCookie(await handler(ctx), token, originalToken);
 		} catch (err) {
 			// Surface server-side errors uniformly. Don't leak the message
 			// to the client.

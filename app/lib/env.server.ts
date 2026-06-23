@@ -24,7 +24,10 @@ export interface EnvConfig {
 	RESEND_API_KEY?: string;
 }
 
+let envCache: EnvConfig | null = null;
+
 export function getEnv(): EnvConfig {
+	if (envCache) return envCache;
 	const pbUrl = process.env.POCKETBASE_URL ?? "";
 	if (!pbUrl) {
 		throw new Error("POCKETBASE_URL is not set. Check your .env file.");
@@ -64,7 +67,7 @@ export function getEnv(): EnvConfig {
 	// console.log() / JSON.stringify() — only pocketbase.server.ts reads them.
 	Object.defineProperty(config, "POCKETBASE_ADMIN_EMAIL", { enumerable: false });
 	Object.defineProperty(config, "POCKETBASE_ADMIN_PASSWORD", { enumerable: false });
-
+	envCache = config;
 	return config;
 }
 
@@ -75,4 +78,9 @@ export function getEnv(): EnvConfig {
 export function getAppUrl(): string {
 	const raw = getEnv().APP_URL || "https://visionhack.mulearn.org";
 	return raw.replace(/\/+$/, "");
+}
+
+/** Reset the cached env config — used in tests to isolate process.env changes. */
+export function resetEnvCache(): void {
+	envCache = null;
 }
