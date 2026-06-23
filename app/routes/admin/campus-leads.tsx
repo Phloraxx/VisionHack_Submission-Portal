@@ -313,14 +313,13 @@ export default function AdminCampusLeads() {
 		actionData && "type" in actionData && actionData.type === "bulk" && actionData.success
 			? (actionData as BulkSuccess)
 			: null;
-	const errorMessage =
-		actionData && !("success" in actionData)
-			? ((actionData as Failure).error ??
-				(actionData as Failure).fieldErrors
-					? Object.values((actionData as Failure).fieldErrors!).join(". ")
-					: null)
-			: null;
-
+	const actionErr = actionData && !("success" in actionData) ? (actionData as Record<string, unknown>) : null;
+	let errorMessage: string | null = null;
+	if (actionErr?.error) {
+		errorMessage = actionErr.error as string;
+	} else if (actionErr?.fieldErrors && typeof actionErr.fieldErrors === "object" && actionErr.fieldErrors != null) {
+		errorMessage = Object.values(actionErr.fieldErrors as Record<string, string>).join(". ");
+	}
 	return (
 		<div className="space-y-10">
 			<PanelHeader
