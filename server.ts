@@ -4,11 +4,31 @@ Sentry.init({
 	environment: process.env.NODE_ENV ?? "development",
 	enabled: !!process.env.SENTRY_DSN,
 });
+import fs from "node:fs";
+import path from "node:path";
 import http from "node:http";
 import { createRequestListener } from "@react-router/node";
 import type { ServerBuild } from "react-router";
 
-const handler = createRequestListener({
+/** MIME types for static assets served from build/client/. */
+const MIME: Record<string, string> = {
+	".css": "text/css; charset=utf-8",
+	".js": "application/javascript; charset=utf-8",
+	".mjs": "application/javascript; charset=utf-8",
+	".svg": "image/svg+xml",
+	".png": "image/png",
+	".ico": "image/x-icon",
+	".woff2": "font/woff2",
+	".woff": "font/woff",
+	".txt": "text/plain; charset=utf-8",
+	".json": "application/json; charset=utf-8",
+	".xml": "application/xml; charset=utf-8",
+	".html": "text/html; charset=utf-8",
+};
+
+const clientDir = path.resolve(import.meta.dirname, "build", "client");
+
+const rrHandler = createRequestListener({
 	// Cast: the built server bundle exports a ServerBuild-compliant object.
 	// The dynamic import defers loading until first request (cold start).
 	build: (() => {
@@ -20,10 +40,50 @@ const handler = createRequestListener({
 	getLoadContext: () => ({}),
 });
 
-const rawPort = process.env.PORT ? Number(process.env.PORT) : 3000;
-const port = Number.isFinite(rawPort) ? rawPort : 3000;
+const server = http.createServer((req, res) => {
+	// -----------------------------------------------------------------------
+	// Static file serving — serve build/client/ assets before falling
+	// through to the React Router SSR handler.
+	// -----------------------------------------------------------------------
+	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-const server = http.createServer(handler);
+	// Only attempt static serving for GET/HEAD on paths without a file extension
+	// that maps to our MIME table. Anything without a recognized extension
+	// (e.g. "/login", "/admin/dashboard") falls through to RR7.
+	const ext = path.extname(url.pathname).toLowerCase();
+	if ((req.method === "GET" || req.method === "HEAD") && MIME[ext]) {
+		const filePath = path.join(clientDir, url.pathname);
+
+		// Prevent directory traversal — the resolved path must be inside clientDir.
+		const resolved = path.resolve(filePath);
+		if (resolved.startsWith(clientDir)) {
+			try {
+				const stat = fs.statSync(resolved);
+				if (stat.isFile()) {
+					res.writeHead(200, {
+						"Content-Type": MIME[ext],
+						"Content-Length": stat.size,
+						"Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
+					});
+					if (req.method === "GET") {
+						fs.createReadStream(resolved).pipe(res);
+					} else {
+						res.end();
+					}
+					return;
+				}
+			} catch {
+				// File not found — fall through to RR7 handler
+			}
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// React Router SSR handler
+	// -----------------------------------------------------------------------
+	rrHandler(req, res);
+});
+
 process.on("uncaughtException", (err) => {
 	Sentry.captureException(err);
 	console.error("[server] Uncaught exception — exiting");
@@ -35,13 +95,12 @@ process.on("unhandledRejection", (reason) => {
 	process.exit(1);
 });
 
+const rawPort = process.env.PORT ? Number(process.env.PORT) : 3000;
+const port = Number.isFinite(rawPort) ? rawPort : 3000;
 server.listen(port, () => {
 	console.log(`Server listening on http://localhost:${port}`);
 });
 
-/**
- * Close the HTTP server gracefully and exit the process.
- */
 function gracefulShutdown(signal: string): void {
 	console.log(`\n${signal} received. Shutting down gracefully...`);
 	server.close(() => {
@@ -49,6 +108,5 @@ function gracefulShutdown(signal: string): void {
 		process.exit(0);
 	});
 }
-
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
