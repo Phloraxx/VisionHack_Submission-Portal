@@ -28,17 +28,7 @@ const themeScript = `
 })();
 `;
 
-export function Layout({
-	children,
-	nonce,
-}: {
-	children: React.ReactNode;
-	nonce?: string;
-}) {
-	// The nonce comes from entry.server.tsx (a per-request UUID). We stamp
-	// it on the theme script so the browser will execute it under our
-	// strict CSP. RR7 also passes it down to ServerRouter and the emitted
-	// hydration scripts.
+export function Layout({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en" suppressHydrationWarning>
 			<head>
@@ -47,7 +37,7 @@ export function Layout({
 				<meta name="theme-color" content="#2a2620" media="(prefers-color-scheme: dark)" />
 				<Meta />
 				<Links />
-				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
+				<script dangerouslySetInnerHTML={{ __html: themeScript }} />
 			</head>
 			<body className="min-h-screen bg-background text-foreground antialiased">
 				{children}
