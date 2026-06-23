@@ -7,7 +7,7 @@ WORKDIR /app
 # Copy only the dependency manifests first — this layer is cached until
 # package.json or package-lock.json changes.
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=optional && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 # =============================================================================
 # Stage 2: Build the application
