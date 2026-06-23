@@ -7,7 +7,7 @@ import {
 	University,
 	Users,
 } from "lucide-react";
-import { Link, isRouteErrorResponse, useLoaderData, useRouteError } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { Card, CardContent } from "~/components/ui/card";
@@ -50,12 +50,9 @@ export function meta() {
 }
 
 export default function AdminDashboard() {
-	const { totalTeams, totalInstitutions, totalUsers, statusCounts } = useLoaderData() as {
-		totalTeams: number;
-		totalInstitutions: number;
-		totalUsers: number;
-		statusCounts: Record<string, number>;
-	};
+	// @ts-expect-error secureLoader wraps the actual return type
+	const { totalTeams, totalInstitutions, totalUsers, statusCounts } =
+		useLoaderData<typeof loader>();
 
 	const statusEntries = (Object.entries(STATUS_LABELS) as [TeamStatus, string][]).filter(
 		([status]) => (statusCounts[status] || 0) > 0,
@@ -342,34 +339,4 @@ export default function AdminDashboard() {
 	);
 }
 
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-	let details = "An unexpected error occurred while loading this page.";
-
-	if (isRouteErrorResponse(error)) {
-		message = error.status === 404 ? "Page not found" : `${error.status}: ${error.statusText}`;
-		details = error.data?.message || details;
-	} else if (import.meta.env.DEV && error instanceof Error) {
-		details = error.message;
-	}
-
-	return (
-		<div className="flex min-h-[50vh] items-center justify-center p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">
-					Error
-				</p>
-				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
-				<p className="text-sm text-muted-foreground">{details}</p>
-				<button
-					type="button"
-					onClick={() => window.location.reload()}
-					className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";

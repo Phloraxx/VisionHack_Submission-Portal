@@ -1,4 +1,4 @@
-import { canTransition } from "./types";
+import { canTransition } from "./transitions";
 import type { Role, TeamStatus } from "./types";
 
 /**

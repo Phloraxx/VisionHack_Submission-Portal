@@ -8,7 +8,7 @@ import { type ActionResult, fail } from "./action.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
 import { STATUS_LABELS } from "./team-status";
-import { canTransition } from "./types";
+import { canTransition } from "./transitions";
 import type { InstitutionRecord, Role, TeamRecord, TeamStatus, TeamView } from "./types";
 import { countByKey } from "./utils";
 import { escapeHtml } from "./utils";

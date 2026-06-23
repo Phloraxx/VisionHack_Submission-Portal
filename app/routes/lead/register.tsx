@@ -34,7 +34,7 @@ import { secureLoader } from "~/lib/loader.server";
 import { registerSchema } from "~/lib/schemas/register";
 import { getLeadTeam } from "~/lib/team.server";
 import type { MemberRecord, TeamRecord } from "~/lib/types";
-import { canTransition } from "~/lib/types";
+import { canTransition } from "~/lib/transitions";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------

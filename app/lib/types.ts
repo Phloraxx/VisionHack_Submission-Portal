@@ -94,53 +94,17 @@ export interface QuestionnaireResponseRecord {
 }
 
 // ---------------------------------------------------------------------------
-// Team Status State Machine
+// Team Status State Machine  —  MOVED to ./transitions
 // ---------------------------------------------------------------------------
-
-interface TransitionRule {
-	from: TeamStatus[];
-	to: TeamStatus[];
-	allowedRoles: Role[];
-}
-
-const TRANSITION_RULES: TransitionRule[] = [
-	// Lead transitions
-	{ from: ["invited"], to: ["registered"], allowedRoles: ["lead"] },
-	{ from: ["shortlisted"], to: ["submitted"], allowedRoles: ["lead"] },
-	{
-		from: ["invited", "registered", "shortlisted", "submitted"],
-		to: ["withdrawn"],
-		allowedRoles: ["lead", "admin"],
-	},
-
-	// Coordinator / Admin / Institution transitions
-	{
-		from: ["registered"],
-		to: ["shortlisted"],
-		allowedRoles: ["coordinator", "admin", "institution"],
-	},
-	{
-		from: ["shortlisted"],
-		to: ["registered"],
-		allowedRoles: ["institution", "coordinator", "admin"],
-	},
-
-	// Admin-only transitions
-	{ from: ["submitted"], to: ["selected"], allowedRoles: ["admin"] },
-	{ from: ["submitted"], to: ["rejected"], allowedRoles: ["admin"] },
-];
-
+//
+// Runtime code (canTransition, TRANSITION_RULES, TransitionRule) has been
+// moved to `app/lib/transitions.ts` to keep this file purely for type
+// definitions. Please import from `~/lib/transitions` instead.
+//
+// These re-exports are provided for migration and will be removed in a
+// future commit.
+// ---------------------------------------------------------------------------
 /**
- * Check whether a given status transition is allowed for a given role.
- *
- * ```ts
- * canTransition("invited", "registered", "lead")          // true
- * canTransition("registered", "shortlisted", "lead")      // false
- * canTransition("submitted", "selected", "admin")         // true
- * ```
+ * @deprecated Import from `~/lib/transitions` instead.
  */
-export function canTransition(from: TeamStatus, to: TeamStatus, role: Role): boolean {
-	return TRANSITION_RULES.some(
-		(rule) => rule.from.includes(from) && rule.to.includes(to) && rule.allowedRoles.includes(role),
-	);
-}
+export { canTransition } from "./transitions";

@@ -7,7 +7,6 @@ import {
 	LogOut,
 	Menu,
 	Moon,
-	RefreshCw,
 	Settings,
 	Sun,
 	University,
@@ -21,11 +20,9 @@ import {
 	Link,
 	Outlet,
 	data,
-	isRouteErrorResponse,
 	useLoaderData,
 	useLocation,
 	useNavigation,
-	useRouteError,
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { EventMark } from "~/components/shared/event-mark";
@@ -403,41 +400,4 @@ export function HydrateFallback() {
 	);
 }
 
-// ---------------------------------------------------------------------------
-// ErrorBoundary
-// ---------------------------------------------------------------------------
-
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-	let details = "An unexpected error occurred while loading this page.";
-
-	if (isRouteErrorResponse(error)) {
-		message = error.status === 404 ? "Page not found" : `${error.status} ${error.statusText}`;
-		details =
-			error.status === 404
-				? "The page you are looking for does not exist or you may not have access."
-				: error.data?.message || details;
-	} else if (import.meta.env.DEV && error instanceof Error) {
-		details = error.message;
-	}
-
-	return (
-		<div className="flex min-h-screen items-center justify-center bg-background p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">
-					Error {isRouteErrorResponse(error) ? error.status : ""}
-				</p>
-				<h1 className="mb-2 text-2xl font-semibold tracking-tight">{message}</h1>
-				<p className="mb-8 text-sm text-muted-foreground">{details}</p>
-				<button
-					onClick={() => window.location.reload()}
-					className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					<RefreshCw className="h-4 w-4" />
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";

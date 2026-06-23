@@ -26,7 +26,7 @@ import { validateFileSignature } from "~/lib/file-validation.server";
 import { secureLoader } from "~/lib/loader.server";
 import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
 import { getLeadTeam } from "~/lib/team.server";
-import { canTransition } from "~/lib/types";
+import { canTransition } from "~/lib/transitions";
 import type { TeamRecord } from "~/lib/types";
 import { extractFieldErrors } from "~/lib/utils";
 

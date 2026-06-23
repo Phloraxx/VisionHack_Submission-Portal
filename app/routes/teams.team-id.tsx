@@ -1,7 +1,8 @@
 import { Download } from "lucide-react";
 import { useLoaderData } from "react-router";
 import { Link } from "react-router";
-import TeamDetail, { downloadTeamCSV } from "~/components/shared/team-detail";
+import { downloadTeamCSV } from "~/lib/csv-export";
+import TeamDetail from "~/components/shared/team-detail";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { fail, ok, secureAction } from "~/lib/action.server";
