@@ -19,7 +19,7 @@ import { PanelHeader } from "~/components/shared/panel-header";
 import { PhaseStrip } from "~/components/shared/phase-strip";
 import { ProgressBar } from "~/components/shared/progress-bar";
 import { Row } from "~/components/shared/row";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
+import { StepIndicator, getStatusStepStates, resolveActiveStep } from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -201,7 +201,7 @@ export default function LeadDashboard() {
 	const status = team?.status ?? null;
 	const colors = status ? STATUS_COLORS[status] : null;
 	const flags = { registrationOpen, questionnaireOpen, submissionOpen };
-	const steps = getLeadSteps(status, "/lead/dashboard");
+	const steps = resolveActiveStep(getStatusStepStates(status), "/lead/dashboard");
 	const progress = completedSteps(status, questionnaireCompleted);
 
 	// One-line next action — the canonical "what to do now" for this lead.

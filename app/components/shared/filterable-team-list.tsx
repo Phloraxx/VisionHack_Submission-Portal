@@ -75,18 +75,22 @@ export function FilterableTeamList({
 		[statusCounts],
 	);
 
-	const rows: DataListRow[] = teams.map((team) => ({
-		id: team.id,
-		primary: team.name,
-		code: team.teamCode,
-		secondary: renderSecondary(team),
-		metric: {
-			label: "Members",
-			value: memberCounts[team.id] || 0,
-		},
-		indicator: <StatusBadge status={team.status} />,
-		href: `${basePath}/${team.id}`,
-	}));
+	const rows: DataListRow[] = useMemo(
+		() =>
+			teams.map((team) => ({
+				id: team.id,
+				primary: team.name,
+				code: team.teamCode,
+				secondary: renderSecondary(team),
+				metric: {
+					label: "Members",
+					value: memberCounts[team.id] || 0,
+				},
+				indicator: <StatusBadge status={team.status} />,
+				href: `${basePath}/${team.id}`,
+			})),
+		[teams, memberCounts, renderSecondary, basePath],
+	);
 
 	return (
 		<div className="flex flex-col gap-4">

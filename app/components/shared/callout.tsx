@@ -16,5 +16,6 @@ export function Callout({
 	tone?: CalloutTone;
 	children: React.ReactNode;
 }) {
-	return <div className={cn("rounded-lg border p-4", toneClasses[tone])}>{children}</div>;
+	const role = tone === "warning" || tone === "danger" ? "alert" : "note";
+	return <div role={role} className={cn("rounded-lg border p-4", toneClasses[tone])}>{children}</div>;
 }

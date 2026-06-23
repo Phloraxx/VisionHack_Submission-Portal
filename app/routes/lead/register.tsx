@@ -12,7 +12,7 @@ import {
 } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { ReviewSummary } from "~/components/shared/review-summary";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
+import { StepIndicator, getStatusStepStates, resolveActiveStep } from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -259,7 +259,7 @@ export default function LeadRegister() {
 	const isApproved =
 		team?.status === "shortlisted" || team?.status === "submitted" || team?.status === "selected";
 
-	const steps = getLeadSteps(team?.status ?? null, "/lead/register");
+	const steps = resolveActiveStep(getStatusStepStates(team?.status ?? null), "/lead/register");
 	const [showReview, setShowReview] = useState(false);
 
 	const watchedForm = watch();

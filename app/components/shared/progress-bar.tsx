@@ -46,6 +46,7 @@ export function ProgressBar({
 			<div
 				className="relative h-1 w-full overflow-hidden rounded-full bg-muted"
 				role="progressbar"
+				aria-label={label ?? "Progress"}
 				aria-valuenow={value}
 				aria-valuemin={0}
 				aria-valuemax={max}

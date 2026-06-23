@@ -178,20 +178,16 @@ describe("secureAction", () => {
 	// 401 / 403 from requireRole
 	// -----------------------------------------------------------------------
 
-	it("returns 401 JSON when not authenticated", async () => {
+	it("redirects to login when not authenticated (302 from requireAuth)", async () => {
 		mockRequireRole.mockRejectedValue(
-			new Response(null, { status: 401, statusText: "Unauthorized" }),
+			new Response(null, { status: 302, headers: { Location: "/login" } }),
 		);
 		const handler = vi.fn();
 		const action = secureAction({ roles: ["admin"] }, handler);
 
 		const req = makeRequest();
-		const result = await action(makeArgs(req));
-
+		await expect(action(makeArgs(req))).rejects.toThrow();
 		expect(handler).not.toHaveBeenCalled();
-		const { status, body } = extractStatusBody(result);
-		expect(status).toBe(401);
-		expect(body?.error).toBe("Authentication required");
 	});
 
 	it("returns 403 JSON when role is insufficient", async () => {

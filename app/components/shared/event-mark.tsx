@@ -131,6 +131,7 @@ export function EventMark({
 						tone === "display" && "text-foreground",
 						tone === "muted" && "text-muted-foreground",
 					)}
+					aria-hidden="true"
 				>
 					{label}
 				</span>

@@ -1,5 +1,6 @@
-import { ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
 import { cn } from "~/lib/utils";
+import { ChevronDown, ChevronUp, Clipboard } from "lucide-react";
+import { useId } from "react";
 
 interface ReviewSummaryProps {
 	open: boolean;
@@ -20,6 +21,7 @@ export function ReviewSummary({
 	label = "Review your details before submitting",
 	className,
 }: ReviewSummaryProps) {
+	const contentId = useId();
 	return (
 		<div
 			className={cn(
@@ -32,9 +34,11 @@ export function ReviewSummary({
 				type="button"
 				className="flex w-full items-center justify-between p-4 text-left"
 				onClick={() => onToggle(!open)}
+				aria-expanded={open}
+				aria-controls={contentId}
 			>
 				<div className="flex items-center gap-2">
-					<ClipboardList className="h-4 w-4 text-muted-foreground" />
+					<Clipboard className="h-4 w-4 text-muted-foreground" />
 					<span className="text-sm font-medium">{label}</span>
 				</div>
 				{open ? (
@@ -44,7 +48,7 @@ export function ReviewSummary({
 				)}
 			</button>
 			{open && (
-				<div className="border-t px-4 pb-4">
+				<div className="border-t px-4 pb-4" id={contentId}>
 					<div className="mt-3 space-y-3 text-sm">{children}</div>
 				</div>
 			)}

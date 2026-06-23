@@ -17,7 +17,7 @@ export interface Step {
  *
  * Workflow: Register → Questionnaire → Submit Idea
  */
-export function getLeadSteps(status: TeamStatus | null, currentPath: string): Step[] {
+export function getStatusStepStates(status: TeamStatus | null): Step[] {
 	const steps: Step[] = [
 		{ id: "register", label: "Register", completed: false, active: false, href: "/lead/register" },
 		{
@@ -51,13 +51,20 @@ export function getLeadSteps(status: TeamStatus | null, currentPath: string): St
 		steps[2].completed = true;
 	}
 
+	return steps;
+}
+
+/**
+ * Given steps with completed/active derived from status, override the active
+ * step based on the current URL. Returns the same array (mutated in place).
+ */
+export function resolveActiveStep(steps: Step[], currentPath: string): Step[] {
 	for (const step of steps) {
 		if (currentPath.includes(`/lead/${step.id}`)) {
 			step.active = true;
 			break;
 		}
 	}
-
 	return steps;
 }
 

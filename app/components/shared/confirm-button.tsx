@@ -36,18 +36,20 @@ export function ConfirmButton({
 }: ConfirmButtonProps) {
 	const [confirming, setConfirming] = useState(false);
 	const cancelRef = useRef<HTMLButtonElement>(null);
+	const containerRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		if (confirming) cancelRef.current?.focus();
 	}, [confirming]);
 
 	useEffect(() => {
-		if (!confirming) return;
+		if (!confirming || !containerRef.current) return;
+		const el = containerRef.current;
 		const handleKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") setConfirming(false);
 		};
-		document.addEventListener("keydown", handleKey);
-		return () => document.removeEventListener("keydown", handleKey);
+		el.addEventListener("keydown", handleKey);
+		return () => el.removeEventListener("keydown", handleKey);
 	}, [confirming]);
 
 	const handleInitialClick = (e: React.MouseEvent) => {
@@ -80,9 +82,9 @@ export function ConfirmButton({
 					"pop-in flex items-center gap-2 rounded-md border border-danger/30 bg-danger/8 p-2",
 					className,
 				)}
+				ref={containerRef}
 				role="alertdialog"
-				aria-label={`Confirm: ${confirmMessage}`}
-			>
+				aria-label={`Confirm: ${confirmMessage}`}>
 				<AlertTriangle className="h-4 w-4 shrink-0 text-danger" />
 				<span className="flex-1 text-xs font-medium text-danger">{confirmMessage}</span>
 				<button

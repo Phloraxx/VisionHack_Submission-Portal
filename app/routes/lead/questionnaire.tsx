@@ -11,7 +11,7 @@ import {
 	useRouteError,
 } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
+import { StepIndicator, getStatusStepStates, resolveActiveStep } from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -232,7 +232,7 @@ export default function LeadQuestionnaire() {
 		topRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [currentSection]);
 
-	const steps = getLeadSteps(team?.status ?? null, "/lead/questionnaire");
+	const steps = resolveActiveStep(getStatusStepStates(team?.status ?? null), "/lead/questionnaire");
 
 	if (!team) {
 		return (
