@@ -27,14 +27,14 @@ function getAllowedOrigins(): string[] {
 /**
  * Validate the `Origin` header of a request against the allowed origins list.
  *
- * This is the primary CSRF defense, coupled with `SameSite=Strict` cookies.
- * Together they prevent cross-site form submissions and AJAX requests from
- * malicious origins.
+ * This is the secondary CSRF defense, coupled with `SameSite=Strict` cookies.
+ * SameSite blocks cross-site cookie attachment; origin validation catches
+ * cases where the header is present but mismatched.
  *
  * When `requireOrigin` is true, a missing Origin header causes a 403.
- * Use `requireOrigin: true` on endpoints that do not validate the
- * double-submit CSRF token (login, forgot-password) so they are not
- * bypassed by attackers omitting the Origin header.
+ * Use `requireOrigin: true` on endpoints that are not behind the dashboard
+ * layout (login, forgot-password) so they are not bypassed by attackers
+ * omitting the Origin header.
  *
  * In development mode (NODE_ENV !== 'production'), allows only the known Vite
  * dev-server ports (5173, 5174, 5175) on localhost and 127.0.0.1.
@@ -43,7 +43,7 @@ function getAllowedOrigins(): string[] {
  * Falls back to the default set (`localhost:5173`, the production domain).
  *
  * - **Missing Origin:** throws a 403 when `requireOrigin` is true; allowed
- *   when false (CSRF token is expected to cover it).
+ *   when false (SameSite=Strict is the primary defense).
  * - **Mismatched Origin:** throws a 403 response.
  */
 export function validateOrigin(request: Request, requireOrigin = false): void {

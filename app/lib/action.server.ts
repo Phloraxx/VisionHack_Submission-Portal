@@ -101,7 +101,6 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			return fail({ error: "Invalid form data", status: 400 });
 		}
 
-
 		// 3. Auth + role — catch redirects and return JSON instead
 		let pb: PocketBase;
 		let user: UserRecord;
@@ -183,7 +182,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			}
 		}
 
-		// 6. Dispatch (no schema validation)
+		// 5. Dispatch (no schema validation)
 		const intent = String(formData.get("intent") ?? "").toLowerCase();
 		const ctx = {
 			request,

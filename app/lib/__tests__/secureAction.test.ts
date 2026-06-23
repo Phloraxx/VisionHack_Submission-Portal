@@ -100,7 +100,7 @@ function makeArgs(
   request: Request,
   params: Record<string, string> = {},
 ) {
-  return { request, params, context: {} };
+  return { request, params, context: {}, url: new URL(request.url), pattern: "" };
 }
 
 // ---------------------------------------------------------------------------
