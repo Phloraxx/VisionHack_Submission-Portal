@@ -1,11 +1,7 @@
-export { default as ErrorBoundary } from '~/components/shared/route-error-boundary';
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";
 import { Users } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import {
-	useLoaderData,
-	useNavigation,
-	useSearchParams,
-} from "react-router";
+import { useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
@@ -160,6 +156,8 @@ export default function AdminTeams() {
 			const lead = t.expand?.leaderUserId;
 			const inst = t.expand?.institutionId;
 			return (
+				t.name.toLowerCase().includes(q) ||
+				(t.teamCode || "").toLowerCase().includes(q) ||
 				(lead?.name || "").toLowerCase().includes(q) ||
 				(lead?.email || "").toLowerCase().includes(q) ||
 				(inst?.name || "").toLowerCase().includes(q)
@@ -235,4 +233,3 @@ export default function AdminTeams() {
 		</div>
 	);
 }
-
