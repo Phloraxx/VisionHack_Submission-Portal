@@ -5,8 +5,8 @@ Sentry.init({
 	enabled: !!process.env.SENTRY_DSN,
 });
 import fs from "node:fs";
-import path from "node:path";
 import http from "node:http";
+import path from "node:path";
 import { createRequestListener } from "@react-router/node";
 import type { ServerBuild } from "react-router";
 
@@ -31,6 +31,7 @@ const realClientDir = fs.realpathSync(clientDir);
 
 let buildPromise: Promise<ServerBuild> | null = null;
 const getBuild = (): Promise<ServerBuild> => {
+	// @ts-expect-error — build output is not present during typecheck
 	if (!buildPromise) buildPromise = import("./build/server/index.js") as Promise<ServerBuild>;
 	return buildPromise;
 };
@@ -62,7 +63,6 @@ const server = http.createServer((req, res) => {
 		return;
 	}
 
-
 	// Only attempt static serving for GET/HEAD on paths without a file extension
 	// that maps to our MIME table. Anything without a recognized extension
 	// (e.g. "/login", "/admin/dashboard") falls through to RR7.
@@ -81,11 +81,22 @@ const server = http.createServer((req, res) => {
 					res.writeHead(200, {
 						"Content-Type": MIME[ext],
 						"Content-Length": stat.size,
-						"Cache-Control": ext === ".html" ? "no-cache" : url.pathname.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache",
+						"Cache-Control":
+							ext === ".html"
+								? "no-cache"
+								: url.pathname.startsWith("/assets/")
+									? "public, max-age=31536000, immutable"
+									: "no-cache",
 						"X-Content-Type-Options": "nosniff",
 					});
 					if (req.method === "GET") {
-						fs.createReadStream(resolved).on("error", () => { try { res.destroy(); } catch {} }).pipe(res);
+						fs.createReadStream(resolved)
+							.on("error", () => {
+								try {
+									res.destroy();
+								} catch {}
+							})
+							.pipe(res);
 					} else {
 						res.end();
 					}
