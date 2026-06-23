@@ -93,18 +93,3 @@ export interface QuestionnaireResponseRecord {
 	updated: string;
 }
 
-// ---------------------------------------------------------------------------
-// Team Status State Machine  —  MOVED to ./transitions
-// ---------------------------------------------------------------------------
-//
-// Runtime code (canTransition, TRANSITION_RULES, TransitionRule) has been
-// moved to `app/lib/transitions.ts` to keep this file purely for type
-// definitions. Please import from `~/lib/transitions` instead.
-//
-// These re-exports are provided for migration and will be removed in a
-// future commit.
-// ---------------------------------------------------------------------------
-/**
- * @deprecated Import from `~/lib/transitions` instead.
- */
-export { canTransition } from "./transitions";

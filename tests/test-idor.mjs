@@ -1,5 +1,5 @@
-// Node-based IDOR test using fetch
-const PB = "http://vision-hack-pocketbase-gz1pzq-3a236c-144-24-114-90.sslip.io";
+import { env } from "node:process";
+const PB = env.POCKETBASE_URL || "http://localhost:8090";
 
 async function auth(email, password) {
   const r = await fetch(`${PB}/api/collections/users/auth-with-password`, {
