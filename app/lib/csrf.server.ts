@@ -30,7 +30,7 @@ export function setCsrfCookie(token: string): string {
 	return [
 		`csrf_token=${token}`,
 		...(secure ? ["Secure"] : []),
-		"SameSite=Lax",
+		"SameSite=Strict",
 		"HttpOnly",
 		"Path=/",
 		"Max-Age=3600",
@@ -65,10 +65,7 @@ export function validateCsrfToken(request: Request, formData: FormData): void {
 	const formBuf = Buffer.from(String(formToken), "utf8");
 
 	// Timing-safe compare: same length first, then constant-time compare
-	if (
-		cookieBuf.length !== formBuf.length ||
-		!timingSafeEqual(cookieBuf, formBuf)
-	) {
+	if (cookieBuf.length !== formBuf.length || !timingSafeEqual(cookieBuf, formBuf)) {
 		throw new Response("Invalid CSRF token", { status: 403 });
 	}
 }
