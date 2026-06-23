@@ -1,77 +1,52 @@
-import { renderToReadableStream } from "react-dom/server";
+import { renderToString } from "react-dom/server";
 import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 
 import { getEnv } from "./lib/env.server";
 
-export default async function handleRequest(
+export default function handleRequest(
 	request: Request,
 	responseStatusCode: number,
 	responseHeaders: Headers,
 	routerContext: EntryContext,
 	_loadContext: AppLoadContext,
 ) {
-	let shellRendered = false;
-
 	const nonce = crypto.randomUUID();
-	const status: { code: number } = { code: responseStatusCode };
 
-	const body = await renderToReadableStream(
+	const html = renderToString(
 		<ServerRouter context={routerContext} url={request.url} nonce={nonce} />,
-		{
-			nonce,
-			onError(error: unknown) {
-				status.code = 500;
-				if (shellRendered) {
-					console.error(error);
-				}
-			},
-		},
 	);
-	shellRendered = true;
 
 	// -----------------------------------------------------------------------
-	// Inject the entry.client module script — RR7's <Scripts /> component
-	// fails to render it in v7.17 due to an internal isStatic check. We read
-	// the entry module from the build manifest and inject it before </body>.
+	// Inject missing SSR globals — RR7's <Scripts /> skips route-module
+	// and manifest registration when isStatic is false (v7.17 bug). The
+	// client HydratedRouter needs these to bootstrap the browser router.
 	// -----------------------------------------------------------------------
 	const entryModule = routerContext.manifest.entry.module;
-	const transform = new TransformStream<Uint8Array, Uint8Array>();
-	const writer = transform.writable.getWriter();
-	const encoder = new TextEncoder();
+	const partialManifest = {
+		routes: routerContext.manifest.routes,
+		entry: routerContext.manifest.entry,
+		url: routerContext.manifest.url,
+		version: routerContext.manifest.version,
+	};
+	const manifestScript = `<script>window.__reactRouterManifest = ${JSON.stringify(partialManifest)};</script>\n`;
 
-	(async () => {
-		const reader = body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = "";
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) {
-				// Inject entry script before the closing body tag
-				const script = `<script type="module" async src="${entryModule}"></script>\n`;
-				buffer = buffer.replace("</body>", `${script}</body>`);
-				await writer.write(encoder.encode(buffer));
-				await writer.close();
-				break;
-			}
-			buffer += decoder.decode(value, { stream: true });
-			// Flush everything before </body> as we receive it, inject script at the boundary
-			const bodyIdx = buffer.indexOf("</body>");
-			if (bodyIdx !== -1) {
-				const before = buffer.slice(0, bodyIdx);
-				const script = `<script type="module" async src="${entryModule}"></script>\n`;
-				await writer.write(encoder.encode(before + script));
-				buffer = "</body>" + buffer.slice(bodyIdx + 7);
-			}
+	// Route modules: each module's client-side import path is in manifest.routes
+	const routeModules: Record<string, string> = {};
+	for (const [id, route] of Object.entries(routerContext.manifest.routes)) {
+		if (route && typeof route === "object" && "module" in route && route.module) {
+			routeModules[id] = String(route.module);
 		}
-	})();
+	}
+	const routeModulesScript = `<script>window.__reactRouterRouteModules = ${JSON.stringify(routeModules)};</script>\n`;
 
-	responseHeaders.set("Content-Type", "text/html; charset=utf-8");
+	const entryScript = `<script type="module" async src="${entryModule}"></script>\n`;
 
-	responseHeaders.set("X-Content-Type-Options", "nosniff");
-	responseHeaders.set("X-Frame-Options", "DENY");
-	responseHeaders.set("Referrer-Policy", "strict-origin-when-cross-origin");
-	responseHeaders.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+	const fullHtml = html.replace(
+		"</body>",
+		`${manifestScript}${routeModulesScript}${entryScript}</body>`,
+	);
+
 	responseHeaders.set("X-XSS-Protection", "0");
 
 	if (process.env.NODE_ENV === "production") {
@@ -93,8 +68,8 @@ export default async function handleRequest(
 		responseHeaders.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 	}
 
-	return new Response(transform.readable, {
+	return new Response(fullHtml, {
 		headers: responseHeaders,
-		status: status.code,
+		status: responseStatusCode,
 	});
 }
