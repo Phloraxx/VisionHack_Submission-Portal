@@ -278,7 +278,8 @@ interface BulkSuccess {
 }
 
 interface Failure {
-	error: string;
+	error?: string;
+	fieldErrors?: Record<string, string>;
 }
 
 type CampusLeadActionResult = SingleSuccess | BulkSuccess | Failure;
@@ -313,7 +314,12 @@ export default function AdminCampusLeads() {
 			? (actionData as BulkSuccess)
 			: null;
 	const errorMessage =
-		actionData && !("success" in actionData) ? (actionData as Failure).error : null;
+		actionData && !("success" in actionData)
+			? ((actionData as Failure).error ??
+				(actionData as Failure).fieldErrors
+					? Object.values((actionData as Failure).fieldErrors!).join(". ")
+					: null)
+			: null;
 
 	return (
 		<div className="space-y-10">
