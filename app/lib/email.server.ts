@@ -22,36 +22,34 @@ const DEFAULT_FROM = "VisionHack <noreply@visionhack.mulearn.org>";
  *
  * @throws if the API returns a non-2xx status.
  */
-export async function sendEmail(
-  options: { to: string; subject: string; html: string },
-): Promise<void> {
-  const apiKey = getEnv().RESEND_API_KEY;
+export async function sendEmail(options: {
+	to: string;
+	subject: string;
+	html: string;
+}): Promise<void> {
+	const apiKey = getEnv().RESEND_API_KEY;
 
-  if (!apiKey) {
-    console.warn(
-      "[email] RESEND_API_KEY is not configured — skipping email send.",
-    );
-    return;
-  }
+	if (!apiKey) {
+		console.warn("[email] RESEND_API_KEY is not configured — skipping email send.");
+		return;
+	}
 
-  const response = await fetch(RESEND_API_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: DEFAULT_FROM,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-    }),
-  });
+	const response = await fetch(RESEND_API_URL, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			from: DEFAULT_FROM,
+			to: options.to,
+			subject: options.subject,
+			html: options.html,
+		}),
+	});
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "(no body)");
-    throw new Error(
-      `Resend API returned ${response.status}: ${body}`,
-    );
-  }
+	if (!response.ok) {
+		const body = await response.text().catch(() => "(no body)");
+		throw new Error(`Resend API returned ${response.status}: ${body}`);
+	}
 }

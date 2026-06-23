@@ -7,7 +7,6 @@ import {
 	useRouteError,
 	useSearchParams,
 } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
 import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 import { MetricCard } from "~/components/shared/metric-card";
 import { Button } from "~/components/ui/button";
@@ -20,7 +19,7 @@ import {
 	SelectValue,
 } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
-import { requireRole } from "~/lib/auth.server";
+import { secureLoader } from "~/lib/loader.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
 
@@ -60,8 +59,7 @@ const VALID_STATUSES = [
 	"rejected",
 	"withdrawn",
 ] as const;
-export async function loader({ request }: LoaderFunctionArgs) {
-	const { user, pb } = await requireRole(request, ["coordinator"]);
+export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb, request }) => {
 	pb.autoCancellation(false);
 
 	const url = new URL(request.url);
@@ -203,7 +201,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		// Echo back the active filters so the UI can stay in sync.
 		activeFilters: { search, status, district, institution },
 	};
-}
+});
 
 export function meta() {
 	return [{ title: "Coordinator Dashboard — VisionHack" }];

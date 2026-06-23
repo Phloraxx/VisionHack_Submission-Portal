@@ -35,18 +35,9 @@ local/
 # Docs / review artifacts — not needed for deployment
 references/
 docs/
-DESIGN.md
-PRODUCT.md
-Project.md
-DEPLOYMENT.md
-FIX-PLAN.md
-REVIEW-ALL-AGENTS.md
-REVIEW-CROSS-REFERENCED.md
 
 # CI / config — not needed for deployment
 .github/
-vitest.config.ts
-.env.example
 .dockerignore
 screens/
 

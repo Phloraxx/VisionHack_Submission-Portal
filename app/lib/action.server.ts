@@ -56,12 +56,10 @@ export function fail(args: {
 /**
  * Wrap a route action with the security checks every action MUST run.
  *
- *  1. **CSRF** — Origin header is validated against the allow-list.
+ *  1. **Origin check** — Origin header validated against allow-list; 403 on mismatch.
  *  2. **Form parse** — reads the body as FormData; 400 on parse failure.
- *  3. **CSRF token** — double-submit token from cookie vs form field; 403 on
- *     mismatch (defense-in-depth alongside Origin + SameSite).
- *  4. **Auth** — caller must be one of `roles`; otherwise 403.
- *  5. **Intent dispatch** — the `intent` form field is exposed to the
+ *  3. **Auth** — caller must be one of `roles`; otherwise 403.
+ *  4. **Intent dispatch** — the `intent` form field is exposed to the
  *     handler so multi-intent actions can `switch` on it.
  *
  * Rate limiting is intentionally NOT in the wrapper — it must run BEFORE
@@ -122,7 +120,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			throw err;
 		}
 
-		// 5. Schema validation
+		// 4. Schema validation
 		// NOTE: Object.fromEntries(formData.entries()) silently converts File
 		// objects to filename strings. Routes with file uploads must use
 		// formData.get("field") directly, not the schema validation path.
@@ -182,7 +180,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			}
 		}
 
-		// 5. Dispatch (no schema validation)
+		// 5. (no schema) Dispatch
 		const intent = String(formData.get("intent") ?? "").toLowerCase();
 		const ctx = {
 			request,

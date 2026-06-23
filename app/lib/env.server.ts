@@ -16,6 +16,8 @@ export interface EnvConfig {
 	POCKETBASE_ADMIN_EMAIL: string;
 	POCKETBASE_ADMIN_PASSWORD: string;
 	ALLOWED_ORIGINS?: string;
+	/** Sentry DSN for error tracking. Set in production to enable. */
+	SENTRY_DSN?: string;
 	/** Public base URL of the app, used in outbound email links. */
 	APP_URL?: string;
 	/** Resend API key for transactional email. Leave unset for local dev (emails are skipped). */
@@ -54,8 +56,8 @@ export function getEnv(): EnvConfig {
 		POCKETBASE_ADMIN_EMAIL: process.env.POCKETBASE_ADMIN_EMAIL ?? "",
 		POCKETBASE_ADMIN_PASSWORD: process.env.POCKETBASE_ADMIN_PASSWORD ?? "",
 		ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
-		APP_URL: process.env.APP_URL,
 		RESEND_API_KEY: process.env.RESEND_API_KEY,
+		SENTRY_DSN: process.env.SENTRY_DSN,
 	};
 }
 

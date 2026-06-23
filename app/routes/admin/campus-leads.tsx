@@ -1,16 +1,14 @@
-
 import { Building2, CheckCircle, Mail, MapPin, Upload, Users, XCircle } from "lucide-react";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation, isRouteErrorResponse, useRouteError } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { fail, ok, secureAction } from "~/lib/action.server";
-import { requireRole } from "~/lib/auth.server";
-import { getStr } from "~/lib/form.server";
+import { secureLoader } from "~/lib/loader.server";
 import { createCampusLead } from "~/lib/team.server";
+import { createCampusLeadSchema } from "~/lib/schemas/campus-leads";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -19,22 +17,33 @@ import { createCampusLead } from "~/lib/team.server";
 /** Valid institution code: uppercase letters and digits only. */
 const CODE_PATTERN = /^[A-Z0-9]+$/;
 
-/** Simple CSV line parser — handles basic quoted fields */
+/** Simple CSV line parser — handles quoted fields and RFC 4180 escaped quotes ("" inside quotes) */
 function parseCsvLine(line: string): string[] {
 	const result: string[] = [];
 	let current = "";
 	let inQuotes = false;
-	for (const ch of line) {
+	let i = 0;
+	while (i < line.length) {
+		const ch = line[i];
 		if (ch === '"') {
+			// RFC 4180: "" inside a quoted field is an escaped quote
+			if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+				current += '"';
+				i += 2;
+				continue;
+			}
 			inQuotes = !inQuotes;
+			i++;
 			continue;
 		}
 		if (ch === "," && !inQuotes) {
 			result.push(current.trim());
 			current = "";
+			i++;
 			continue;
 		}
 		current += ch;
+		i++;
 	}
 	result.push(current.trim());
 	return result;
@@ -44,8 +53,7 @@ function parseCsvLine(line: string): string[] {
 // Loader
 // ---------------------------------------------------------------------------
 
-export async function loader({ request }: LoaderFunctionArgs) {
-	const { user, pb } = await requireRole(request, ["admin"]);
+export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) => {
 	const institutions = await pb.collection("institutions").getList<{
 		id: string;
 		name: string;
@@ -65,7 +73,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	});
 
 	return { user, institutions: institutions.items };
-}
+});
 
 // ---------------------------------------------------------------------------
 // Action
@@ -73,18 +81,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent, pb }) => {
 	if (intent === "create-single") {
-		const institutionName = getStr(formData, "institutionName");
-		const district = getStr(formData, "district");
-		const code = getStr(formData, "code");
-		const leadName = getStr(formData, "leadName");
-		const leadEmail = getStr(formData, "leadEmail", { lower: true });
+		const parsed = createCampusLeadSchema.safeParse({
+			institutionName: formData.get("institutionName"),
+			district: formData.get("district"),
+			code: formData.get("code"),
+			leadName: formData.get("leadName"),
+			leadEmail: formData.get("leadEmail"),
+		});
 
-		if (!institutionName || !district || !code || !leadName || !leadEmail) {
-			return fail({ error: "All fields are required" });
+		if (!parsed.success) {
+			return fail({
+				fieldErrors: Object.fromEntries(
+					Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
+						k,
+						Array.isArray(v) ? v[0] : (v ?? "Invalid"),
+					]),
+				),
+			});
 		}
-		if (!CODE_PATTERN.test(code)) {
-			return fail({ error: "Institution code must be uppercase letters and digits" });
-		}
+
+		const { institutionName, district, code, leadName, leadEmail: rawEmail } = parsed.data;
+		const leadEmail = rawEmail.toLowerCase();
 
 		try {
 			// The two existence checks are independent — run in parallel.
@@ -471,6 +488,30 @@ export default function AdminCampusLeads() {
 						</p>
 					)}
 				</div>
+			</div>
+		</div>
+	);
+}
+
+export function ErrorBoundary() {
+	const error = useRouteError();
+	let message = "Something went wrong";
+	let details = "An unexpected error occurred while loading this page.";
+
+	if (isRouteErrorResponse(error)) {
+		message = error.status === 404 ? "Page not found" : `${error.status}: ${error.statusText}`;
+		details = error.data?.message || details;
+	} else if (import.meta.env.DEV && error instanceof Error) {
+		details = error.message;
+	}
+
+	return (
+		<div className="flex min-h-[50vh] items-center justify-center p-8">
+			<div className="mx-auto max-w-md text-center">
+				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">Error</p>
+				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
+				<p className="text-sm text-muted-foreground">{details}</p>
+				<button type="button" onClick={() => window.location.reload()} className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">Try again</button>
 			</div>
 		</div>
 	);

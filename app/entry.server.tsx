@@ -2,6 +2,7 @@ import { renderToReadableStream } from "react-dom/server";
 import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 
+import { getEnv } from "./lib/env.server";
 export default async function handleRequest(
 	request: Request,
 	responseStatusCode: number,
@@ -63,7 +64,7 @@ export default async function handleRequest(
 				"font-src 'self' data:",
 				"frame-ancestors 'none'",
 				"form-action 'self'",
-				`connect-src 'self'${process.env.SENTRY_DSN ? " https://*.sentry.io" : ""}`,
+				`connect-src 'self'${getEnv().SENTRY_DSN ? " https://*.sentry.io" : ""}`,
 				"base-uri 'self'",
 				"object-src 'none'",
 			].join("; "),

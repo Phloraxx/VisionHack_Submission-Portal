@@ -1,8 +1,5 @@
 import { redirect } from "react-router";
-import {
-  createAuthenticatedClient,
-  createPocketBaseClient,
-} from "./pocketbase.server";
+import { createAuthenticatedClient, createPocketBaseClient } from "./pocketbase.server";
 import { getEnv } from "./env.server";
 import { cookieParse } from "pocketbase";
 import { decodeJwtPayload, isExpiringSoon } from "./jwt.server";
@@ -27,10 +24,10 @@ const authCache = new WeakMap<Request, Promise<AuthResult>>();
 
 /** Map of role → default dashboard path */
 export const ROLE_DASHBOARD_MAP: Record<Role, string> = {
-  admin: "/admin/dashboard",
-  coordinator: "/coordinator/dashboard",
-  institution: "/institution/dashboard",
-  lead: "/lead/dashboard",
+	admin: "/admin/dashboard",
+	coordinator: "/coordinator/dashboard",
+	institution: "/institution/dashboard",
+	lead: "/lead/dashboard",
 };
 
 // ---------------------------------------------------------------------------
@@ -42,8 +39,8 @@ export const ROLE_DASHBOARD_MAP: Record<Role, string> = {
  * Returns `null` when no token is present.
  */
 export function getAuthFromCookie(request: Request): string | null {
-  const cookies = cookieParse(request.headers.get("Cookie") || "");
-  return cookies[COOKIE_NAME] ?? null;
+	const cookies = cookieParse(request.headers.get("Cookie") || "");
+	return cookies[COOKIE_NAME] ?? null;
 }
 
 /**
@@ -54,15 +51,15 @@ export function getAuthFromCookie(request: Request): string | null {
  * ```
  */
 export function setAuthCookie(token: string): string {
-  const secure = process.env.NODE_ENV === "production";
-  return [
-    `${COOKIE_NAME}=${token}`,
-    "HttpOnly",
-    ...(secure ? ["Secure"] : []),
-    "SameSite=Strict",
-    `Path=${COOKIE_PATH}`,
-    `Max-Age=${COOKIE_MAX_AGE}`,
-  ].join("; ");
+	const secure = process.env.NODE_ENV === "production";
+	return [
+		`${COOKIE_NAME}=${token}`,
+		"HttpOnly",
+		...(secure ? ["Secure"] : []),
+		"SameSite=Strict",
+		`Path=${COOKIE_PATH}`,
+		`Max-Age=${COOKIE_MAX_AGE}`,
+	].join("; ");
 }
 
 /**
@@ -70,17 +67,16 @@ export function setAuthCookie(token: string): string {
  * (immediate expiry).
  */
 export function clearAuthCookie(): string {
-  const secure = process.env.NODE_ENV === "production";
-  return [
-    `${COOKIE_NAME}=`,
-    "HttpOnly",
-    ...(secure ? ["Secure"] : []),
-    "SameSite=Strict",
-    `Path=${COOKIE_PATH}`,
-    "Max-Age=0",
-  ].join("; ");
+	const secure = process.env.NODE_ENV === "production";
+	return [
+		`${COOKIE_NAME}=`,
+		"HttpOnly",
+		...(secure ? ["Secure"] : []),
+		"SameSite=Strict",
+		`Path=${COOKIE_PATH}`,
+		"Max-Age=0",
+	].join("; ");
 }
-
 
 // ---------------------------------------------------------------------------
 // Auth actions
@@ -96,18 +92,16 @@ export function clearAuthCookie(): string {
  * Callers must catch this and return a user-friendly error message.
  */
 export async function login(
-  email: string,
-  password: string,
+	email: string,
+	password: string,
 ): Promise<{ token: string; record: UserRecord }> {
-  const pb = createPocketBaseClient();
-  const authData = await pb
-    .collection("users")
-    .authWithPassword(email, password);
+	const pb = createPocketBaseClient();
+	const authData = await pb.collection("users").authWithPassword(email, password);
 
-  return {
-    token: authData.token,
-    record: authData.record as unknown as UserRecord,
-  };
+	return {
+		token: authData.token,
+		record: authData.record as unknown as UserRecord,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -120,9 +114,9 @@ export async function login(
  * update the cookie when the token is rotated.
  */
 export interface AuthResult {
-  pb: ReturnType<typeof createAuthenticatedClient>;
-  user: UserRecord;
-  token: string;
+	pb: ReturnType<typeof createAuthenticatedClient>;
+	user: UserRecord;
+	token: string;
 }
 
 /**
@@ -158,20 +152,18 @@ export interface AuthResult {
  * }
  * ```
  */
-export async function requireAuth(
-  request: Request,
-): Promise<AuthResult> {
-  // Reuse an in-flight/resolved auth result for this request so the
-  // layout loader and child loaders share a single PocketBase call.
-  const cached = authCache.get(request);
-  if (cached) return cached;
+export async function requireAuth(request: Request): Promise<AuthResult> {
+	// Reuse an in-flight/resolved auth result for this request so the
+	// layout loader and child loaders share a single PocketBase call.
+	const cached = authCache.get(request);
+	if (cached) return cached;
 
-  const promise = resolveAuth(request);
-  authCache.set(request, promise);
-  // If auth fails (throws redirect), drop the cached rejected promise so a
-  // retry within the same request can re-evaluate.
-  promise.catch(() => authCache.delete(request));
-  return promise;
+	const promise = resolveAuth(request);
+	authCache.set(request, promise);
+	// If auth fails (throws redirect), drop the cached rejected promise so a
+	// retry within the same request can re-evaluate.
+	promise.catch(() => authCache.delete(request));
+	return promise;
 }
 
 /**
@@ -186,40 +178,38 @@ export async function requireAuth(
  * request via the cache above.
  */
 async function resolveAuth(request: Request): Promise<AuthResult> {
-  const token = getAuthFromCookie(request);
-  if (!token) throw redirect("/login");
+	const token = getAuthFromCookie(request);
+	if (!token) throw redirect("/login");
 
-  const payload = decodeJwtPayload(token);
-  if (!payload || !payload.id) {
-    // Malformed token — treat as unauthenticated.
-    throw redirect("/login");
-  }
+	const payload = decodeJwtPayload(token);
+	if (!payload || !payload.id) {
+		// Malformed token — treat as unauthenticated.
+		throw redirect("/login");
+	}
 
-  const pb = createAuthenticatedClient(token);
+	const pb = createAuthenticatedClient(token);
 
-  if (isExpiringSoon(payload)) {
-    // Near expiry (or already expired): validate against PB and rotate.
-    try {
-      await pb.collection("users").authRefresh();
-    } catch {
-      throw redirect("/login");
-    }
-    const user = pb.authStore.model as unknown as UserRecord | null;
-    if (!user) throw redirect("/login");
-    return { pb, user, token: pb.authStore.token || token };
-  }
+	if (isExpiringSoon(payload)) {
+		// Near expiry (or already expired): validate against PB and rotate.
+		try {
+			await pb.collection("users").authRefresh();
+		} catch {
+			throw redirect("/login");
+		}
+		const user = pb.authStore.model as unknown as UserRecord | null;
+		if (!user) throw redirect("/login");
+		return { pb, user, token: pb.authStore.token || token };
+	}
 
-  // Healthy token: skip the refresh round-trip. Load the user record once
-  // (needed for role/institutionId, which aren't present in the JWT).
-  try {
-    const user = await pb
-      .collection("users")
-      .getOne<UserRecord>(payload.id);
-    return { pb, user, token };
-  } catch {
-    // Record fetch failed (deleted user / invalid token) — sign out.
-    throw redirect("/login");
-  }
+	// Healthy token: skip the refresh round-trip. Load the user record once
+	// (needed for role/institutionId, which aren't present in the JWT).
+	try {
+		const user = await pb.collection("users").getOne<UserRecord>(payload.id);
+		return { pb, user, token };
+	} catch {
+		// Record fetch failed (deleted user / invalid token) — sign out.
+		throw redirect("/login");
+	}
 }
 
 /**
@@ -228,24 +218,22 @@ async function resolveAuth(request: Request): Promise<AuthResult> {
  * Returns a 401 JSON response instead of a redirect to /login. Use this
  * for resource routes (`/api/...`) where HTML redirects are inappropriate.
  */
-export async function requireAuthJson(
-  request: Request,
-): Promise<AuthResult | Response> {
-  try {
-    // Reuse the same local-validation + per-request dedupe as requireAuth.
-    return await requireAuth(request);
-  } catch (err) {
-    // requireAuth throws a redirect Response for unauthenticated requests;
-    // resource routes want a 401 JSON body instead. Only convert redirects
-    // — other Responses (e.g. 403 from requireRole) should propagate.
-    if (err instanceof Response && err.status >= 300 && err.status < 400) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    throw err;
-  }
+export async function requireAuthJson(request: Request): Promise<AuthResult | Response> {
+	try {
+		// Reuse the same local-validation + per-request dedupe as requireAuth.
+		return await requireAuth(request);
+	} catch (err) {
+		// requireAuth throws a redirect Response for unauthenticated requests;
+		// resource routes want a 401 JSON body instead. Only convert redirects
+		// — other Responses (e.g. 403 from requireRole) should propagate.
+		if (err instanceof Response && err.status >= 300 && err.status < 400) {
+			return new Response(JSON.stringify({ error: "Unauthorized" }), {
+				status: 401,
+				headers: { "Content-Type": "application/json" },
+			});
+		}
+		throw err;
+	}
 }
 
 /**
@@ -265,15 +253,12 @@ export async function requireAuthJson(
  * }
  * ```
  */
-export async function requireRole(
-  request: Request,
-  roles: Role[],
-): Promise<AuthResult> {
-  const { pb, user, token } = await requireAuth(request);
+export async function requireRole(request: Request, roles: Role[]): Promise<AuthResult> {
+	const { pb, user, token } = await requireAuth(request);
 
-  if (!roles.includes(user.role)) {
-    throw new Response("Forbidden", { status: 403 });
-  }
+	if (!roles.includes(user.role)) {
+		throw new Response("Forbidden", { status: 403 });
+	}
 
-  return { pb, user, token };
+	return { pb, user, token };
 }

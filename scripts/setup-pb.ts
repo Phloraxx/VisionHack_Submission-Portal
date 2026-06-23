@@ -100,16 +100,13 @@ async function pbFetch(
 
 async function superuserAuth(): Promise<string> {
 	console.log("🔐 Authenticating as superuser…");
-	const { ok, data } = await pbFetch(
-		"/collections/_superusers/auth-with-password",
-		{
-			method: "POST",
-			body: JSON.stringify({
-				identity: PB_ADMIN_EMAIL,
-				password: PB_ADMIN_PASSWORD,
-			}),
-		},
-	);
+	const { ok, data } = await pbFetch("/collections/_superusers/auth-with-password", {
+		method: "POST",
+		body: JSON.stringify({
+			identity: PB_ADMIN_EMAIL,
+			password: PB_ADMIN_PASSWORD,
+		}),
+	});
 	if (!ok) {
 		throw new Error(`Authentication failed: ${JSON.stringify(data)}`);
 	}
@@ -121,31 +118,22 @@ function auth(token: string): Record<string, string> {
 	return { Authorization: `Bearer ${token}` };
 }
 
-async function getCollection(
-	token: string,
-	name: string,
-): Promise<any | null> {
+async function getCollection(token: string, name: string): Promise<any | null> {
 	const { status, ok, data } = await pbFetch(`/collections/${name}`, {
 		headers: auth(token),
 	});
 	if (ok) return data;
 	if (status === 404) return null;
-	throw new Error(
-		`Failed to fetch collection "${name}": ${JSON.stringify(data)}`,
-	);
+	throw new Error(`Failed to fetch collection "${name}": ${JSON.stringify(data)}`);
 }
 
 /** Fetch all collections and return a Map of name → id */
-async function getCollectionIdMap(
-	token: string,
-): Promise<Map<string, string>> {
+async function getCollectionIdMap(token: string): Promise<Map<string, string>> {
 	const { ok, data } = await pbFetch("/collections", {
 		headers: auth(token),
 	});
 	if (!ok || !data?.items) {
-		throw new Error(
-			`Failed to list collections: ${JSON.stringify(data)}`,
-		);
+		throw new Error(`Failed to list collections: ${JSON.stringify(data)}`);
 	}
 	const map = new Map<string, string>();
 	for (const c of data.items) {
@@ -223,26 +211,26 @@ const MEMBERS_RULES = {
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
 		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
-		'teamId.leaderUserId ?= @request.auth.id)',
+		"teamId.leaderUserId ?= @request.auth.id)",
 	viewRule:
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
 		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
-		'teamId.leaderUserId ?= @request.auth.id)',
+		"teamId.leaderUserId ?= @request.auth.id)",
 	createRule:
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "institution" || ' +
-		'teamId.leaderUserId ?= @request.auth.id)',
+		"teamId.leaderUserId ?= @request.auth.id)",
 	updateRule:
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
-		'teamId.leaderUserId ?= @request.auth.id)',
+		"teamId.leaderUserId ?= @request.auth.id)",
 	deleteRule:
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
-		'teamId.leaderUserId ?= @request.auth.id)',
+		"teamId.leaderUserId ?= @request.auth.id)",
 } as const;
 
 /** Questionnaire responses — scoped to the user or admin. */
@@ -251,18 +239,16 @@ const QUESTIONNAIRE_RULES = {
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'userId ?= @request.auth.id)',
+		"userId ?= @request.auth.id)",
 	viewRule:
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'userId ?= @request.auth.id)',
+		"userId ?= @request.auth.id)",
 	createRule:
-		'@request.auth.id != "" && (' +
-		'userId ?= @request.auth.id || @request.auth.role = "admin")',
+		'@request.auth.id != "" && (' + 'userId ?= @request.auth.id || @request.auth.role = "admin")',
 	updateRule:
-		'@request.auth.id != "" && (' +
-		'userId ?= @request.auth.id || @request.auth.role = "admin")',
+		'@request.auth.id != "" && (' + 'userId ?= @request.auth.id || @request.auth.role = "admin")',
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
 
@@ -282,19 +268,20 @@ const INSTITUTIONS_RULES = {
  *  can mutate. */
 const USERS_RULES = {
 	listRule:
-		'id = @request.auth.id || ' +
+		"id = @request.auth.id || " +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
 		'@request.auth.role = "institution"',
 	viewRule:
-		'id = @request.auth.id || ' +
+		"id = @request.auth.id || " +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
 		'@request.auth.role = "institution"',
-	createRule: '@request.auth.role = "admin" || (@request.auth.role = "institution" && @request.body.role = "lead")',
+	createRule:
+		'@request.auth.role = "admin" || (@request.auth.role = "institution" && @request.body.role = "lead")',
 	updateRule:
-		'id = @request.auth.id && @request.body.role:isset = false && ' +
-		'@request.body.institutionId:isset = false',
+		"id = @request.auth.id && @request.body.role:isset = false && " +
+		"@request.body.institutionId:isset = false",
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
 
@@ -322,10 +309,7 @@ async function ensureAuthenticatedAccess(
 	}
 }
 
-async function createCollection(
-	token: string,
-	collection: Record<string, unknown>,
-): Promise<any> {
+async function createCollection(token: string, collection: Record<string, unknown>): Promise<any> {
 	const name = String(collection.name);
 	console.log(`  ➕ Creating collection "${name}"…`);
 	const { ok, data } = await pbFetch("/collections", {
@@ -334,9 +318,7 @@ async function createCollection(
 		body: JSON.stringify(collection),
 	});
 	if (!ok) {
-		throw new Error(
-			`Failed to create collection "${name}": ${JSON.stringify(data)}`,
-		);
+		throw new Error(`Failed to create collection "${name}": ${JSON.stringify(data)}`);
 	}
 	console.log(`  ✅ Collection "${name}" created (id: ${data.id})`);
 	return data;
@@ -354,9 +336,7 @@ async function updateCollection(
 		body: JSON.stringify(collection),
 	});
 	if (!ok) {
-		throw new Error(
-			`Failed to update collection "${name}": ${JSON.stringify(data)}`,
-		);
+		throw new Error(`Failed to update collection "${name}": ${JSON.stringify(data)}`);
 	}
 	console.log(`  ✅ Collection "${name}" updated`);
 	return data;
@@ -367,18 +347,13 @@ async function createRecord(
 	collection: string,
 	record: Record<string, unknown>,
 ): Promise<any | null> {
-	const { ok, data } = await pbFetch(
-		`/collections/${collection}/records`,
-		{
-			method: "POST",
-			headers: auth(token),
-			body: JSON.stringify(record),
-		},
-	);
+	const { ok, data } = await pbFetch(`/collections/${collection}/records`, {
+		method: "POST",
+		headers: auth(token),
+		body: JSON.stringify(record),
+	});
 	if (!ok) {
-		console.log(
-			`  ⚠️  Could not create record: ${JSON.stringify(data)}`,
-		);
+		console.log(`  ⚠️  Could not create record: ${JSON.stringify(data)}`);
 		return null;
 	}
 	return data;
@@ -600,10 +575,7 @@ async function ensureTeamsCollection(
 		const sf = fields[statusIdx];
 		const currentVals: string[] = sf.values ?? [];
 
-		if (
-			sf.maxSelect !== 1 ||
-			!arraysEqualIgnoreOrder(currentVals, correctStatusValues)
-		) {
+		if (sf.maxSelect !== 1 || !arraysEqualIgnoreOrder(currentVals, correctStatusValues)) {
 			console.log("  📝 Updating «status» field select values…");
 			fields[statusIdx] = {
 				...sf,
@@ -627,9 +599,7 @@ async function ensureTeamsCollection(
 	}
 
 	// --- Add `questionnaire_completed` (denormalized) ---
-	const qcIdx = fields.findIndex(
-		(f: any) => f.name === "questionnaire_completed",
-	);
+	const qcIdx = fields.findIndex((f: any) => f.name === "questionnaire_completed");
 	if (qcIdx < 0) {
 		console.log("  ➕ Adding «questionnaire_completed» bool field…");
 		fields.push({ name: "questionnaire_completed", type: "bool", required: false });
@@ -639,9 +609,7 @@ async function ensureTeamsCollection(
 	// --- Convert `status_changed_at` from autodate to plain date ---
 	// The app owns the value; autodate was a footgun if `onUpdate` ever
 	// got flipped on a future migration.
-	const statusChangedAtIdx = fields.findIndex(
-		(f: any) => f.name === "status_changed_at",
-	);
+	const statusChangedAtIdx = fields.findIndex((f: any) => f.name === "status_changed_at");
 	if (statusChangedAtIdx < 0) {
 		console.log("  ➕ Adding «status_changed_at» date field…");
 		fields.push({ name: "status_changed_at", type: "date", required: false });
@@ -768,7 +736,14 @@ async function ensureInstitutionsCollection(
 		const hasMaxTeams = fields.some((f: any) => f.name === "maxTeams");
 		if (!hasMaxTeams) {
 			console.log("  ➕ Adding «maxTeams» field…");
-			fields.push({ name: "maxTeams", type: "number", required: false, min: null, max: null, onlyInt: false });
+			fields.push({
+				name: "maxTeams",
+				type: "number",
+				required: false,
+				min: null,
+				max: null,
+				onlyInt: false,
+			});
 			changed = true;
 		}
 
@@ -857,9 +832,7 @@ async function ensureInstitutionsCollection(
 				values: ["active", "suspended"],
 			},
 		],
-		indexes: [
-			"CREATE UNIQUE INDEX idx_institutions_code ON institutions (code)",
-		],
+		indexes: ["CREATE UNIQUE INDEX idx_institutions_code ON institutions (code)"],
 		...NO_RULES,
 	});
 }
@@ -870,13 +843,6 @@ async function ensureMembersCollection(
 ): Promise<void> {
 	console.log("\n🔧 Ensuring «members» collection…");
 
-	const existing = await getCollection(token, "members");
-	if (existing) {
-		console.log(
-			"  ⚠️  Existing members collection — index not added (run manually if needed)",
-		);
-		return;
-	}
 
 	const teamsId = collectionIds.get("teams");
 
@@ -936,6 +902,7 @@ async function ensureMembersCollection(
 		],
 		indexes: [
 			"CREATE INDEX idx_members_team ON members (teamId)",
+			"CREATE UNIQUE INDEX idx_members_team_email ON members (teamId, email)",
 		],
 		...NO_RULES,
 	});
@@ -952,7 +919,7 @@ async function ensureConfigCollection(token: string): Promise<void> {
 		const valueField = fields.find((f: any) => f.name === "value");
 		if (valueField && valueField.required !== false) {
 			console.log(
-				'  📝 Fixing «value» bool field (changing required: true → required: false so false values can be saved)…',
+				"  📝 Fixing «value» bool field (changing required: true → required: false so false values can be saved)…",
 			);
 			valueField.required = false;
 			await updateCollection(token, "config", { fields });
@@ -996,9 +963,7 @@ async function ensureConfigCollection(token: string): Promise<void> {
 				required: false, // required:true prevents saving `false` values
 			},
 		],
-		indexes: [
-			"CREATE UNIQUE INDEX idx_config_key ON config (key)",
-		],
+		indexes: ["CREATE UNIQUE INDEX idx_config_key ON config (key)"],
 		...CONFIG_RULES,
 	});
 
@@ -1023,9 +988,7 @@ async function seedConfigRecords(token: string): Promise<void> {
 		headers: auth(token),
 	});
 	if (ok && data?.items) {
-		console.log(
-			`  ✅ Config collection seeded (${data.items.length} records total)`,
-		);
+		console.log(`  ✅ Config collection seeded (${data.items.length} records total)`);
 	}
 }
 
@@ -1040,9 +1003,7 @@ async function ensureQuestionnaireResponsesCollection(
 	const usersId = collectionIds.get("users");
 
 	if (!teamsId || !usersId) {
-		throw new Error(
-			"Cannot resolve collection IDs for relations (teams or users missing).",
-		);
+		throw new Error("Cannot resolve collection IDs for relations (teams or users missing).");
 	}
 
 	if (existing) {
@@ -1052,7 +1013,13 @@ async function ensureQuestionnaireResponsesCollection(
 
 		const expectedFields = [
 			{ name: "age", type: "number", required: false, min: null, max: null, onlyInt: false },
-			{ name: "gender", type: "select", required: false, maxSelect: 1, values: ["Male", "Female", "Other"] },
+			{
+				name: "gender",
+				type: "select",
+				required: false,
+				maxSelect: 1,
+				values: ["Male", "Female", "Other"],
+			},
 			{ name: "education", type: "text", required: false, min: null, max: null, pattern: "" },
 			{ name: "college_name", type: "text", required: false, min: null, max: null, pattern: "" },
 			{ name: "district", type: "text", required: false, min: null, max: null, pattern: "" },
@@ -1107,7 +1074,13 @@ async function ensureQuestionnaireResponsesCollection(
 				minSelect: null,
 			},
 			{ name: "age", type: "number", required: false, min: null, max: null, onlyInt: false },
-			{ name: "gender", type: "select", required: false, maxSelect: 1, values: ["Male", "Female", "Other"] },
+			{
+				name: "gender",
+				type: "select",
+				required: false,
+				maxSelect: 1,
+				values: ["Male", "Female", "Other"],
+			},
 			{ name: "education", type: "text", required: false, min: null, max: 200, pattern: "" },
 			{ name: "college_name", type: "text", required: false, min: null, max: 200, pattern: "" },
 			{ name: "district", type: "text", required: false, min: null, max: 100, pattern: "" },
@@ -1128,7 +1101,6 @@ async function ensureQuestionnaireResponsesCollection(
 	});
 }
 
-
 async function ensureStatusTransitionsCollection(
 	token: string,
 	collectionIds: Map<string, string>,
@@ -1137,9 +1109,7 @@ async function ensureStatusTransitionsCollection(
 
 	const existing = await getCollection(token, "status_transitions");
 	if (existing) {
-		console.log(
-			"  ✅ «status_transitions» collection already exists — skipping creation",
-		);
+		console.log("  ✅ «status_transitions» collection already exists — skipping creation");
 		return;
 	}
 
@@ -1147,9 +1117,7 @@ async function ensureStatusTransitionsCollection(
 	const usersId = collectionIds.get("users");
 
 	if (!teamsId || !usersId) {
-		throw new Error(
-			"Cannot resolve collection IDs for relations (teams or users missing).",
-		);
+		throw new Error("Cannot resolve collection IDs for relations (teams or users missing).");
 	}
 
 	await createCollection(token, {
@@ -1246,7 +1214,9 @@ async function ensureRateLimiting(token: string): Promise<void> {
 	});
 
 	if (patchOk) {
-		console.log("  ✅ Rate limiting enabled (10 auth/min, 30 create/min, 10 files/min, 300 api/min)");
+		console.log(
+			"  ✅ Rate limiting enabled (10 auth/min, 30 create/min, 10 files/min, 300 api/min)",
+		);
 	} else {
 		console.log("  ⚠️  Could not enable rate limiting");
 	}
@@ -1320,9 +1290,9 @@ async function ensureUsersCollection(token: string): Promise<void> {
 	}
 
 	const desiredUpdateRule =
-		'id = @request.auth.id && ' +
-		'@request.body.role:isset = false && ' +
-		'@request.body.institutionId:isset = false';
+		"id = @request.auth.id && " +
+		"@request.body.role:isset = false && " +
+		"@request.body.institutionId:isset = false";
 
 	const rulesChanged =
 		existing.listRule !== USERS_RULES.listRule ||
@@ -1354,32 +1324,34 @@ async function ensureUsersCollection(token: string): Promise<void> {
 const SCHEMA_VERSION = 3;
 
 async function ensureSchemaVersion(token: string): Promise<void> {
-  const resp = await pbFetch(`${API_BASE}/collections/config/records?filter=key%3D%22schema_version%22`, {
-    headers: { Authorization: `Bearer ${token}` },
-  }).catch(() => null);
+	const resp = await pbFetch(
+		`${API_BASE}/collections/config/records?filter=key%3D%22schema_version%22`,
+		{
+			headers: { Authorization: `Bearer ${token}` },
+		},
+	).catch(() => null);
 
-  if (!resp?.ok) return;
-  const existing = (resp.data as any)?.items?.[0] ?? null;
+	if (!resp?.ok) return;
+	const existing = (resp.data as any)?.items?.[0] ?? null;
 
-  if (existing) {
-    if (Number(existing.value) !== SCHEMA_VERSION) {
-      await pbFetch(`${API_BASE}/collections/config/records/${existing.id}`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ value: SCHEMA_VERSION }),
-      });
-      console.log(`  📋 Schema version bumped to v${SCHEMA_VERSION}`);
-    }
-  } else {
-    await pbFetch(`${API_BASE}/collections/config/records`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ key: "schema_version", value: SCHEMA_VERSION }),
-    });
-    console.log(`  📋 Schema version set to v${SCHEMA_VERSION}`);
-  }
+	if (existing) {
+		if (Number(existing.value) !== SCHEMA_VERSION) {
+			await pbFetch(`${API_BASE}/collections/config/records/${existing.id}`, {
+				method: "PATCH",
+				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ value: SCHEMA_VERSION }),
+			});
+			console.log(`  📋 Schema version bumped to v${SCHEMA_VERSION}`);
+		}
+	} else {
+		await pbFetch(`${API_BASE}/collections/config/records`, {
+			method: "POST",
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			body: JSON.stringify({ key: "schema_version", value: SCHEMA_VERSION }),
+		});
+		console.log(`  📋 Schema version set to v${SCHEMA_VERSION}`);
+	}
 }
-
 
 async function main(): Promise<void> {
 	console.log("╔══════════════════════════════════════════════╗");
@@ -1424,7 +1396,6 @@ async function main(): Promise<void> {
 	// mail client — no email_outbox collection needed.
 	// Track schema version for migration awareness
 	await ensureSchemaVersion(token);
-
 
 	// Enable rate limiting
 	await ensureRateLimiting(token);

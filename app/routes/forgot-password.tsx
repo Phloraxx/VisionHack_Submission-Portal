@@ -34,8 +34,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	const pb = createPocketBaseClient();
 
-	// Always succeed (don't reveal whether the email exists). Origin and
-	// CSRF token validation above prevent abuse.
+	// Always succeed (don't reveal whether the email exists). Origin validation
+	// and rate limiting above prevent abuse.
 	try {
 		await pb.collection("users").requestPasswordReset(email);
 	} catch {

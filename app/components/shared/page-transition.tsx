@@ -1,8 +1,8 @@
 import { cn } from "~/lib/utils";
 
 interface PageTransitionProps {
-  children: React.ReactNode;
-  className?: string;
+	children: React.ReactNode;
+	className?: string;
 }
 
 /**
@@ -11,9 +11,5 @@ interface PageTransitionProps {
  * on each navigation, replaying the entrance.
  */
 export function PageTransition({ children, className }: PageTransitionProps) {
-  return (
-    <div className={cn("page-enter", className)}>
-      {children}
-    </div>
-  );
+	return <div className={cn("page-enter", className)}>{children}</div>;
 }

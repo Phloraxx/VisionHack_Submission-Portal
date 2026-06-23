@@ -1,12 +1,11 @@
 import { Download } from "lucide-react";
 import { useLoaderData } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
 import { Link } from "react-router";
 import TeamDetail, { downloadTeamCSV } from "~/components/shared/team-detail";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { fail, ok, secureAction } from "~/lib/action.server";
-import { requireRole } from "~/lib/auth.server";
+import { secureLoader } from "~/lib/loader.server";
 import { getValidTransitions } from "~/lib/team-status";
 import {
 	getInstitutionForUser,
@@ -38,111 +37,113 @@ interface LoaderData {
 // Loader — role-aware scoping
 // ---------------------------------------------------------------------------
 
-export async function loader({ request, params }: LoaderFunctionArgs) {
-	const { pb, user } = await requireRole(request, ["admin", "coordinator", "institution", "lead"]);
-	const teamId = params.teamId as string;
+export const loader = secureLoader(
+	{ roles: ["admin", "coordinator", "institution", "lead"] },
+	async ({ pb, user, params }) => {
+		const teamId = params.teamId as string;
 
-	switch (user.role) {
-		// Lead — can only access their own team
-		case "lead": {
-			const team = await getLeadTeam<TeamView>(pb, user.id, {
-				expand: "institutionId,leaderUserId",
-			});
-			if (!team) throw new Response("No team found", { status: 404 });
-			if (team.id !== teamId) throw new Response("Forbidden", { status: 403 });
-
-			const [members, questionnaire] = await Promise.all([
-				pb.collection("members").getList<MemberRecord>(1, 100, {
-					filter: pb.filter("teamId = {:teamId}", { teamId: team.id }),
-				}),
-				pb
-					.collection("questionnaire_responses")
-					.getFirstListItem<QuestionnaireResponseRecord>(
-						pb.filter("teamId = {:teamId}", { teamId: team.id }),
-					)
-					.catch(() => null),
-			]);
-
-			return {
-				user,
-				team,
-				members: members.items,
-				questionnaire,
-				validTransitions: [],
-			} satisfies LoaderData;
-		}
-
-		// Institution — scoped to their own institution's teams
-		case "institution": {
-			const [institution, team] = await Promise.all([
-				getInstitutionForUser(pb, user.id, { fields: "id" }),
-				pb.collection("teams").getOne<TeamView>(teamId, {
+		switch (user.role) {
+			// Lead — can only access their own team
+			case "lead": {
+				const team = await getLeadTeam<TeamView>(pb, user.id, {
 					expand: "institutionId,leaderUserId",
-				}),
-			]);
+				});
+				if (!team) throw new Response("No team found", { status: 404 });
+				if (team.id !== teamId) throw new Response("Forbidden", { status: 403 });
 
-			if (!institution) throw new Response("Institution not found", { status: 404 });
-			if (team.institutionId !== institution.id) {
-				throw new Response("Team not found", { status: 404 });
+				const [members, questionnaire] = await Promise.all([
+					pb.collection("members").getList<MemberRecord>(1, 100, {
+						filter: pb.filter("teamId = {:teamId}", { teamId: team.id }),
+					}),
+					pb
+						.collection("questionnaire_responses")
+						.getFirstListItem<QuestionnaireResponseRecord>(
+							pb.filter("teamId = {:teamId}", { teamId: team.id }),
+						)
+						.catch(() => null),
+				]);
+
+				return {
+					user,
+					team,
+					members: members.items,
+					questionnaire,
+					validTransitions: [],
+				} satisfies LoaderData;
 			}
 
-			const [members, questionnaire] = await Promise.all([
-				pb.collection("members").getList<MemberRecord>(1, 100, {
-					filter: pb.filter("teamId = {:teamId}", { teamId }),
-				}),
-				pb
-					.collection("questionnaire_responses")
-					.getFirstListItem<QuestionnaireResponseRecord>(
-						pb.filter("teamId = {:teamId}", { teamId }),
-					)
-					.catch(() => null),
-			]);
+			// Institution — scoped to their own institution's teams
+			case "institution": {
+				const [institution, team] = await Promise.all([
+					getInstitutionForUser(pb, user.id, { fields: "id" }),
+					pb.collection("teams").getOne<TeamView>(teamId, {
+						expand: "institutionId,leaderUserId",
+					}),
+				]);
 
-			const validTransitions = getValidTransitions(team.status, user.role);
+				if (!institution) throw new Response("Institution not found", { status: 404 });
+				if (team.institutionId !== institution.id) {
+					throw new Response("Team not found", { status: 404 });
+				}
 
-			return {
-				user,
-				team,
-				members: members.items,
-				questionnaire,
-				validTransitions,
-			} satisfies LoaderData;
+				const [members, questionnaire] = await Promise.all([
+					pb.collection("members").getList<MemberRecord>(1, 100, {
+						filter: pb.filter("teamId = {:teamId}", { teamId }),
+					}),
+					pb
+						.collection("questionnaire_responses")
+						.getFirstListItem<QuestionnaireResponseRecord>(
+							pb.filter("teamId = {:teamId}", { teamId }),
+						)
+						.catch(() => null),
+				]);
+
+				const validTransitions = getValidTransitions(team.status, user.role);
+
+				return {
+					user,
+					team,
+					members: members.items,
+					questionnaire,
+					validTransitions,
+				} satisfies LoaderData;
+			}
+
+			// Admin & Coordinator — global access, transitions filtered per role
+			case "admin":
+			case "coordinator": {
+				const team = await pb.collection("teams").getOne<TeamView>(teamId, {
+					expand: "institutionId,leaderUserId",
+				});
+
+				const [members, questionnaire] = await Promise.all([
+					pb.collection("members").getList<MemberRecord>(1, 100, {
+						filter: pb.filter("teamId = {:teamId}", { teamId }),
+					}),
+					pb
+						.collection("questionnaire_responses")
+						.getFirstListItem<QuestionnaireResponseRecord>(
+							pb.filter("teamId = {:teamId}", { teamId }),
+						)
+						.catch(() => null),
+				]);
+
+				const validTransitions = getValidTransitions(team.status, user.role);
+
+				return {
+					user,
+					team,
+					members: members.items,
+					questionnaire,
+					validTransitions,
+				} satisfies LoaderData;
+			}
+
+			default:
+				throw new Response("Forbidden", { status: 403 });
 		}
-
-		// Admin & Coordinator — global access, transitions filtered per role
-		case "admin":
-		case "coordinator": {
-			const team = await pb.collection("teams").getOne<TeamView>(teamId, {
-				expand: "institutionId,leaderUserId",
-			});
-
-			const [members, questionnaire] = await Promise.all([
-				pb.collection("members").getList<MemberRecord>(1, 100, {
-					filter: pb.filter("teamId = {:teamId}", { teamId }),
-				}),
-				pb
-					.collection("questionnaire_responses")
-					.getFirstListItem<QuestionnaireResponseRecord>(
-						pb.filter("teamId = {:teamId}", { teamId }),
-					)
-					.catch(() => null),
-			]);
-
-			const validTransitions = getValidTransitions(team.status, user.role);
-
-			return {
-				user,
-				team,
-				members: members.items,
-				questionnaire,
-				validTransitions,
-			} satisfies LoaderData;
-		}
-
-		default:
-			throw new Response("Forbidden", { status: 403 });
-	}
-}
+	},
+);
 
 // ---------------------------------------------------------------------------
 // Action — role-gated status transitions (lead is read-only)

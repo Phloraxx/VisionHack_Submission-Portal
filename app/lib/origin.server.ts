@@ -5,19 +5,19 @@ import { getEnv } from "./env.server";
 // ---------------------------------------------------------------------------
 
 const DEFAULT_ALLOWED_ORIGINS: string[] = [
-  "http://localhost:5173",
-  "https://visionhack.mulearn.org",
+	"http://localhost:5173",
+	"https://visionhack.mulearn.org",
 ];
 
 function getAllowedOrigins(): string[] {
-  const envOrigins = getEnv().ALLOWED_ORIGINS;
-  if (envOrigins) {
-    return envOrigins
-      .split(",")
-      .map((o: string) => o.trim())
-      .filter(Boolean);
-  }
-  return DEFAULT_ALLOWED_ORIGINS;
+	const envOrigins = getEnv().ALLOWED_ORIGINS;
+	if (envOrigins) {
+		return envOrigins
+			.split(",")
+			.map((o: string) => o.trim())
+			.filter(Boolean);
+	}
+	return DEFAULT_ALLOWED_ORIGINS;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,33 +47,31 @@ function getAllowedOrigins(): string[] {
  * - **Mismatched Origin:** throws a 403 response.
  */
 export function validateOrigin(request: Request, requireOrigin = false): void {
-  const origin = request.headers.get("Origin");
+	const origin = request.headers.get("Origin");
 
-  if (!origin) {
-    if (requireOrigin) {
-      throw new Response("Missing Origin header", { status: 403 });
-    }
-    // Missing Origin is allowed when requireOrigin is false — the
-    // SameSite=Strict cookie attribute is the primary defense. Some
-    // browsers (especially headless/automated) omit Origin on same-origin
-    // POST requests from JS.
-    return;
-  }
+	if (!origin) {
+		if (requireOrigin) {
+			throw new Response("Missing Origin header", { status: 403 });
+		}
+		// Missing Origin is allowed when requireOrigin is false — the
+		// SameSite=Strict cookie attribute is the primary defense. Some
+		// browsers (especially headless/automated) omit Origin on same-origin
+		// POST requests from JS.
+		return;
+	}
 
-  // In development, allow only the known Vite dev-server ports
-  if (process.env.NODE_ENV !== "production") {
-    const devPorts = [5173, 5174, 5175];
-    const isAllowedDevOrigin = devPorts.some(
-      (port) =>
-        origin === `http://localhost:${port}` ||
-        origin === `http://127.0.0.1:${port}`,
-    );
-    if (isAllowedDevOrigin) return;
-  }
+	// In development, allow only the known Vite dev-server ports
+	if (process.env.NODE_ENV !== "production") {
+		const devPorts = [5173, 5174, 5175];
+		const isAllowedDevOrigin = devPorts.some(
+			(port) => origin === `http://localhost:${port}` || origin === `http://127.0.0.1:${port}`,
+		);
+		if (isAllowedDevOrigin) return;
+	}
 
-  const allowedOrigins = getAllowedOrigins();
+	const allowedOrigins = getAllowedOrigins();
 
-  if (!allowedOrigins.includes(origin)) {
-    throw new Response("Invalid origin", { status: 403 });
-  }
+	if (!allowedOrigins.includes(origin)) {
+		throw new Response("Invalid origin", { status: 403 });
+	}
 }

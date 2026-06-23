@@ -1,19 +1,19 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+	return twMerge(clsx(inputs));
 }
 
 /** Escape HTML special characters to prevent injection in email/HTML contexts. */
 export function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
-    .replace(/`/g, "&#96;");
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#039;")
+		.replace(/`/g, "&#96;");
 }
 
 /**
@@ -27,18 +27,16 @@ export function escapeHtml(str: string): string {
  *     prefixing a single quote, which spreadsheets render as text.
  */
 export function escapeCsv(str: string): string {
-  if (!str) return "";
-  let text = String(str);
+	if (!str) return "";
+	let text = String(str);
 
-  // Neutralize formula injection before quoting.
-  if (/^[=+\-@\t\r]/.test(text)) {
-    text = `'${text}`;
-  }
+	// Neutralize formula injection before quoting.
+	if (/^[=+\-@\t\r]/.test(text)) {
+		text = `'${text}`;
+	}
 
-  text = text.replace(/"/g, '""');
-  return text.includes(",") || text.includes('"') || text.includes("\n")
-    ? `"${text}"`
-    : text;
+	text = text.replace(/"/g, '""');
+	return text.includes(",") || text.includes('"') || text.includes("\n") ? `"${text}"` : text;
 }
 
 /**
@@ -47,27 +45,24 @@ export function escapeCsv(str: string): string {
  * aren't meaningful answers.
  */
 export const QUESTIONNAIRE_EXCLUDE_KEYS = [
-  "id",
-  "teamId",
-  "userId",
-  "created",
-  "updated",
-  "collectionId",
-  "collectionName",
+	"id",
+	"teamId",
+	"userId",
+	"created",
+	"updated",
+	"collectionId",
+	"collectionName",
 ] as const;
 
 /**
  * Count items by a derived key.
  * Returns `Record<key, count>` — e.g. count members per team.
  */
-export function countByKey<T>(
-  items: T[],
-  keyFn: (item: T) => string,
-): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const item of items) {
-    const key = keyFn(item);
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-  return counts;
+export function countByKey<T>(items: T[], keyFn: (item: T) => string): Record<string, number> {
+	const counts: Record<string, number> = {};
+	for (const item of items) {
+		const key = keyFn(item);
+		counts[key] = (counts[key] ?? 0) + 1;
+	}
+	return counts;
 }
