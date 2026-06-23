@@ -59,13 +59,11 @@ export default async function handleRequest(
 			"Content-Security-Policy",
 			[
 				"default-src 'self'",
-				// React's ServerRouter stamps hydration scripts with the nonce.
-				// The theme script in root.tsx is allowed via its SHA-256 hash.
-				`script-src 'self' 'nonce-${nonce}' 'sha256-fPSrc0uPe4MWxphkXHAOL3JKPdmK+4/we8uR5UrZYns='`,
-				// 'unsafe-inline' is required for Tailwind v4 inline style attributes
-				// (e.g. `style={...}` on dynamic elements and the Toaster component).
-				// When combined with a nonce the browser silently drops 'unsafe-inline',
-				// so we omit the nonce from style-src.
+				// RR7's <Scripts /> emits inline route-chunk mapping scripts without
+				// nonce support, so 'unsafe-inline' is required for those to execute.
+				// The theme script hash provides an additional allowed path.
+				`script-src 'self' 'unsafe-inline' 'sha256-fPSrc0uPe4MWxphkXHAOL3JKPdmK+4/we8uR5UrZYns='`,
+				// Tailwind v4 and Radix use dynamic style attributes.
 				"style-src 'self' 'unsafe-inline'",
 				"img-src 'self' data: blob:",
 				"font-src 'self' data:",
