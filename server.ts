@@ -28,14 +28,16 @@ const MIME: Record<string, string> = {
 
 const clientDir = path.resolve(import.meta.dirname, "build", "client");
 
+let buildPromise: Promise<ServerBuild> | null = null;
+const getBuild = (): Promise<ServerBuild> => {
+	if (!buildPromise) buildPromise = import("./build/server/index.js") as Promise<ServerBuild>;
+	return buildPromise;
+};
+
 const rrHandler = createRequestListener({
 	// Cast: the built server bundle exports a ServerBuild-compliant object.
 	// The dynamic import defers loading until first request (cold start).
-	build: (() => {
-		// @ts-expect-error — the build output is a plain JS file without types;
-		// we cast it to ServerBuild at runtime.
-		return import("./build/server/index.js") as Promise<ServerBuild>;
-	}) as () => Promise<ServerBuild>,
+	build: getBuild as () => Promise<ServerBuild>,
 	mode: process.env.NODE_ENV ?? "development",
 	getLoadContext: () => ({}),
 });
@@ -72,7 +74,7 @@ const server = http.createServer((req, res) => {
 					res.writeHead(200, {
 						"Content-Type": MIME[ext],
 						"Content-Length": stat.size,
-						"Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
+						"Cache-Control": ext === ".html" ? "no-cache" : url.pathname.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache",
 					});
 					if (req.method === "GET") {
 						fs.createReadStream(resolved).pipe(res);

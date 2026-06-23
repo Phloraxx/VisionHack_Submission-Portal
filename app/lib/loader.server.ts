@@ -56,6 +56,14 @@ export function secureLoader<C extends LoaderContext = LoaderContext>(
 			user = auth.user;
 		} catch (err) {
 			if (err instanceof Response) {
+				// Navigation (SSR) requests expect HTML; let the redirect flow
+				// so the browser follows to /login. Only return JSON for API/data
+				// requests that don't accept text/html.
+				const isNavigation = request.headers
+					.get("Accept")
+					?.includes("text/html");
+				if (isNavigation) throw err;
+
 				if (err.status === 401) {
 					return data({ error: "Authentication required" }, { status: 401 });
 				}

@@ -109,11 +109,9 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			user = auth.user;
 		} catch (err) {
 			if (err instanceof Response) {
-				// 401 = not authenticated (redirect to login), 403 = wrong role
-				if (err.status === 401) {
-					return fail({ error: "Authentication required", status: 401 });
-				}
-				// For any other redirect or error status, pass the status through
+				// 403 = wrong role; unauthenticated users get a 302 redirect to
+				// /login (from requireAuth) — that falls through to `throw err`
+				// below, which is the intended behavior for HTML form actions.
 				if (err.status === 403) {
 					return fail({ error: "Insufficient permissions", status: 403 });
 				}

@@ -3,6 +3,7 @@ import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 
 import { getEnv } from "./lib/env.server";
+import * as Sentry from "@sentry/node";
 
 export default async function handleRequest(
 	request: Request,
@@ -15,6 +16,12 @@ export default async function handleRequest(
 
 	const body = await renderToReadableStream(
 		<ServerRouter context={routerContext} url={request.url} nonce={nonce} />,
+		{
+			onError(error) {
+				console.error(error);
+				Sentry.captureException(error);
+			},
+		},
 	);
 
 	// -----------------------------------------------------------------------
@@ -57,7 +64,7 @@ export default async function handleRequest(
 	const transform = new TransformStream<Uint8Array, Uint8Array>();
 	const writer = transform.writable.getWriter();
 	const encoder = new TextEncoder();
-	const injectTarget = "</body>";
+	const injectTarget = /<\/body\s*>/i;
 
 	(async () => {
 		const reader = body.getReader();
@@ -67,14 +74,14 @@ export default async function handleRequest(
 		while (true) {
 			const { done, value } = await reader.read();
 			if (done) {
-				if (!injected) buffer = buffer.replace(injectTarget, `${patch}${injectTarget}`);
+				if (!injected) buffer = buffer.replace(injectTarget, `${patch}$&`);
 				await writer.write(encoder.encode(buffer));
 				await writer.close();
 				break;
 			}
 			buffer += decoder.decode(value, { stream: true });
 			if (!injected) {
-				const idx = buffer.indexOf(injectTarget);
+				const idx = buffer.search(injectTarget);
 				if (idx !== -1) {
 					injected = true;
 					await writer.write(encoder.encode(buffer.slice(0, idx) + patch));
@@ -82,7 +89,7 @@ export default async function handleRequest(
 				}
 			}
 		}
-	})();
+	})().catch(err => { writer.abort(err); console.error('[entry.server] Stream transform error:', err); });
 
 	responseHeaders.set("Content-Type", "text/html; charset=utf-8");
 	responseHeaders.set("X-Content-Type-Options", "nosniff");
