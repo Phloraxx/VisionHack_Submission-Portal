@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /api/
+Disallow: /coordinator/
+Disallow: /institution/
+Disallow: /lead/
+
+Sitemap: https://visionhack.mulearn.org/sitemap.xml

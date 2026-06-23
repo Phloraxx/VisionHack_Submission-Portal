@@ -176,6 +176,37 @@ export function meta() {
     { name: "description", content: "Sign in to the VisionHack 2026 submission portal." },
   ];
 }
+interface PhaseIndicatorProps {
+  registrationOpen: boolean;
+  questionnaireOpen: boolean;
+  submissionOpen: boolean;
+}
+
+function PhaseIndicator({ registrationOpen, questionnaireOpen, submissionOpen }: PhaseIndicatorProps) {
+  const phase = (() => {
+    if (registrationOpen) return { dot: "bg-success", label: "Registration is live", detail: "New teams can sign up" };
+    if (questionnaireOpen) return { dot: "bg-info", label: "Registration closed", detail: "Questionnaire phase in progress" };
+    if (submissionOpen) return { dot: "bg-warning", label: "Submissions open", detail: "Shortlisted teams submit ideas" };
+    return { dot: "bg-muted-foreground", label: "Event closed", detail: "All phases complete" };
+  })();
+  return (
+    <div className="rounded-md border border-border bg-background/70 p-5">
+      <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.2em] text-foreground/40">
+        Event Phase
+      </p>
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className={`absolute inset-0 vh-pulse-dot rounded-full ${phase.dot}/60`} />
+          <span className={`relative inline-flex h-2 w-2 rounded-full ${phase.dot}`} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground">{phase.label}</p>
+          <p className="text-xs text-foreground/50">{phase.detail}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Login() {
   const { teamCount, institutionCount, registrationOpen, questionnaireOpen, submissionOpen, csrfToken } = useLoaderData() as {
@@ -231,31 +262,11 @@ export default function Login() {
           </div>
 
           {/* Phase indicator */}
-          {(() => {
-            const phase = (() => {
-              if (registrationOpen) return { dot: "bg-success", label: "Registration is live", detail: "New teams can sign up" };
-              if (questionnaireOpen) return { dot: "bg-info", label: "Registration closed", detail: "Questionnaire phase in progress" };
-              if (submissionOpen) return { dot: "bg-warning", label: "Submissions open", detail: "Shortlisted teams submit ideas" };
-              return { dot: "bg-muted-foreground", label: "Event closed", detail: "All phases complete" };
-            })();
-            return (
-              <div className="rounded-md border border-border bg-background/70 p-5">
-                <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.2em] text-foreground/40">
-                  Event Phase
-                </p>
-                <div className="flex items-center gap-3">
-                  <span className="relative flex h-2 w-2 shrink-0">
-                    <span className={`absolute inset-0 vh-pulse-dot rounded-full ${phase.dot}/60`} />
-                    <span className={`relative inline-flex h-2 w-2 rounded-full ${phase.dot}`} />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{phase.label}</p>
-                    <p className="text-xs text-foreground/50">{phase.detail}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          <PhaseIndicator
+            registrationOpen={registrationOpen}
+            questionnaireOpen={questionnaireOpen}
+            submissionOpen={submissionOpen}
+          />
 
           {/* Quick stats */}
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border">

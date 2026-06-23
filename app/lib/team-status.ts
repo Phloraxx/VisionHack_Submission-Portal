@@ -17,7 +17,6 @@ import type { TeamStatus, Role } from "./types";
  *  - rejected    → danger    (final outcome: no)
  *  - withdrawn   → neutral   (out of the system)
  */
-export { canTransition as canTransitionTo } from "./types";
 
 export function getValidTransitions(
   currentStatus: TeamStatus,

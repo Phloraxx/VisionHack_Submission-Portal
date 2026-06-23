@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 @import "@fontsource-variable/geist";
 
 /* =========================================================================
@@ -30,11 +29,6 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -100,11 +94,6 @@
     --ring: oklch(0.62 0.165 50);
 
     /* Charts: ordered hue progression for data viz */
-    --chart-1: oklch(0.62 0.165 50);
-    --chart-2: oklch(0.55 0.13 230);
-    --chart-3: oklch(0.5 0.13 165);
-    --chart-4: oklch(0.55 0.15 300);
-    --chart-5: oklch(0.5 0.02 270);
 
     /* Sidebar */
     --sidebar: oklch(0.18 0.012 60);
@@ -157,11 +146,6 @@
     --input: oklch(0.28 0.01 60);
     --ring: oklch(0.74 0.175 55);
 
-    --chart-1: oklch(0.74 0.175 55);
-    --chart-2: oklch(0.7 0.13 230);
-    --chart-3: oklch(0.7 0.13 165);
-    --chart-4: oklch(0.7 0.15 300);
-    --chart-5: oklch(0.7 0.02 270);
 
     --sidebar: oklch(0.12 0.008 60);
     --sidebar-foreground: oklch(0.95 0.006 70);
