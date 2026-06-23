@@ -17,21 +17,6 @@ export default function handleRequest(
 		<ServerRouter context={routerContext} url={request.url} nonce={nonce} />,
 	);
 
-	// -----------------------------------------------------------------------
-	// Close the SSR stream — renderToString sets up a ReadableStream but
-	// never writes to it, leaving the client's decodeViaTurboStream hanging.
-	// Inject a close call between the context script and the module script.
-	// -----------------------------------------------------------------------
-	const closeScript =
-		'<script>window.__reactRouterContext?.streamController?.close();</script>\n';
-	// The Scripts component renders the context script (sets up stream),
-	// then immediately the module script (which triggers HydratedRouter →
-	// decodeViaTurboStream). Inject our close between them.
-	const enhancedHtml = html.replace(
-		'</script><script type="module"',
-		`</script>${closeScript}<script type="module"`,
-	);
-
 	responseHeaders.set("Content-Type", "text/html; charset=utf-8");
 	responseHeaders.set("X-Content-Type-Options", "nosniff");
 	responseHeaders.set("X-Frame-Options", "DENY");
@@ -58,7 +43,7 @@ export default function handleRequest(
 		responseHeaders.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 	}
 
-	return new Response(enhancedHtml, {
+	return new Response(html, {
 		headers: responseHeaders,
 		status: responseStatusCode,
 	});
