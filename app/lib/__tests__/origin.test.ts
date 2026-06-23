@@ -7,7 +7,7 @@ const ORIG_PB_URL = process.env.POCKETBASE_URL;
 
 describe("validateOrigin", () => {
 	beforeEach(() => {
-		process.env.ALLOWED_ORIGINS = undefined;
+		delete process.env.ALLOWED_ORIGINS;
 		process.env.NODE_ENV = "test";
 		process.env.POCKETBASE_URL = "http://localhost:8090";
 	});
