@@ -1,11 +1,11 @@
-import { data } from "react-router";
 import * as Sentry from "@sentry/node";
+import type PocketBase from "pocketbase";
+import { data } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
-import { requireRole } from "./auth.server";
-import { validateOrigin, validateCsrfToken } from "./csrf.server";
-import type { Role, UserRecord } from "./types";
-import PocketBase from "pocketbase";
 import type { ZodSchema } from "zod";
+import { requireRole } from "./auth.server";
+import { validateCsrfToken, validateOrigin } from "./csrf.server";
+import type { Role, UserRecord } from "./types";
 
 /**
  * Per-request context passed to a `secureAction` handler.
@@ -19,16 +19,16 @@ import type { ZodSchema } from "zod";
  *   `/admin/teams/:teamId`)
  */
 export interface ActionContext {
-  request: Request;
-  user: UserRecord;
-  pb: PocketBase;
-  formData: FormData;
-  intent: string;
-  params: Record<string, string>;
-  validated?: unknown;
+	request: Request;
+	user: UserRecord;
+	pb: PocketBase;
+	formData: FormData;
+	intent: string;
+	params: Record<string, string>;
+	validated?: unknown;
 }
 
-type Handler<C extends ActionContext> = (ctx: C) => unknown | Promise<unknown>;
+type Handler = (ctx: ActionContext) => unknown | Promise<unknown>;
 
 /**
  * Shape of the result a handler can return.
@@ -41,16 +41,16 @@ type Handler<C extends ActionContext> = (ctx: C) => unknown | Promise<unknown>;
 export type ActionResult = Response | ReturnType<typeof data>;
 
 export function ok(body: Record<string, unknown> = { success: true }): ActionResult {
-  return data(body, { status: 200 });
+	return data(body, { status: 200 });
 }
 
 export function fail(args: {
-  status?: number;
-  error?: string;
-  fieldErrors?: Record<string, string>;
+	status?: number;
+	error?: string;
+	fieldErrors?: Record<string, string>;
 }): ActionResult {
-  const { status = 400, error, fieldErrors } = args;
-  return data({ error, fieldErrors }, { status });
+	const { status = 400, error, fieldErrors } = args;
+	return data({ error, fieldErrors }, { status });
 }
 
 /**
@@ -84,130 +84,139 @@ export function fail(args: {
  * );
  * ```
  */
-export function secureAction<C extends ActionContext = ActionContext>(
-  options: { roles: Role[]; schema?: ZodSchema },
-  handler: Handler<C>,
-) {
-  return async ({ request, params }: ActionFunctionArgs): Promise<ActionResult> => {
-    // 1. CSRF (Origin header)
-    try {
-      validateOrigin(request);
-    } catch {
-      return fail({ error: "Invalid request origin", status: 403 });
-    }
+export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, handler: Handler) {
+	return async ({ request, params }: ActionFunctionArgs): Promise<ActionResult> => {
+		// 1. CSRF (Origin header)
+		try {
+			validateOrigin(request);
+		} catch {
+			return fail({ error: "Invalid request origin", status: 403 });
+		}
 
-    // 2. Form parse
-    let formData: FormData;
-    try {
-      formData = await request.formData();
-    } catch {
-      return fail({ error: "Invalid form data", status: 400 });
-    }
+		// 2. Form parse
+		let formData: FormData;
+		try {
+			formData = await request.formData();
+		} catch {
+			return fail({ error: "Invalid form data", status: 400 });
+		}
 
-    // 3. CSRF token (double-submit cookie pattern)
-    try {
-      validateCsrfToken(request, formData);
-    } catch {
-      return fail({ error: "Invalid CSRF token", status: 403 });
-    }
+		// 3. CSRF token (double-submit cookie pattern)
+		try {
+			validateCsrfToken(request, formData);
+		} catch {
+			return fail({ error: "Invalid CSRF token", status: 403 });
+		}
 
-    // 4. Auth + role — catch redirects and return JSON instead
-    let pb: PocketBase;
-    let user: UserRecord;
-    try {
-      const auth = await requireRole(request, options.roles);
-      pb = auth.pb;
-      user = auth.user;
-    } catch (err) {
-      if (err instanceof Response) {
-        // 401 = not authenticated (redirect to login), 403 = wrong role
-        if (err.status === 401) {
-          return fail({ error: "Authentication required", status: 401 });
-        }
-        // For any other redirect or error status, pass the status through
-        if (err.status === 403) {
-          return fail({ error: "Insufficient permissions", status: 403 });
-        }
-      }
-      throw err;
-    }
+		// 4. Auth + role — catch redirects and return JSON instead
+		let pb: PocketBase;
+		let user: UserRecord;
+		try {
+			const auth = await requireRole(request, options.roles);
+			pb = auth.pb;
+			user = auth.user;
+		} catch (err) {
+			if (err instanceof Response) {
+				// 401 = not authenticated (redirect to login), 403 = wrong role
+				if (err.status === 401) {
+					return fail({ error: "Authentication required", status: 401 });
+				}
+				// For any other redirect or error status, pass the status through
+				if (err.status === 403) {
+					return fail({ error: "Insufficient permissions", status: 403 });
+				}
+			}
+			throw err;
+		}
 
-    // 5. Schema validation
-    // NOTE: Object.fromEntries(formData.entries()) silently converts File
-    // objects to filename strings. Routes with file uploads must use
-    // formData.get("field") directly, not the schema validation path.
-    if (options.schema) {
-      const parsed = options.schema.safeParse(Object.fromEntries(formData.entries()));
-      if (!parsed.success) {
-        return fail({
-          fieldErrors: Object.fromEntries(
-            Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
-              k,
-              Array.isArray(v) ? v[0] : v ?? "Invalid",
-            ]),
-          ),
-          status: 400,
-        });
-      }
-      const ctx = {
-        request,
-        user,
-        pb,
-        formData,
-        intent: String(formData.get("intent") ?? "").toLowerCase(),
-        params: params as Record<string, string>,
-        validated: parsed.data,
-      } as C;
+		// 5. Schema validation
+		// NOTE: Object.fromEntries(formData.entries()) silently converts File
+		// objects to filename strings. Routes with file uploads must use
+		// formData.get("field") directly, not the schema validation path.
+		if (options.schema) {
+			// Guard: Object.fromEntries silently converts File objects to "[object File]"
+			// strings. Routes with file uploads must use formData.get() directly.
+			for (const [key, value] of formData.entries()) {
+				if (value instanceof File && !(value.size === 0 && value.name === "")) {
+					return fail({
+						error: `File field "${key}" is not supported in schema validation. Use formData.get() directly.`,
+						status: 400,
+					});
+				}
+			}
+			const parsed = options.schema.safeParse(Object.fromEntries(formData.entries()));
+			if (!parsed.success) {
+				return fail({
+					fieldErrors: Object.fromEntries(
+						Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
+							k,
+							Array.isArray(v) ? v[0] : (v ?? "Invalid"),
+						]),
+					),
+					status: 400,
+				});
+			}
+			const ctx = {
+				request,
+				user,
+				pb,
+				formData,
+				intent: String(formData.get("intent") ?? "").toLowerCase(),
+				params: params as Record<string, string>,
+				validated: parsed.data,
+			} satisfies ActionContext;
 
-      try {
-        return (await handler(ctx)) as ActionResult;
-      } catch (err) {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[secureAction]", err, {
-            route: new URL(request.url).pathname,
-            userId: user.id,
-            role: user.role,
-            intent: ctx.intent,
-          });
-        }
-        Sentry.captureException(err, {
-          extra: {
-            route: new URL(request.url).pathname,
-            userId: user.id,
-            role: user.role,
-            intent: ctx.intent,
-          },
-        });
-        return fail({ error: "Something went wrong. Please try again.", status: 500 });
-      }
-    }
+			try {
+				return (await handler(ctx)) as ActionResult;
+			} catch (err) {
+				if (process.env.NODE_ENV !== "production") {
+					console.error("[secureAction]", err, {
+						route: new URL(request.url).pathname,
+						userId: user.id,
+						role: user.role,
+						intent: ctx.intent,
+					});
+				}
+				Sentry.captureException(err, {
+					extra: {
+						route: new URL(request.url).pathname,
+						userId: user.id,
+						role: user.role,
+						intent: ctx.intent,
+					},
+				});
+				return fail({ error: "Something went wrong. Please try again.", status: 500 });
+			}
+		}
 
-    // 6. Dispatch (no schema validation)
-    const intent = String(formData.get("intent") ?? "").toLowerCase();
-    const ctx = {
-      request,
-      user,
-      pb,
-      formData,
-      intent,
-      params: params as Record<string, string>,
-    } as C;
+		// 6. Dispatch (no schema validation)
+		const intent = String(formData.get("intent") ?? "").toLowerCase();
+		const ctx = {
+			request,
+			user,
+			pb,
+			formData,
+			intent,
+			params: params as Record<string, string>,
+		} satisfies ActionContext;
 
-    try {
-      return (await handler(ctx)) as ActionResult;
-    } catch (err) {
-      // Surface server-side errors uniformly. Don't leak the message
-      // to the client.
-      if (process.env.NODE_ENV !== "production") {
-        console.error("[secureAction]", err, {
-          route: new URL(request.url).pathname,
-          userId: user.id,
-          role: user.role,
-          intent,
-        });
-      }
-      Sentry.captureException(err, { extra: { route: new URL(request.url).pathname, userId: user.id, role: user.role, intent } });
-      return fail({ error: "Something went wrong. Please try again.", status: 500 });
-    }
-  };
+		try {
+			return (await handler(ctx)) as ActionResult;
+		} catch (err) {
+			// Surface server-side errors uniformly. Don't leak the message
+			// to the client.
+			if (process.env.NODE_ENV !== "production") {
+				console.error("[secureAction]", err, {
+					route: new URL(request.url).pathname,
+					userId: user.id,
+					role: user.role,
+					intent,
+				});
+			}
+			Sentry.captureException(err, {
+				extra: { route: new URL(request.url).pathname, userId: user.id, role: user.role, intent },
+			});
+			return fail({ error: "Something went wrong. Please try again.", status: 500 });
+		}
+	};
 }

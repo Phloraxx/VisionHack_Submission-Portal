@@ -6,31 +6,25 @@ import { getEnv } from "./env.server";
  * Respects existing AbortSignals (e.g., PocketBase auto-cancellation).
  */
 function fetchWithTimeout(
-  url: RequestInfo | URL,
-  init?: RequestInit,
-  timeoutMs = 20000,
+	url: RequestInfo | URL,
+	init?: RequestInit,
+	timeoutMs = 20000,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const existingSignal = init?.signal;
-  if (existingSignal) {
-    if (existingSignal.aborted) {
-      clearTimeout(timeout);
-      return Promise.reject(
-        existingSignal.reason || new DOMException("Aborted", "AbortError"),
-      );
-    }
-    existingSignal.addEventListener(
-      "abort",
-      () => controller.abort(existingSignal.reason),
-      { once: true },
-    );
-  }
+	const existingSignal = init?.signal;
+	if (existingSignal) {
+		if (existingSignal.aborted) {
+			clearTimeout(timeout);
+			return Promise.reject(existingSignal.reason || new DOMException("Aborted", "AbortError"));
+		}
+		existingSignal.addEventListener("abort", () => controller.abort(existingSignal.reason), {
+			once: true,
+		});
+	}
 
-  return fetch(url, { ...init, signal: controller.signal }).finally(() =>
-    clearTimeout(timeout),
-  );
+	return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeout));
 }
 
 /**
@@ -39,13 +33,13 @@ function fetchWithTimeout(
  * fetch into each request's SendOptions (the SDK reads `options.fetch`).
  */
 function createBaseClient(baseURL: string): PocketBase {
-  const pb = new PocketBase(baseURL);
-  pb.beforeSend = (url, options) => {
-    options.fetch = (input: RequestInfo | URL, config?: RequestInit) =>
-      fetchWithTimeout(input, config);
-    return { url, options };
-  };
-  return pb;
+	const pb = new PocketBase(baseURL);
+	pb.beforeSend = (url, options) => {
+		options.fetch = (input: RequestInfo | URL, config?: RequestInit) =>
+			fetchWithTimeout(input, config);
+		return { url, options };
+	};
+	return pb;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,14 +48,14 @@ function createBaseClient(baseURL: string): PocketBase {
 
 /** Create an unauthenticated PocketBase client (public access only). */
 export function createPocketBaseClient(): PocketBase {
-  return createBaseClient(getEnv().POCKETBASE_URL);
+	return createBaseClient(getEnv().POCKETBASE_URL);
 }
 
 /** Create a PocketBase client authenticated with a user's auth token. */
 export function createAuthenticatedClient(token: string): PocketBase {
-  const pb = createBaseClient(getEnv().POCKETBASE_URL);
-  pb.authStore.save(token, null);
-  return pb;
+	const pb = createBaseClient(getEnv().POCKETBASE_URL);
+	pb.authStore.save(token, null);
+	return pb;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,27 +75,25 @@ let _adminClient: PocketBase | null = null;
 let _adminInitPromise: Promise<PocketBase> | null = null;
 
 async function initAdminClient(): Promise<PocketBase> {
-  const env = getEnv();
-  const pbUrl = env.POCKETBASE_URL;
-  const email = env.POCKETBASE_ADMIN_EMAIL;
-  const password = env.POCKETBASE_ADMIN_PASSWORD;
+	const env = getEnv();
+	const pbUrl = env.POCKETBASE_URL;
+	const email = env.POCKETBASE_ADMIN_EMAIL;
+	const password = env.POCKETBASE_ADMIN_PASSWORD;
 
-  if (!email || !password) {
-    throw new Error(
-      "POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD must be set",
-    );
-  }
+	if (!email || !password) {
+		throw new Error("POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD must be set");
+	}
 
-  const pb = createBaseClient(pbUrl);
-  // Disable auto-cancellation — this client handles concurrent requests.
-  pb.autoCancellation(false);
+	const pb = createBaseClient(pbUrl);
+	// Disable auto-cancellation — this client handles concurrent requests.
+	pb.autoCancellation(false);
 
-  await pb.collection("_superusers").authWithPassword(email, password, {
-    // Auto-refresh when the token is within 30 minutes of expiry.
-    autoRefreshThreshold: 30 * 60,
-  });
+	await pb.collection("_superusers").authWithPassword(email, password, {
+		// Auto-refresh when the token is within 30 minutes of expiry.
+		autoRefreshThreshold: 30 * 60,
+	});
 
-  return pb;
+	return pb;
 }
 
 /**
@@ -116,28 +108,30 @@ async function initAdminClient(): Promise<PocketBase> {
  * const teams = await pb.collection("teams").getList(...);
  */
 export async function getAdminClient(): Promise<PocketBase> {
-  if (_adminClient?.authStore?.isValid) {
-    return _adminClient;
-  }
+	if (_adminClient?.authStore?.isValid) {
+		return _adminClient;
+	}
 
-  // Deduplicate concurrent initialisation.
-  if (_adminInitPromise) {
-    return _adminInitPromise;
-  }
+	// Deduplicate concurrent initialisation.
+	if (_adminInitPromise) {
+		return _adminInitPromise;
+	}
 
-  _adminInitPromise = initAdminClient().then((pb) => {
-    _adminClient = pb;
-    _adminInitPromise = null;
-    return pb;
-  }).catch((err) => {
-    // Clear both the promise AND the cached client so the next
-    // caller retries from scratch (the client may be half-initialized).
-    _adminClient = null;
-    _adminInitPromise = null;
-    throw err;
-  });
+	_adminInitPromise = initAdminClient()
+		.then((pb) => {
+			_adminClient = pb;
+			_adminInitPromise = null;
+			return pb;
+		})
+		.catch((err) => {
+			// Clear both the promise AND the cached client so the next
+			// caller retries from scratch (the client may be half-initialized).
+			_adminClient = null;
+			_adminInitPromise = null;
+			throw err;
+		});
 
-  return _adminInitPromise;
+	return _adminInitPromise;
 }
 
 /**
@@ -145,10 +139,13 @@ export async function getAdminClient(): Promise<PocketBase> {
  * `getAdminClient()` call re-authenticates.
  */
 export function resetAdminClient(): void {
-  if (process.env.NODE_ENV !== "test") {
-    console.warn("[pocketbase] resetAdminClient should only be called in tests");
-    return;
-  }
-  _adminClient = null;
-  _adminInitPromise = null;
+	if (process.env.NODE_ENV !== "test") {
+		if (process.env.NODE_ENV === "production") {
+			throw new Error("resetAdminClient is not available in production");
+		}
+		console.warn("[pocketbase] resetAdminClient should only be called in tests");
+		return;
+	}
+	_adminClient = null;
+	_adminInitPromise = null;
 }
