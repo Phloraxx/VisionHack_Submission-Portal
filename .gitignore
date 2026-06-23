@@ -36,9 +36,10 @@ local/
 references/
 docs/
 
-# CI / config — not needed for deployment
+# CI / config — commit workflow files, ignore the rest
 .github/
-.dockerignore
+!.github/workflows/
+!.dockerignore
 screens/
 
 # PocketBase hooks — not needed for deployment
