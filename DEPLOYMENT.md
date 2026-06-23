@@ -98,6 +98,79 @@ This script (`scripts/setup-pb.ts`) connects to the PocketBase instance configur
 
 **Important:** Run this after every deployment that introduces schema changes.
 
+
+## Docker Deployment
+
+The project includes a `Dockerfile` for containerized deployment. It uses a multi-stage build with layer caching — dependency installs are cached until `package.json` or `package-lock.json` changes.
+
+### Build the Image
+
+```bash
+docker build -t submission-portal .
+```
+
+### Run the Container
+
+```bash
+docker run -d \
+  --name submission-portal \
+  -p 3000:3000 \
+  --env-file .env \
+  submission-portal
+```
+
+### Running the Schema Setup
+
+After the container starts, apply the PocketBase schema:
+
+```bash
+docker exec submission-portal npx tsx scripts/setup-pb.ts
+```
+
+## Dokploy Deployment
+
+This project is designed to deploy via [Dokploy](https://dokploy.com/) with CI/CD gating.
+
+### Prerequisites on Dokploy
+
+1. **Node App** (Application service):
+   - Source: GitHub repository (`Phloraxx/VisionHack_Submission-Portal`)
+   - Branch: `v2`
+   - Build method: Dockerfile (the repo's `Dockerfile` is auto-detected)
+   - Port: `3000`
+   - Environment variables: Set `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD`, `NODE_ENV=production`, `APP_URL`, `RESEND_API_KEY`, `SENTRY_DSN`
+
+2. **PocketBase** (optional — can run alongside or separately):
+   - Use Dokploy's built-in PocketBase template
+   - Or deploy as a Docker Compose service (see `docker-compose.yml` if present)
+   - Port: `8090` (internal)
+
+### CI/CD Pipeline
+
+| Step | What happens |
+|------|-------------|
+| Push to `v2` | GitHub Actions runs `CI` workflow: typecheck → lint → test → build |
+| CI passes | GitHub Actions triggers `Deploy` workflow |
+| Deploy | Calls Dokploy webhook → Dokploy pulls repo, builds Docker image, starts container |
+
+### Setting Up the Webhook
+
+1. In Dokploy, go to your application → **Deployments** tab.
+2. Copy the **Webhook URL** (looks like `https://docker.mulearnscet.in/api/deploy/...`).
+3. In your GitHub repo → **Settings → Secrets and variables → Actions**, add:
+   - Name: `DOKPLOY_WEBHOOK`
+   - Value: the webhook URL from step 2
+
+### Post-Deploy Steps
+
+After the first deployment:
+
+```bash
+# SSH into the Dokploy server, then:
+docker exec <container-id> npx tsx scripts/setup-pb.ts
+```
+
+Run this once to create the PocketBase collections. Re-run only when the schema changes.
 ## Rollback
 
 To roll back a deployed version:
