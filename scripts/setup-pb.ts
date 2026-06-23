@@ -1347,6 +1347,40 @@ async function ensureUsersCollection(token: string): Promise<void> {
 	console.log("  ✅ Users collection locked down");
 }
 
+/**
+ * Track schema version in config collection for migration awareness.
+ * Bump SCHEMA_VERSION when making breaking schema changes.
+ */
+const SCHEMA_VERSION = 3;
+
+async function ensureSchemaVersion(token: string): Promise<void> {
+  const resp = await pbFetch(`${API_BASE}/collections/config/records?filter=key%3D%22schema_version%22`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => null);
+
+  if (!resp?.ok) return;
+  const existing = (resp.data as any)?.items?.[0] ?? null;
+
+  if (existing) {
+    if (Number(existing.value) !== SCHEMA_VERSION) {
+      await pbFetch(`${API_BASE}/collections/config/records/${existing.id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ value: SCHEMA_VERSION }),
+      });
+      console.log(`  📋 Schema version bumped to v${SCHEMA_VERSION}`);
+    }
+  } else {
+    await pbFetch(`${API_BASE}/collections/config/records`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "schema_version", value: SCHEMA_VERSION }),
+    });
+    console.log(`  📋 Schema version set to v${SCHEMA_VERSION}`);
+  }
+}
+
+
 async function main(): Promise<void> {
 	console.log("╔══════════════════════════════════════════════╗");
 	console.log("║       PocketBase Collection Setup Script     ║");
@@ -1388,6 +1422,9 @@ async function main(): Promise<void> {
 
 	// Email is sent directly via PocketBase hooks using the built-in
 	// mail client — no email_outbox collection needed.
+	// Track schema version for migration awareness
+	await ensureSchemaVersion(token);
+
 
 	// Enable rate limiting
 	await ensureRateLimiting(token);
