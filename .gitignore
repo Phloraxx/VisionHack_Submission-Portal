@@ -42,6 +42,8 @@ local/
 /login-with-js
 
 # Docs / review artifacts — not needed for deployment
+# AI-generated review artifacts
+/app/reviews/
 references/
 docs/
 
