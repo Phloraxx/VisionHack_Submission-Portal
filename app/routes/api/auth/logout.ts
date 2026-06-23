@@ -1,6 +1,5 @@
 import { type ActionFunctionArgs, type LoaderFunctionArgs, redirect } from "react-router";
 import { clearAuthCookie } from "~/lib/auth.server";
-import { validateCsrfToken } from "~/lib/csrf.server";
 import { validateOrigin } from "~/lib/origin.server";
 
 /** GET (or any non-POST) → 405 */
@@ -19,9 +18,6 @@ export async function action({ request }: ActionFunctionArgs) {
 		});
 	}
 	validateOrigin(request, false);
-
-	const formData = await request.formData();
-	validateCsrfToken(request, formData);
 
 	// Clear the auth cookie and redirect to login. Rate limiting is handled
 	// by PocketBase's built-in settings.
