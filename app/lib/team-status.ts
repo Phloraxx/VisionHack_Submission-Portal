@@ -1,5 +1,5 @@
 import { canTransition } from "./types";
-import type { TeamStatus, Role } from "./types";
+import type { Role, TeamStatus } from "./types";
 
 /**
  * Team status labels, semantic tokens, and transition helpers.

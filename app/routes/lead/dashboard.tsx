@@ -1,34 +1,34 @@
-import { Link, Form, useActionData, useLoaderData } from "react-router";
-import { secureLoader } from "~/lib/loader.server";
-import { secureAction, fail, ok } from "~/lib/action.server";
-import { getConfig } from "~/lib/config.server";
-import { getLeadTeam, transitionTeamStatus } from "~/lib/team.server";
-import { STATUS_LABELS, STATUS_COLORS } from "~/lib/team-status";
-import type { TeamStatus, TeamView } from "~/lib/types";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Skeleton } from "~/components/ui/skeleton";
-import { Button } from "~/components/ui/button";
-import { PhaseStrip } from "~/components/shared/phase-strip";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
-import { ProgressBar } from "~/components/shared/progress-bar";
-import { Row } from "~/components/shared/row";
-import { MetricCard } from "~/components/shared/metric-card";
-import { PanelHeader } from "~/components/shared/panel-header";
-import { ConfirmButton } from "~/components/shared/confirm-button";
-import { Callout } from "~/components/shared/callout";
 import {
-	UserPlus,
-	FileText,
-	Upload,
 	ArrowRight,
 	Building2,
+	CheckCircle2,
+	Clock,
+	FileText,
+	Lock,
+	Sparkles,
+	Upload,
+	UserPlus,
 	Users,
 	XCircle,
-	CheckCircle2,
-	Lock,
-	Clock,
-	Sparkles,
 } from "lucide-react";
+import { Form, Link, useActionData, useLoaderData } from "react-router";
+import { Callout } from "~/components/shared/callout";
+import { ConfirmButton } from "~/components/shared/confirm-button";
+import { MetricCard } from "~/components/shared/metric-card";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { PhaseStrip } from "~/components/shared/phase-strip";
+import { ProgressBar } from "~/components/shared/progress-bar";
+import { Row } from "~/components/shared/row";
+import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
+import { fail, ok, secureAction } from "~/lib/action.server";
+import { getConfig } from "~/lib/config.server";
+import { secureLoader } from "~/lib/loader.server";
+import { STATUS_COLORS, STATUS_LABELS } from "~/lib/team-status";
+import { getLeadTeam, transitionTeamStatus } from "~/lib/team.server";
+import type { TeamStatus, TeamView } from "~/lib/types";
 
 // ---------------------------------------------------------------------------
 // Loader / Action

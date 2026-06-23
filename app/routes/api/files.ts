@@ -6,8 +6,8 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
-import { getAdminClient } from "~/lib/pocketbase.server";
 import { getEnv } from "~/lib/env.server";
+import { getAdminClient } from "~/lib/pocketbase.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
 	if (request.method !== "GET") {

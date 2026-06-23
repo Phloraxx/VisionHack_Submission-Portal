@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { Link } from "react-router";
-import { cn } from "~/lib/utils";
 import type { TeamStatus } from "~/lib/types";
+import { cn } from "~/lib/utils";
 
 export interface Step {
 	id: string;
@@ -83,7 +83,7 @@ export function StepIndicator({ steps, currentStep, totalSteps, className }: Ste
 			className={cn("rounded-md border border-border bg-card px-5 py-4", className)}
 		>
 			{/* Horizontal on sm+, vertical stack on mobile to avoid label overflow */}
-			<ol className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-0" role="list">
+			<ol className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-0">
 				{steps.map((step, i) => {
 					const isCompleted = step.completed;
 					const isActive = step.active && !isCompleted;

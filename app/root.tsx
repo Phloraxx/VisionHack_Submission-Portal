@@ -1,13 +1,13 @@
 import {
-	isRouteErrorResponse,
 	Links,
 	Meta,
 	Outlet,
 	Scripts,
 	ScrollRestoration,
+	isRouteErrorResponse,
 } from "react-router";
-import type { Route } from "./+types/root";
 import { Toaster } from "sonner";
+import type { Route } from "./+types/root";
 
 import stylesheet from "./app.css?url";
 

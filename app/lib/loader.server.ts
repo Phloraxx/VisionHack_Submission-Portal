@@ -1,9 +1,9 @@
-import { data } from "react-router";
 import * as Sentry from "@sentry/node";
+import type PocketBase from "pocketbase";
+import { data } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "./auth.server";
 import type { Role, UserRecord } from "./types";
-import PocketBase from "pocketbase";
 
 /**
  * Per-request context passed to a `secureLoader` handler.

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getAuthFromCookie, setAuthCookie, clearAuthCookie } from "../auth.server";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { clearAuthCookie, getAuthFromCookie, setAuthCookie } from "../auth.server";
 
 const ORIG_PB_URL = process.env.POCKETBASE_URL;
 const ORIG_APP_URL = process.env.APP_URL;

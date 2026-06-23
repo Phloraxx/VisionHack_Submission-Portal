@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { data } from "react-router";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { UserRecord } from "../types";
 
@@ -19,9 +19,9 @@ vi.mock("@sentry/node", () => ({
 	captureException: vi.fn(),
 }));
 
+import { captureException } from "@sentry/node";
 import { requireRole } from "~/lib/auth.server";
 import { validateOrigin } from "~/lib/origin.server";
-import { captureException } from "@sentry/node";
 import { secureAction } from "../action.server";
 
 const mockRequireRole = vi.mocked(requireRole);

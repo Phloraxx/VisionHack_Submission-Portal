@@ -1,8 +1,8 @@
-import type { UserRecord, TeamRecord, MemberRecord, InstitutionRecord } from "~/lib/types";
+import type { InstitutionRecord, MemberRecord, TeamRecord, UserRecord } from "~/lib/types";
 
 export function buildUser(overrides: Partial<UserRecord> = {}): UserRecord {
 	return {
-		id: "user_" + Math.random().toString(36).slice(2, 10),
+		id: `user_${Math.random().toString(36).slice(2, 10)}`,
 		email: "test@example.com",
 		name: "Test User",
 		role: "lead",
@@ -15,7 +15,7 @@ export function buildUser(overrides: Partial<UserRecord> = {}): UserRecord {
 
 export function buildTeam(overrides: Partial<TeamRecord> = {}): TeamRecord {
 	return {
-		id: "team_" + Math.random().toString(36).slice(2, 10),
+		id: `team_${Math.random().toString(36).slice(2, 10)}`,
 		name: "Test Team",
 		institutionId: "inst_123",
 		leaderUserId: "user_123",
@@ -28,7 +28,7 @@ export function buildTeam(overrides: Partial<TeamRecord> = {}): TeamRecord {
 
 export function buildMember(overrides: Partial<MemberRecord> = {}): MemberRecord {
 	return {
-		id: "member_" + Math.random().toString(36).slice(2, 10),
+		id: `member_${Math.random().toString(36).slice(2, 10)}`,
 		teamId: "team_123",
 		fullName: "Test Member",
 		email: "member@example.com",
@@ -43,7 +43,7 @@ export function buildMember(overrides: Partial<MemberRecord> = {}): MemberRecord
 
 export function buildInstitution(overrides: Partial<InstitutionRecord> = {}): InstitutionRecord {
 	return {
-		id: "inst_" + Math.random().toString(36).slice(2, 10),
+		id: `inst_${Math.random().toString(36).slice(2, 10)}`,
 		name: "Test Institution",
 		district: "Test District",
 		code: "TEST001",

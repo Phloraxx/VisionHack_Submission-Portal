@@ -1,8 +1,8 @@
-import { redirect } from "react-router";
-import { createAuthenticatedClient, createPocketBaseClient } from "./pocketbase.server";
-import { getEnv } from "./env.server";
 import { cookieParse } from "pocketbase";
+import { redirect } from "react-router";
+import { getEnv } from "./env.server";
 import { decodeJwtPayload, isExpiringSoon } from "./jwt.server";
+import { createAuthenticatedClient, createPocketBaseClient } from "./pocketbase.server";
 import type { Role, UserRecord } from "./types";
 
 const COOKIE_NAME = "pb_jwt";

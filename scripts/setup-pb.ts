@@ -16,7 +16,7 @@
  * Compatible with PocketBase v0.23+ API format (flat `fields` array, PATCH for updates).
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -843,7 +843,6 @@ async function ensureMembersCollection(
 ): Promise<void> {
 	console.log("\n🔧 Ensuring «members» collection…");
 
-
 	const teamsId = collectionIds.get("teams");
 
 	await createCollection(token, {
@@ -1400,7 +1399,7 @@ async function main(): Promise<void> {
 	// Enable rate limiting
 	await ensureRateLimiting(token);
 
-	console.log("\n" + "=".repeat(50));
+	console.log(`\n${"=".repeat(50)}`);
 	console.log("✅ PocketBase setup complete!");
 	console.log("=".repeat(50));
 }

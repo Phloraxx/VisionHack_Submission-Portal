@@ -24,7 +24,6 @@ export interface EnvConfig {
 	RESEND_API_KEY?: string;
 }
 
-
 export function getEnv(): EnvConfig {
 	const pbUrl = process.env.POCKETBASE_URL ?? "";
 	if (!pbUrl) {

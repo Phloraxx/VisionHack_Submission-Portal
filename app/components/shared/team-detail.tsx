@@ -1,24 +1,24 @@
-import { Form, Link } from "react-router";
-import { STATUS_LABELS } from "~/lib/team-status";
-import { escapeCsv, QUESTIONNAIRE_EXCLUDE_KEYS } from "~/lib/utils";
-import type { TeamStatus, TeamView, MemberRecord, QuestionnaireResponseRecord } from "~/lib/types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Button } from "~/components/ui/button";
-import { StatusBadge } from "~/components/shared/status-badge";
-import { Separator } from "~/components/ui/separator";
 import {
 	ArrowLeft,
-	User,
-	Mail,
-	Phone,
-	Users,
 	Building2,
-	MapPin,
-	Download,
-	Lightbulb,
-	FileText,
 	CalendarIcon,
+	Download,
+	FileText,
+	Lightbulb,
+	Mail,
+	MapPin,
+	Phone,
+	User,
+	Users,
 } from "lucide-react";
+import { Form, Link } from "react-router";
+import { StatusBadge } from "~/components/shared/status-badge";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Separator } from "~/components/ui/separator";
+import { STATUS_LABELS } from "~/lib/team-status";
+import type { MemberRecord, QuestionnaireResponseRecord, TeamStatus, TeamView } from "~/lib/types";
+import { QUESTIONNAIRE_EXCLUDE_KEYS, escapeCsv } from "~/lib/utils";
 import { ConfirmButton } from "./confirm-button";
 
 // ---------------------------------------------------------------------------
@@ -60,8 +60,8 @@ export function downloadTeamCSV(
 
 	const inst = team.expand?.institutionId;
 	if (inst) {
-		data["Institution"] = inst.name || "";
-		data["District"] = inst.district || "";
+		data.Institution = inst.name || "";
+		data.District = inst.district || "";
 	}
 
 	const leader = team.expand?.leaderUserId;
@@ -93,7 +93,7 @@ export function downloadTeamCSV(
 
 	const headers = Object.keys(data);
 	const values = headers.map((h) => escapeCsv(data[h]));
-	const csv = "\uFEFF" + headers.join(",") + "\n" + values.join(",");
+	const csv = `\uFEFF${headers.join(",")}\n${values.join(",")}`;
 
 	const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
 	const url = URL.createObjectURL(blob);
@@ -210,7 +210,7 @@ export default function TeamDetail({
 									<p className="text-sm font-medium text-muted-foreground mb-1">Submission File</p>
 									<Button variant="outline" size="sm" asChild>
 										<a
-                      href={`/api/files/teams/${team.id}/${encodeURIComponent(team.submission_file)}`}
+											href={`/api/files/teams/${team.id}/${encodeURIComponent(team.submission_file)}`}
 											target="_blank"
 											rel="noopener noreferrer"
 										>

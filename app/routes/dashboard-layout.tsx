@@ -1,38 +1,38 @@
-import { useState, useEffect, useRef } from "react";
 import {
-	Outlet,
+	ChevronRight,
+	ClipboardList,
+	Download,
+	FileUp,
+	LayoutDashboard,
+	LogOut,
+	Menu,
+	Moon,
+	RefreshCw,
+	Settings,
+	Sun,
+	University,
+	UserPlus,
+	Users,
+	X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
 	Form,
-	useLoaderData,
 	Link,
-	useLocation,
-	isRouteErrorResponse,
-	useRouteError,
-	useNavigation,
+	Outlet,
 	data,
+	isRouteErrorResponse,
+	useLoaderData,
+	useLocation,
+	useNavigation,
+	useRouteError,
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { requireAuth, getAuthFromCookie, setAuthCookie } from "~/lib/auth.server";
-import type { UserRecord, Role } from "~/lib/types";
-import { Skeleton } from "~/components/ui/skeleton";
-import { PageTransition } from "~/components/shared/page-transition";
 import { EventMark } from "~/components/shared/event-mark";
-import {
-	LayoutDashboard,
-	University,
-	Settings,
-	Users,
-	Download,
-	UserPlus,
-	ClipboardList,
-	FileUp,
-	Menu,
-	X,
-	LogOut,
-	ChevronRight,
-	RefreshCw,
-	Sun,
-	Moon,
-} from "lucide-react";
+import { PageTransition } from "~/components/shared/page-transition";
+import { Skeleton } from "~/components/ui/skeleton";
+import { getAuthFromCookie, requireAuth, setAuthCookie } from "~/lib/auth.server";
+import type { Role, UserRecord } from "~/lib/types";
 import { cn } from "~/lib/utils";
 
 const navItems: Record<
@@ -275,7 +275,7 @@ export default function DashboardLayout() {
 							const Icon = item.icon;
 							const isActive =
 								location.pathname === item.href ||
-								(item.href !== "/" && location.pathname.startsWith(item.href + "/"));
+								(item.href !== "/" && location.pathname.startsWith(`${item.href}/`));
 							return (
 								<li key={item.href}>
 									<Link

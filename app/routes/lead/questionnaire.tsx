@@ -1,25 +1,21 @@
-import { useState, useRef, useEffect } from "react";
-import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { questionnaireSchema, type QuestionnaireInput } from "~/lib/schemas/questionnaire";
+import { AlertCircle, ChevronLeft, ChevronRight, Loader2, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import {
-	useLoaderData,
 	Form,
-	useNavigation,
-	useActionData,
-	useRouteError,
 	isRouteErrorResponse,
+	useActionData,
+	useLoaderData,
+	useNavigation,
+	useRouteError,
 } from "react-router";
-import { secureLoader } from "~/lib/loader.server";
-import { secureAction, fail, ok } from "~/lib/action.server";
-import { getConfig } from "~/lib/config.server";
-import { getLeadTeam } from "~/lib/team.server";
-import type { TeamRecord } from "~/lib/types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { Textarea } from "~/components/ui/textarea";
 import {
 	Select,
 	SelectContent,
@@ -27,9 +23,13 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "~/components/ui/select";
-import { AlertCircle, ChevronLeft, ChevronRight, Loader2, Send } from "lucide-react";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
-import { PanelHeader } from "~/components/shared/panel-header";
+import { Textarea } from "~/components/ui/textarea";
+import { fail, ok, secureAction } from "~/lib/action.server";
+import { getConfig } from "~/lib/config.server";
+import { secureLoader } from "~/lib/loader.server";
+import { type QuestionnaireInput, questionnaireSchema } from "~/lib/schemas/questionnaire";
+import { getLeadTeam } from "~/lib/team.server";
+import type { TeamRecord } from "~/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -106,79 +106,82 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 // Action
 // ---------------------------------------------------------------------------
 
-export const action = secureAction({ roles: ["lead"], schema: questionnaireSchema }, async ({ formData, user, pb, validated }) => {
-	const flags = await getConfig(pb);
-	if (!flags.questionnaire_open) {
-		return fail({ error: "Questionnaire is currently closed", status: 403 });
-	}
+export const action = secureAction(
+	{ roles: ["lead"], schema: questionnaireSchema },
+	async ({ formData, user, pb, validated }) => {
+		const flags = await getConfig(pb);
+		if (!flags.questionnaire_open) {
+			return fail({ error: "Questionnaire is currently closed", status: 403 });
+		}
 
-	const {
-		age,
-		gender,
-		education,
-		college_name: collegeName,
-		district,
-		skills = "",
-		interests = "",
-		challenges = "",
-		experience = "",
-		motivation = "",
-		team_experience: teamExperience = "",
-		expectations = "",
-		additional_info: additionalInfo = "",
-	} = validated as QuestionnaireInput;
-	// Find team
-	const team = await getLeadTeam<TeamRecord>(pb, user.id, {
-		fields: "id,status,questionnaire_completed",
-	});
-	if (!team) return fail({ error: "Team not found", status: 404 });
-
-	if (team.status === "withdrawn" || team.status === "rejected") {
-		return fail({ error: "Cannot submit questionnaire for a team in this status", status: 403 });
-	}
-
-	// Upsert response
-	const existing = await pb
-		.collection("questionnaire_responses")
-		.getFirstListItem(pb.filter("teamId = {:teamId}", { teamId: team.id }), {
-			fields: "id",
-		})
-		.catch(() => null);
-
-	const payload: Record<string, unknown> = {
-		teamId: team.id,
-		userId: user.id,
-		age: Number(age),
-		gender,
-		education,
-		college_name: collegeName.slice(0, 200),
-		district: district.slice(0, 100),
-		skills: skills.slice(0, 1000),
-		interests: interests.slice(0, 1000),
-		challenges: challenges.slice(0, 2000),
-		experience: experience.slice(0, 2000),
-		motivation: motivation.slice(0, 2000),
-		team_experience: teamExperience.slice(0, 2000),
-		expectations: expectations.slice(0, 2000),
-		additional_info: additionalInfo.slice(0, 2000),
-	};
-
-	if (existing) {
-		await pb.collection("questionnaire_responses").update(existing.id, payload);
-	} else {
-		await pb.collection("questionnaire_responses").create(payload);
-	}
-
-	// Denormalize: mark the team as having completed the questionnaire
-	// so the rest of the app can read it without a join.
-	if (!team.questionnaire_completed) {
-		await pb.collection("teams").update(team.id, {
-			questionnaire_completed: true,
+		const {
+			age,
+			gender,
+			education,
+			college_name: collegeName,
+			district,
+			skills = "",
+			interests = "",
+			challenges = "",
+			experience = "",
+			motivation = "",
+			team_experience: teamExperience = "",
+			expectations = "",
+			additional_info: additionalInfo = "",
+		} = validated as QuestionnaireInput;
+		// Find team
+		const team = await getLeadTeam<TeamRecord>(pb, user.id, {
+			fields: "id,status,questionnaire_completed",
 		});
-	}
+		if (!team) return fail({ error: "Team not found", status: 404 });
 
-	return ok();
-});
+		if (team.status === "withdrawn" || team.status === "rejected") {
+			return fail({ error: "Cannot submit questionnaire for a team in this status", status: 403 });
+		}
+
+		// Upsert response
+		const existing = await pb
+			.collection("questionnaire_responses")
+			.getFirstListItem(pb.filter("teamId = {:teamId}", { teamId: team.id }), {
+				fields: "id",
+			})
+			.catch(() => null);
+
+		const payload: Record<string, unknown> = {
+			teamId: team.id,
+			userId: user.id,
+			age: Number(age),
+			gender,
+			education,
+			college_name: collegeName.slice(0, 200),
+			district: district.slice(0, 100),
+			skills: skills.slice(0, 1000),
+			interests: interests.slice(0, 1000),
+			challenges: challenges.slice(0, 2000),
+			experience: experience.slice(0, 2000),
+			motivation: motivation.slice(0, 2000),
+			team_experience: teamExperience.slice(0, 2000),
+			expectations: expectations.slice(0, 2000),
+			additional_info: additionalInfo.slice(0, 2000),
+		};
+
+		if (existing) {
+			await pb.collection("questionnaire_responses").update(existing.id, payload);
+		} else {
+			await pb.collection("questionnaire_responses").create(payload);
+		}
+
+		// Denormalize: mark the team as having completed the questionnaire
+		// so the rest of the app can read it without a join.
+		if (!team.questionnaire_completed) {
+			await pb.collection("teams").update(team.id, {
+				questionnaire_completed: true,
+			});
+		}
+
+		return ok();
+	},
+);
 
 // ---------------------------------------------------------------------------
 // Meta

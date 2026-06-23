@@ -1,16 +1,23 @@
-import { useState, useEffect } from "react";
-import { useLoaderData, useSubmit, useNavigation, useActionData, isRouteErrorResponse, useRouteError } from "react-router";
-import { secureLoader } from "~/lib/loader.server";
-import { secureAction, fail, ok } from "~/lib/action.server";
-import { configUpdateSchema } from "~/lib/schemas/config";
+import { FileText, Loader2, ShieldCheck, Upload, UserPlus } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+	isRouteErrorResponse,
+	useActionData,
+	useLoaderData,
+	useNavigation,
+	useRouteError,
+	useSubmit,
+} from "react-router";
+import { toast } from "sonner";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { Skeleton } from "~/components/ui/skeleton";
+import { Switch } from "~/components/ui/switch";
+import { fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
-import { Switch } from "~/components/ui/switch";
-import { Skeleton } from "~/components/ui/skeleton";
-import { toast } from "sonner";
-import { UserPlus, FileText, ShieldCheck, Upload, Loader2 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { PanelHeader } from "~/components/shared/panel-header";
+import { secureLoader } from "~/lib/loader.server";
+import { configUpdateSchema } from "~/lib/schemas/config";
 
 // Icons are presentation-only, so they live here (not in the shared,
 // server-safe feature-flags module).
@@ -25,26 +32,29 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) =>
 	const configMap = await getConfig(pb);
 	return { user, configMap };
 });
-export const action = secureAction({ roles: ["admin"], schema: configUpdateSchema }, async ({ formData, pb, validated }) => {
-	const { key, value } = validated as { key: string; value: string };
+export const action = secureAction(
+	{ roles: ["admin"], schema: configUpdateSchema },
+	async ({ formData, pb, validated }) => {
+		const { key, value } = validated as { key: string; value: string };
 
-	if (!FEATURE_FLAGS.some((f) => f.key === key)) {
-		return fail({ error: `Unknown config key "${key}"`, status: 400 });
-	}
+		if (!FEATURE_FLAGS.some((f) => f.key === key)) {
+			return fail({ error: `Unknown config key "${key}"`, status: 400 });
+		}
 
-	// Config writes use the admin user's own auth token — the config
-	// collection's create/update rules require @request.auth.role = "admin".
-	const target = await pb
-		.collection("config")
-		.getFirstListItem(pb.filter("key = {:key}", { key }))
-		.catch(() => null);
-	if (!target) {
-		return fail({ error: `Config key "${key}" not found`, status: 404 });
-	}
+		// Config writes use the admin user's own auth token — the config
+		// collection's create/update rules require @request.auth.role = "admin".
+		const target = await pb
+			.collection("config")
+			.getFirstListItem(pb.filter("key = {:key}", { key }))
+			.catch(() => null);
+		if (!target) {
+			return fail({ error: `Config key "${key}" not found`, status: 404 });
+		}
 
-	await pb.collection("config").update(target.id, { value });
-	return ok({ key, value });
-});
+		await pb.collection("config").update(target.id, { value });
+		return ok({ key, value });
+	},
+);
 
 export function meta() {
 	return [{ title: "Event Config — VisionHack" }];
@@ -140,10 +150,18 @@ export function ErrorBoundary() {
 	return (
 		<div className="flex min-h-[50vh] items-center justify-center p-8">
 			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">Error</p>
+				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">
+					Error
+				</p>
 				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
 				<p className="text-sm text-muted-foreground">{details}</p>
-				<button type="button" onClick={() => window.location.reload()} className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">Try again</button>
+				<button
+					type="button"
+					onClick={() => window.location.reload()}
+					className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
+				>
+					Try again
+				</button>
 			</div>
 		</div>
 	);

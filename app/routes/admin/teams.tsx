@@ -1,14 +1,20 @@
-import { useState, useRef, useMemo } from "react";
-import { useLoaderData, useSearchParams, useNavigation, isRouteErrorResponse, useRouteError } from "react-router";
+import { Users } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import {
+	isRouteErrorResponse,
+	useLoaderData,
+	useNavigation,
+	useRouteError,
+	useSearchParams,
+} from "react-router";
+import { FilterableTeamList } from "~/components/shared/filterable-team-list";
+import { MetricCard } from "~/components/shared/metric-card";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { Skeleton } from "~/components/ui/skeleton";
+import { TEAM_STATUSES } from "~/lib/constants";
 import { secureLoader } from "~/lib/loader.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
-import { TEAM_STATUSES } from "~/lib/constants";
-import { PanelHeader } from "~/components/shared/panel-header";
-import { MetricCard } from "~/components/shared/metric-card";
-import { Skeleton } from "~/components/ui/skeleton";
-import { Users } from "lucide-react";
-import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 
 const PAGE_SIZE = 50;
 
@@ -246,10 +252,18 @@ export function ErrorBoundary() {
 	return (
 		<div className="flex min-h-[50vh] items-center justify-center p-8">
 			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">Error</p>
+				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">
+					Error
+				</p>
 				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
 				<p className="text-sm text-muted-foreground">{details}</p>
-				<button type="button" onClick={() => window.location.reload()} className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">Try again</button>
+				<button
+					type="button"
+					onClick={() => window.location.reload()}
+					className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
+				>
+					Try again
+				</button>
 			</div>
 		</div>
 	);

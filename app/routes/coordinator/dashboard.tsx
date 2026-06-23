@@ -19,11 +19,10 @@ import {
 	SelectValue,
 } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import { TEAM_STATUSES } from "~/lib/constants";
 import { secureLoader } from "~/lib/loader.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
-import { TEAM_STATUSES } from "~/lib/constants";
-
 
 interface InstitutionRecord {
 	id: string;

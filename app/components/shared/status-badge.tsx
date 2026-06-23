@@ -1,6 +1,6 @@
-import { cn } from "~/lib/utils";
+import { STATUS_COLORS, STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus } from "~/lib/types";
-import { STATUS_LABELS, STATUS_COLORS } from "~/lib/team-status";
+import { cn } from "~/lib/utils";
 
 interface StatusBadgeProps {
 	/** The team status to display. */

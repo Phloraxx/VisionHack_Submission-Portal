@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
-import { cn } from "~/lib/utils";
 import { AlertTriangle, Check, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { cn } from "~/lib/utils";
 
 interface ConfirmButtonProps {
 	/** The text shown on the initial action button. */
@@ -8,7 +8,7 @@ interface ConfirmButtonProps {
 	/** The confirmation message shown to the user. */
 	confirmMessage?: string;
 	/** Called when the user confirms. Return false to prevent the parent form from submitting. */
-	onConfirm?: () => boolean | void;
+	onConfirm?: () => boolean | undefined;
 	/** Visual variant of the button. */
 	variant?: "outline" | "destructive";
 	/** Additional classes for the button. */

@@ -4,14 +4,14 @@
  * pasted across the lead / institution / admin / coordinator routes.
  */
 import type PocketBase from "pocketbase";
-import { fail, type ActionResult } from "./action.server";
-import { canTransition } from "./types";
-import type { Role, TeamStatus, TeamRecord, TeamView, InstitutionRecord } from "./types";
-import { countByKey } from "./utils";
-import { getAppUrl } from "./env.server";
+import { type ActionResult, fail } from "./action.server";
 import { sendEmail } from "./email.server";
-import { escapeHtml } from "./utils";
+import { getAppUrl } from "./env.server";
 import { STATUS_LABELS } from "./team-status";
+import { canTransition } from "./types";
+import type { InstitutionRecord, Role, TeamRecord, TeamStatus, TeamView } from "./types";
+import { countByKey } from "./utils";
+import { escapeHtml } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Lookups

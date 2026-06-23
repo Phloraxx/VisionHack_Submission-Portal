@@ -1,29 +1,29 @@
+import { ArrowRight, KeyRound, Loader2, Mail } from "lucide-react";
 import {
 	Form,
-	useActionData,
-	useNavigation,
-	useLoaderData,
 	Link,
-	redirect,
 	data,
+	redirect,
+	useActionData,
+	useLoaderData,
+	useNavigation,
 } from "react-router";
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { getAuthFromCookie, login, setAuthCookie, ROLE_DASHBOARD_MAP } from "~/lib/auth.server";
-import {
-	createAuthenticatedClient,
-	getAdminClient,
-	createPocketBaseClient,
-} from "~/lib/pocketbase.server";
-import { validateOrigin } from "~/lib/origin.server";
-import { getConfig } from "~/lib/config.server";
-import { checkRateLimit } from "~/lib/rate-limiter.server";
-import type { UserRecord } from "~/lib/types";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { EventMark } from "~/components/shared/event-mark";
+import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { EventMark } from "~/components/shared/event-mark";
-import { ArrowRight, Loader2, KeyRound, Mail } from "lucide-react";
-import { AnimatedGrid } from "~/components/ui/animated-grid";
+import { ROLE_DASHBOARD_MAP, getAuthFromCookie, login, setAuthCookie } from "~/lib/auth.server";
+import { getConfig } from "~/lib/config.server";
+import { validateOrigin } from "~/lib/origin.server";
+import {
+	createAuthenticatedClient,
+	createPocketBaseClient,
+	getAdminClient,
+} from "~/lib/pocketbase.server";
+import { checkRateLimit } from "~/lib/rate-limiter.server";
+import type { UserRecord } from "~/lib/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	const token = getAuthFromCookie(request);
@@ -44,10 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		}
 	}
 
-	const [cfg, adminPb] = await Promise.all([
-		getConfig(createPocketBaseClient()),
-		getAdminClient(),
-	]);
+	const [cfg, adminPb] = await Promise.all([getConfig(createPocketBaseClient()), getAdminClient()]);
 	const [teams, institutions] = await Promise.all([
 		adminPb.collection("teams").getList(1, 1, { fields: "id" }),
 		adminPb.collection("institutions").getList(1, 1, { fields: "id" }),

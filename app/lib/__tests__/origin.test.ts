@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { validateOrigin } from "../origin.server";
 
 const ORIG_ALLOWED = process.env.ALLOWED_ORIGINS;
@@ -7,7 +7,7 @@ const ORIG_PB_URL = process.env.POCKETBASE_URL;
 
 describe("validateOrigin", () => {
 	beforeEach(() => {
-		delete process.env.ALLOWED_ORIGINS;
+		process.env.ALLOWED_ORIGINS = undefined;
 		process.env.NODE_ENV = "test";
 		process.env.POCKETBASE_URL = "http://localhost:8090";
 	});

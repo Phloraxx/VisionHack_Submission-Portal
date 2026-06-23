@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { canTransition } from "../types";
+import { describe, expect, it } from "vitest";
 import { getValidTransitions } from "../team-status";
+import { canTransition } from "../types";
 
 // ---------------------------------------------------------------------------
 // canTransition – valid forward transitions

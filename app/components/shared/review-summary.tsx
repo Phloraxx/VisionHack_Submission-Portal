@@ -1,4 +1,4 @@
-import { ClipboardList, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
 import { cn } from "~/lib/utils";
 
 interface ReviewSummaryProps {

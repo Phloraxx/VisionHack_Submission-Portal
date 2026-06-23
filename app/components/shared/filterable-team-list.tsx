@@ -1,5 +1,8 @@
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useMemo } from "react";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { DataList, type DataListRow } from "~/components/shared/data-list";
+import { StatusBadge } from "~/components/shared/status-badge";
+import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
 	Select,
@@ -8,9 +11,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "~/components/ui/select";
-import { Button } from "~/components/ui/button";
-import { DataList, type DataListRow } from "~/components/shared/data-list";
-import { StatusBadge } from "~/components/shared/status-badge";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus, TeamView } from "~/lib/types";
 
