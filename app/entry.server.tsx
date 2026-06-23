@@ -60,9 +60,10 @@ export default async function handleRequest(
 			[
 				"default-src 'self'",
 				// RR7's <Scripts /> emits inline route-chunk mapping scripts without
-				// nonce support, so 'unsafe-inline' is required for those to execute.
-				// The theme script hash provides an additional allowed path.
-				`script-src 'self' 'unsafe-inline' 'sha256-fPSrc0uPe4MWxphkXHAOL3JKPdmK+4/we8uR5UrZYns='`,
+				// nonce support, so 'unsafe-inline' is required.
+				// NOTE: 'unsafe-inline' is silently dropped when a hash or nonce
+				// appears in the same directive, so we keep only 'self' + 'unsafe-inline'.
+				"script-src 'self' 'unsafe-inline'",
 				// Tailwind v4 and Radix use dynamic style attributes.
 				"style-src 'self' 'unsafe-inline'",
 				"img-src 'self' data: blob:",
