@@ -37,7 +37,7 @@ references/
 docs/
 
 # CI / config — commit workflow files, ignore the rest
-.github/
+.github/*
 !.github/workflows/
 !.dockerignore
 screens/
