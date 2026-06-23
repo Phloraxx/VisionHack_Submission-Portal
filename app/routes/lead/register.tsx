@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from "react";
+import { useState, useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registerSchema } from "~/lib/schemas/register";
@@ -10,7 +10,6 @@ import {
   useRouteError,
   isRouteErrorResponse,
 } from "react-router";
-import { CsrfContext } from "~/routes/dashboard-layout";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
@@ -258,7 +257,6 @@ export default function LeadRegister() {
   const actionData = useActionData() as ActionData | undefined;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-  const csrfToken = useContext(CsrfContext);
 
   // Autosave — periodically persist form state (sessionStorage + server
   // draft for cross-device resume), restore drafts on mount.
@@ -423,7 +421,6 @@ export default function LeadRegister() {
       )}
 
       <Form method="post" className="space-y-6">
-      <input type="hidden" name="csrf_token" value={csrfToken} />
         {/* Team Lead Info */}
         <Card>
           <CardHeader>

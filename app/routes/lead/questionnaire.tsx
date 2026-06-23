@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useContext } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { questionnaireSchema } from "~/lib/schemas/questionnaire";
@@ -10,7 +10,6 @@ import {
   useRouteError,
   isRouteErrorResponse,
 } from "react-router";
-import { CsrfContext } from "~/routes/dashboard-layout";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
@@ -252,7 +251,6 @@ export default function LeadQuestionnaire() {
   const actionData = useActionData() as ActionData | undefined;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-  const csrfToken = useContext(CsrfContext);
 
   // Form state
   const {
@@ -403,7 +401,6 @@ export default function LeadQuestionnaire() {
 
 
       <Form method="post" className="space-y-6">
-      <input type="hidden" name="csrf_token" value={csrfToken} />
         {/* Render ALL sections but hide non-current with CSS so all form fields submit */}
         <div style={{ display: currentSection === "personal" ? undefined : "none" }} role="tabpanel" id="section-panel-personal" aria-labelledby="section-tab-personal">
           <Card key="personal" className="panel-enter">

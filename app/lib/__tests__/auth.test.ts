@@ -65,7 +65,7 @@ describe("setAuthCookie", () => {
     const result = setAuthCookie("abc123");
     expect(result).toContain("pb_jwt=abc123");
     expect(result).toContain("HttpOnly");
-    expect(result).toContain("SameSite=Lax");
+    expect(result).toContain("SameSite=Strict");
     expect(result).toContain("Path=/");
     expect(result).toContain("Max-Age=432000");
   });
@@ -96,7 +96,7 @@ describe("clearAuthCookie", () => {
     expect(result).toContain("pb_jwt=");
     expect(result).toContain("Max-Age=0");
     expect(result).toContain("HttpOnly");
-    expect(result).toContain("SameSite=Lax");
+    expect(result).toContain("SameSite=Strict");
     expect(result).toContain("Path=/");
   });
 

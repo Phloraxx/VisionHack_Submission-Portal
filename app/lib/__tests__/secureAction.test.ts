@@ -11,9 +11,8 @@ vi.mock("~/lib/auth.server", () => ({
   requireRole: vi.fn(),
 }));
 
-vi.mock("~/lib/csrf.server", () => ({
+vi.mock("~/lib/origin.server", () => ({
   validateOrigin: vi.fn(),
-  validateCsrfToken: vi.fn(),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -21,13 +20,12 @@ vi.mock("@sentry/node", () => ({
 }));
 
 import { requireRole } from "~/lib/auth.server";
-import { validateOrigin, validateCsrfToken } from "~/lib/csrf.server";
+import { validateOrigin } from "~/lib/origin.server";
 import { captureException } from "@sentry/node";
 import { secureAction } from "../action.server";
 
 const mockRequireRole = vi.mocked(requireRole);
 const mockValidateOrigin = vi.mocked(validateOrigin);
-const mockValidateCsrfToken = vi.mocked(validateCsrfToken);
 const mockCaptureException = vi.mocked(captureException);
 
 // ---------------------------------------------------------------------------
@@ -113,7 +111,6 @@ describe("secureAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockValidateOrigin.mockImplementation(() => {});
-    mockValidateCsrfToken.mockImplementation(() => {});
   });
 
   // -----------------------------------------------------------------------
@@ -145,41 +142,6 @@ describe("secureAction", () => {
     const { status, body } = extractStatusBody(result);
     expect(status).toBe(403);
     expect(body?.error).toBe("Invalid request origin");
-  });
-
-  // -----------------------------------------------------------------------
-  // Security checks — validateCsrfToken
-  // -----------------------------------------------------------------------
-
-  it("calls validateCsrfToken with request and formData", async () => {
-    mockRequireRole.mockResolvedValue(makeAuthResult());
-    const handler = vi.fn().mockResolvedValue(data({ ok: true }));
-    const action = secureAction({ roles: ["admin"] }, handler);
-
-    const req = makeRequest("http://localhost:5173/admin/test", new URLSearchParams("intent=foo"));
-    await action(makeArgs(req));
-
-    expect(mockValidateCsrfToken).toHaveBeenCalledTimes(1);
-    expect(mockValidateCsrfToken).toHaveBeenCalledWith(
-      req,
-      expect.any(FormData),
-    );
-  });
-
-  it("returns 403 when CSRF token validation fails", async () => {
-    mockValidateCsrfToken.mockImplementation(() => {
-      throw new Response(null, { status: 403 });
-    });
-    const handler = vi.fn();
-    const action = secureAction({ roles: ["admin"] }, handler);
-
-    const req = makeRequest("http://localhost:5173/admin/test", new URLSearchParams("intent=foo"));
-    const result = await action(makeArgs(req));
-
-    expect(handler).not.toHaveBeenCalled();
-    const { status, body } = extractStatusBody(result);
-    expect(status).toBe(403);
-    expect(body?.error).toBe("Invalid CSRF token");
   });
 
   // -----------------------------------------------------------------------

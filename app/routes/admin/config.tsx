@@ -1,7 +1,6 @@
-import { useState, useContext, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useLoaderData, useSubmit, useNavigation, useActionData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { CsrfContext } from "~/routes/dashboard-layout";
 import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
@@ -69,9 +68,8 @@ export default function AdminConfig() {
     | { configMap: Record<string, boolean> }
     | null
     | undefined;
-  const configMap = data?.configMap ?? {};
-  const csrfToken = useContext(CsrfContext);
   const navigation = useNavigation();
+  const configMap = data?.configMap ?? {};
   const actionData = useActionData<{ key?: string; value?: boolean; error?: string }>();
   const submit = useSubmit();
 
@@ -88,7 +86,7 @@ export default function AdminConfig() {
   }, [actionData]);
 
   const handleToggle = (key: string) => {
-    submit({ key, value: String(!configMap[key]), csrf_token: csrfToken }, { method: "post" });
+    submit({ key, value: String(!configMap[key]) }, { method: "post" });
   };
 
   const submitting = (key: string) =>

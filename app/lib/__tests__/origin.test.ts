@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { validateOrigin } from "../csrf.server";
+import { validateOrigin } from "../origin.server";
 
 const ORIG_ALLOWED = process.env.ALLOWED_ORIGINS;
 const ORIG_NODE_ENV = process.env.NODE_ENV;

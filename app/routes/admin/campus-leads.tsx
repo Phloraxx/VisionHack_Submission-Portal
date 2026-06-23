@@ -1,5 +1,3 @@
-import { useContext } from "react";
-import { CsrfContext } from "~/routes/dashboard-layout";
 
 import { Building2, CheckCircle, Mail, MapPin, Upload, Users, XCircle } from "lucide-react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
@@ -282,7 +280,6 @@ export default function AdminCampusLeads() {
 	const actionData = useActionData() as CampusLeadActionResult | undefined;
 	const navigation = useNavigation();
 	const isSubmitting = navigation.state === "submitting";
-	const csrfToken = useContext(CsrfContext);
 
 	const singleSuccess =
 		actionData && "type" in actionData && actionData.type === "single" && actionData.success
@@ -317,7 +314,6 @@ export default function AdminCampusLeads() {
 					</CardHeader>
 					<CardContent>
 						<Form method="post" className="space-y-4">
-							<input type="hidden" name="csrf_token" value={csrfToken} />
 							<input type="hidden" name="intent" value="create-single" />
 
 							<div className="grid gap-4 sm:grid-cols-2">
@@ -399,7 +395,6 @@ export default function AdminCampusLeads() {
 					</CardHeader>
 					<CardContent>
 						<Form method="post" encType="multipart/form-data" className="space-y-4">
-							<input type="hidden" name="csrf_token" value={csrfToken} />
 							<input type="hidden" name="intent" value="bulk-create" />
 							<div className="rounded-lg border-2 border-dashed border-border p-6 text-center transition-colors hover:bg-muted/50">
 								<Upload className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />

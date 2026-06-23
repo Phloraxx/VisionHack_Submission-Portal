@@ -59,7 +59,7 @@ export function setAuthCookie(token: string): string {
     `${COOKIE_NAME}=${token}`,
     "HttpOnly",
     ...(secure ? ["Secure"] : []),
-    "SameSite=Lax",
+    "SameSite=Strict",
     `Path=${COOKIE_PATH}`,
     `Max-Age=${COOKIE_MAX_AGE}`,
   ].join("; ");
@@ -75,27 +75,12 @@ export function clearAuthCookie(): string {
     `${COOKIE_NAME}=`,
     "HttpOnly",
     ...(secure ? ["Secure"] : []),
-    "SameSite=Lax",
+    "SameSite=Strict",
     `Path=${COOKIE_PATH}`,
     "Max-Age=0",
   ].join("; ");
 }
 
-/**
- * Build a `Set-Cookie` header value that clears the CSRF cookie
- * (immediate expiry).
- */
-export function clearCsrfCookie(): string {
-  const secure = process.env.NODE_ENV === "production";
-  return [
-    `csrf_token=`,
-    ...(secure ? ["Secure"] : []),
-    "SameSite=Lax",
-    "Path=/",
-    "HttpOnly",
-    "Max-Age=0",
-  ].join("; ");
-}
 
 // ---------------------------------------------------------------------------
 // Auth actions

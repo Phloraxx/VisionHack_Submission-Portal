@@ -1,7 +1,6 @@
 import { useState, useContext } from "react";
 import { useLoaderData, Form, useNavigation, useActionData, Link, useRouteError, isRouteErrorResponse } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { CsrfContext } from "~/routes/dashboard-layout";
 import { requireRole } from "~/lib/auth.server";
 import { secureAction, fail, ok } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
@@ -276,7 +275,6 @@ export default function InstitutionDashboard() {
   const navigation = useNavigation();
   const actionData = useActionData() as { success?: boolean; error?: string } | undefined;
   const isSubmitting = navigation.state === "submitting";
-  const csrfToken = useContext(CsrfContext);
 
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
@@ -412,7 +410,6 @@ export default function InstitutionDashboard() {
               </div>
             )}
             <Form method="post">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
               <input type="hidden" name="intent" value="invite-lead" />
               <input type="hidden" name="name" value={inviteName} />
               <input type="hidden" name="email" value={inviteEmail} />
@@ -592,7 +589,6 @@ export default function InstitutionDashboard() {
                         <div className="space-y-2">
                           {team.status === "registered" && (
                             <Form method="post">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
                               <input
                                 type="hidden"
                                 name="intent"
@@ -618,7 +614,6 @@ export default function InstitutionDashboard() {
                           )}
                           {team.status === "shortlisted" && (
                             <Form method="post">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
                               <input
                                 type="hidden"
                                 name="intent"

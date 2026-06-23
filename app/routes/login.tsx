@@ -10,7 +10,7 @@ import {
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { getAuthFromCookie, login, setAuthCookie, ROLE_DASHBOARD_MAP } from "~/lib/auth.server";
 import { createAuthenticatedClient, getAdminClient, createPocketBaseClient } from "~/lib/pocketbase.server";
-import { validateOrigin, validateCsrfToken, generateCsrfToken, setCsrfCookie } from "~/lib/csrf.server";
+import { validateOrigin } from "~/lib/origin.server";
 import { getConfig } from "~/lib/config.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
 import type { UserRecord } from "~/lib/types";
@@ -59,9 +59,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Stats are cached in memory for 60s to avoid hitting PocketBase on every load.
   const now = Date.now();
   if (statsCache && now - statsCache.cachedAt < STATS_TTL_MS) {
-    const csrfToken = generateCsrfToken();
-    const headers = new Headers();
-    headers.append("Set-Cookie", setCsrfCookie(csrfToken));
     return data(
       {
         teamCount: statsCache.teamCount,
@@ -69,9 +66,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         registrationOpen: statsCache.registrationOpen,
         questionnaireOpen: statsCache.questionnaireOpen,
         submissionOpen: statsCache.submissionOpen,
-        csrfToken,
-      },
-      { headers }
+      }
     );
   }
 
@@ -102,10 +97,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   })());
   const stats = await promise;
 
-  const csrfToken = generateCsrfToken();
-  const headers = new Headers();
-  headers.append("Set-Cookie", setCsrfCookie(csrfToken));
-
   return data(
     {
       teamCount: stats.teamCount,
@@ -113,9 +104,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       registrationOpen: stats.registrationOpen,
       questionnaireOpen: stats.questionnaireOpen,
       submissionOpen: stats.submissionOpen,
-      csrfToken,
-    },
-    { headers }
+    }
   );
 }
 
@@ -123,7 +112,6 @@ export async function action({ request }: ActionFunctionArgs) {
   validateOrigin(request, true);
 
   const formData = await request.formData();
-  validateCsrfToken(request, formData);
   const email = (formData.get("email") as string | null)?.trim()?.toLowerCase() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
 
@@ -209,13 +197,12 @@ function PhaseIndicator({ registrationOpen, questionnaireOpen, submissionOpen }:
 }
 
 export default function Login() {
-  const { teamCount, institutionCount, registrationOpen, questionnaireOpen, submissionOpen, csrfToken } = useLoaderData() as {
+  const { teamCount, institutionCount, registrationOpen, questionnaireOpen, submissionOpen } = useLoaderData() as {
     teamCount: number;
     institutionCount: number;
     registrationOpen: boolean;
     questionnaireOpen: boolean;
     submissionOpen: boolean;
-    csrfToken: string;
   };
   const actionData = useActionData<{ error?: string }>();
   const navigation = useNavigation();
@@ -321,7 +308,6 @@ export default function Login() {
             </div>
 
             <Form method="post" className="space-y-5">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
               {actionData?.error && (
                 <div
                   role="alert"

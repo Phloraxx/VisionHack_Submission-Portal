@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Outlet,
   Form,
@@ -12,7 +12,6 @@ import {
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuth, getAuthFromCookie, setAuthCookie } from "~/lib/auth.server";
-import { generateCsrfToken, setCsrfCookie } from "~/lib/csrf.server";
 import type { UserRecord, Role } from "~/lib/types";
 import { Skeleton } from "~/components/ui/skeleton";
 import { PageTransition } from "~/components/shared/page-transition";
@@ -73,9 +72,6 @@ const ROLE_LABEL: Record<Role, string> = {
   lead: "Team Lead",
 };
 
-/** Context so child routes can read the CSRF token for double-submit forms. */
-export const CsrfContext = createContext("");
-
 export async function loader({ request }: LoaderFunctionArgs) {
   const { user, token } = await requireAuth(request);
 
@@ -85,19 +81,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     headers.append("Set-Cookie", setAuthCookie(token));
   }
 
-  // CSRF token: read from cookie or generate a fresh one
-  const cookieHeader = request.headers.get("Cookie") ?? "";
-  const csrfCookie = cookieHeader
-    .split(";")
-    .map((s) => s.trim())
-    .find((s) => s.startsWith("csrf_token="));
-  const existingToken = csrfCookie ? csrfCookie.slice("csrf_token=".length) : null;
-  const csrfToken = existingToken || generateCsrfToken();
-
-  // Set (or refresh) the CSRF cookie on every navigation so it stays alive
-  headers.append("Set-Cookie", setCsrfCookie(csrfToken));
-
-  return data({ user, csrfToken }, { headers });
+  return data({ user }, { headers });
 }
 
 /**
@@ -141,7 +125,7 @@ function useTheme() {
 
 export default function DashboardLayout() {
 
-  const { user, csrfToken } = useLoaderData() as { user: UserRecord; csrfToken: string };
+  const { user } = useLoaderData() as { user: UserRecord; csrfToken: string };
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigation = useNavigation();
@@ -302,7 +286,6 @@ export default function DashboardLayout() {
         {/* Footer — sign out */}
         <div className="border-t border-sidebar-border p-3">
           <Form method="post" action="/api/auth/logout">
-            <input type="hidden" name="csrf_token" value={csrfToken} />
             <button
               type="submit"
               className="group flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
@@ -354,11 +337,9 @@ export default function DashboardLayout() {
               "mx-auto w-full max-w-7xl px-4 py-6 sm:px-5 sm:py-8 md:px-8 md:py-10 transition-opacity duration-300 ease-out",
               isNavigating ? "opacity-60" : "opacity-100",
             )}>
-            <CsrfContext.Provider value={csrfToken}>
               <PageTransition key={location.pathname}>
                 <Outlet />
               </PageTransition>
-            </CsrfContext.Provider>
           </div>
         </main>
       </div>

@@ -6,27 +6,18 @@ import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import {
-	generateCsrfToken,
-	setCsrfCookie,
-	validateCsrfToken,
-	validateOrigin,
-} from "~/lib/csrf.server";
+import { validateOrigin } from "~/lib/origin.server";
 import { createPocketBaseClient } from "~/lib/pocketbase.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	const csrfToken = generateCsrfToken();
-	const headers = new Headers();
-	headers.append("Set-Cookie", setCsrfCookie(csrfToken));
-	return data({ csrfToken }, { headers });
+	return data({});
 }
 
 export async function action({ request }: ActionFunctionArgs) {
 	validateOrigin(request, true);
 
 	const formData = await request.formData();
-	validateCsrfToken(request, formData);
 	const email = (formData.get("email") as string | null)?.trim()?.toLowerCase() ?? "";
 
 	if (!email) {
@@ -59,7 +50,6 @@ export function meta() {
 }
 
 export default function ForgotPassword() {
-	const { csrfToken } = useLoaderData() as { csrfToken: string };
 	const actionData = useActionData() as { sent?: boolean; error?: string } | undefined;
 	const navigation = useNavigation();
 	const isSubmitting = navigation.state === "submitting";
@@ -194,7 +184,6 @@ export default function ForgotPassword() {
 								</div>
 
 								<Form method="post" className="space-y-5">
-									<input type="hidden" name="csrf_token" value={csrfToken} />
 									{actionData?.error && (
 										<div
 											role="alert"

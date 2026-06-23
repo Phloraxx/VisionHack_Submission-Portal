@@ -4,7 +4,7 @@ import { data } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import type { ZodSchema } from "zod";
 import { requireRole } from "./auth.server";
-import { validateCsrfToken, validateOrigin } from "./csrf.server";
+import { validateOrigin } from "./origin.server";
 import type { Role, UserRecord } from "./types";
 
 /**
@@ -86,7 +86,7 @@ export function fail(args: {
  */
 export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, handler: Handler) {
 	return async ({ request, params }: ActionFunctionArgs): Promise<ActionResult> => {
-		// 1. CSRF (Origin header)
+		// 1. Origin check
 		try {
 			validateOrigin(request);
 		} catch {
@@ -101,14 +101,8 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			return fail({ error: "Invalid form data", status: 400 });
 		}
 
-		// 3. CSRF token (double-submit cookie pattern)
-		try {
-			validateCsrfToken(request, formData);
-		} catch {
-			return fail({ error: "Invalid CSRF token", status: 403 });
-		}
 
-		// 4. Auth + role — catch redirects and return JSON instead
+		// 3. Auth + role — catch redirects and return JSON instead
 		let pb: PocketBase;
 		let user: UserRecord;
 		try {
