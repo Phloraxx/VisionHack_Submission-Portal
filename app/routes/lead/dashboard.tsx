@@ -8,13 +8,13 @@ import type { TeamStatus, TeamView } from "~/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Button } from "~/components/ui/button";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
 import { PhaseStrip } from "~/components/shared/phase-strip";
+import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
 import { ProgressBar } from "~/components/shared/progress-bar";
+import { Row } from "~/components/shared/row";
 import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { ConfirmButton } from "~/components/shared/confirm-button";
-import { Row } from "~/components/shared/row";
 import { Callout } from "~/components/shared/callout";
 import {
 	UserPlus,

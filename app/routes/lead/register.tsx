@@ -1,24 +1,20 @@
-import { useState, useEffect } from "react";
-import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { registerSchema } from "~/lib/schemas/register";
+import { AlertCircle, Loader2, Save, UserPlus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import {
-	useLoaderData,
 	Form,
-	useNavigation,
-	useActionData,
-	useRouteError,
 	isRouteErrorResponse,
+	useActionData,
+	useLoaderData,
+	useNavigation,
+	useRouteError,
 } from "react-router";
-import { secureLoader } from "~/lib/loader.server";
-import { secureAction, fail, ok } from "~/lib/action.server";
-import { getConfig } from "~/lib/config.server";
-import { getLeadTeam } from "~/lib/team.server";
-import { getStr, getAllStr } from "~/lib/form.server";
-import type { TeamRecord, MemberRecord } from "~/lib/types";
-import { canTransition } from "~/lib/types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { ReviewSummary } from "~/components/shared/review-summary";
+import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import {
@@ -29,12 +25,16 @@ import {
 	SelectValue,
 } from "~/components/ui/select";
 import { Separator } from "~/components/ui/separator";
-import { UserPlus, Save, Loader2, AlertCircle } from "lucide-react";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
-import { PanelHeader } from "~/components/shared/panel-header";
-import { useAutoSave } from "~/hooks/use-auto-save";
 import { useActionToast } from "~/hooks/use-action-toast";
-import { ReviewSummary } from "~/components/shared/review-summary";
+import { useAutoSave } from "~/hooks/use-auto-save";
+import { fail, ok, secureAction } from "~/lib/action.server";
+import { getConfig } from "~/lib/config.server";
+import { getAllStr, getStr } from "~/lib/form.server";
+import { secureLoader } from "~/lib/loader.server";
+import { registerSchema } from "~/lib/schemas/register";
+import { getLeadTeam } from "~/lib/team.server";
+import type { MemberRecord, TeamRecord } from "~/lib/types";
+import { canTransition } from "~/lib/types";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------

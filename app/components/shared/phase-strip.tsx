@@ -25,7 +25,6 @@ export function PhaseStrip({ phases, className }: PhaseStripProps) {
 		>
 			{phases.map((phase, idx) => {
 				const isOpen = phase.open;
-				// Bottom border on first row of 2-col mobile grid
 				const needsBottomBorder = phases.length > 2 && idx < 2;
 				return (
 					<div

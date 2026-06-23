@@ -4,11 +4,10 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
-import { STATUS_LABELS } from "~/lib/team-status";
-import type { TeamStatus, TeamView, MemberRecord } from "~/lib/types";
-import { escapeCsv } from "~/lib/utils";
 import { TEAM_STATUSES } from "~/lib/constants";
-
+import { STATUS_LABELS } from "~/lib/team-status";
+import type { MemberRecord, TeamStatus, TeamView } from "~/lib/types";
+import { escapeCsv } from "~/lib/utils";
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	const auth = await requireAuthJson(request);
@@ -144,10 +143,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream({
 		start(controller) {
-			controller.enqueue(encoder.encode("\uFEFF" + headers.join(",") + "\n"));
+			controller.enqueue(encoder.encode(`\uFEFF${headers.join(",")}\n`));
 			for (const team of filtered) {
 				const row = buildRow(team, membersByTeam[team.id] || []);
-				controller.enqueue(encoder.encode(row + "\n"));
+				controller.enqueue(encoder.encode(`${row}\n`));
 			}
 			controller.close();
 		},

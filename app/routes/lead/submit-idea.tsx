@@ -1,35 +1,34 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { AlertCircle, CheckCircle2, FileText, Loader2, Upload } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
 import {
-	useLoaderData,
 	Form,
-	useNavigation,
-	useActionData,
-	useRouteError,
 	isRouteErrorResponse,
+	useActionData,
+	useLoaderData,
+	useNavigation,
+	useRouteError,
 } from "react-router";
-import { secureLoader } from "~/lib/loader.server";
-import { secureAction, fail, ok } from "~/lib/action.server";
-import { getConfig } from "~/lib/config.server";
-import { getLeadTeam } from "~/lib/team.server";
-import { canTransition } from "~/lib/types";
-import type { TeamRecord } from "~/lib/types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { PanelHeader } from "~/components/shared/panel-header";
+import { ReviewSummary } from "~/components/shared/review-summary";
+import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
-import { AlertCircle, Upload, FileText, Loader2, CheckCircle2 } from "lucide-react";
-import { StepIndicator, getLeadSteps } from "~/components/shared/step-indicator";
-import { PanelHeader } from "~/components/shared/panel-header";
-import { ReviewSummary } from "~/components/shared/review-summary";
 import { useActionToast } from "~/hooks/use-action-toast";
-import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from "~/lib/constants";
+import { fail, ok, secureAction } from "~/lib/action.server";
+import { getConfig } from "~/lib/config.server";
+import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "~/lib/constants";
 import { validateFileSignature } from "~/lib/file-validation.server";
+import { secureLoader } from "~/lib/loader.server";
+import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
+import { getLeadTeam } from "~/lib/team.server";
+import { canTransition } from "~/lib/types";
+import type { TeamRecord } from "~/lib/types";
 import { extractFieldErrors } from "~/lib/utils";
-
 
 // ---------------------------------------------------------------------------
 // Types
@@ -104,15 +103,15 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 		if (file.size > MAX_FILE_SIZE) {
 			return fail({ fieldErrors: { file: "File must be less than 10 MB" } });
 		}
-    if (!(await validateFileSignature(file))) {
-      return fail({
-        fieldErrors: {
-          file: "File does not appear to be a valid PDF or PPT. Only genuine PDF/PPT files are accepted.",
-        },
-      });
-    }
-    // Browser-provided MIME type is advisory and unreliable (often empty).
-    // The magic-byte check above is the real defense.
+		if (!(await validateFileSignature(file))) {
+			return fail({
+				fieldErrors: {
+					file: "File does not appear to be a valid PDF or PPT. Only genuine PDF/PPT files are accepted.",
+				},
+			});
+		}
+		// Browser-provided MIME type is advisory and unreliable (often empty).
+		// The magic-byte check above is the real defense.
 
 		// PB needs a multipart form to upload a file
 		const form = new FormData();
@@ -207,10 +206,10 @@ export default function LeadSubmitIdea() {
 				e.target.value = "";
 				return;
 			}
-      // Browser-provided MIME type is advisory and unreliable (often empty).
-      // The server-side magic-byte check is the real defense, so we skip
-      // the client-side MIME gate to avoid blocking valid uploads.
-      setSelectedFile(file);
+			// Browser-provided MIME type is advisory and unreliable (often empty).
+			// The server-side magic-byte check is the real defense, so we skip
+			// the client-side MIME gate to avoid blocking valid uploads.
+			setSelectedFile(file);
 		}
 	};
 
