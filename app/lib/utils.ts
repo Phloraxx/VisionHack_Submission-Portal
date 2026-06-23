@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from "clsx";
+import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
@@ -13,7 +13,8 @@ export function escapeHtml(str: string): string {
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;")
 		.replace(/'/g, "&#039;")
-		.replace(/`/g, "&#96;");
+		.replace(/`/g, "&#96;")
+		.replace(/\//g, "&#47;");
 }
 
 /**
@@ -65,4 +66,20 @@ export function countByKey<T>(items: T[], keyFn: (item: T) => string): Record<st
 		counts[key] = (counts[key] ?? 0) + 1;
 	}
 	return counts;
+}
+
+/**
+ * Extract a flat `Record<string, string>` of field errors from a Zod validation
+ * error. Takes the first error message per field. Compatible with `fail()` in
+ * action.server.ts which accepts `fieldErrors` in its options.
+ */
+export function extractFieldErrors(error: {
+	flatten: () => { fieldErrors: Record<string, string | string[] | undefined> };
+}): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries(error.flatten().fieldErrors).map(([k, v]) => [
+			k,
+			Array.isArray(v) ? v[0] : (v ?? "Invalid"),
+		]),
+	);
 }

@@ -7,7 +7,7 @@ export async function action({ request }: ActionFunctionArgs) {
 	if (request.method !== "POST") {
 		return new Response("Method not allowed", { status: 405 });
 	}
-	validateOrigin(request);
+	validateOrigin(request, true);
 
 	// Clear the auth cookie and redirect to login. Rate limiting is handled
 	// by PocketBase's built-in settings.

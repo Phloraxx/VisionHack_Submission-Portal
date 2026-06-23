@@ -44,6 +44,7 @@ export default async function handleRequest(
 	responseHeaders.set("X-Frame-Options", "DENY");
 	responseHeaders.set("Referrer-Policy", "strict-origin-when-cross-origin");
 	responseHeaders.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+	responseHeaders.set("X-XSS-Protection", "0");
 
 	// Content-Security-Policy: nonce-based. React 19 stamps every inline
 	// <script> emitted by ServerRouter with the nonce we pass in. The
