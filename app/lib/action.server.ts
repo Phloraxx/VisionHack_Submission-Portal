@@ -6,6 +6,7 @@ import type { ZodSchema } from "zod";
 import { requireRole } from "./auth.server";
 import { validateOrigin } from "./origin.server";
 import type { Role, UserRecord } from "./types";
+import { extractFieldErrors } from "./utils";
 
 /**
  * Per-request context passed to a `secureAction` handler.
@@ -138,12 +139,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			const parsed = options.schema.safeParse(Object.fromEntries(formData.entries()));
 			if (!parsed.success) {
 				return fail({
-					fieldErrors: Object.fromEntries(
-						Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
-							k,
-							Array.isArray(v) ? v[0] : (v ?? "Invalid"),
-						]),
-					),
+					fieldErrors: extractFieldErrors(parsed.error),
 					status: 400,
 				});
 			}

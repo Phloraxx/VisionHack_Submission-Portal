@@ -22,20 +22,8 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { secureLoader } from "~/lib/loader.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
+import { TEAM_STATUSES } from "~/lib/constants";
 
-interface TeamWithExpand {
-	id: string;
-	name: string;
-	teamCode: string;
-	status: TeamStatus;
-	institutionId: string;
-	leaderUserId: string;
-	created: string;
-	expand?: {
-		institutionId?: { name: string; district: string };
-		leaderUserId?: { name: string; email: string };
-	};
-}
 
 interface InstitutionRecord {
 	id: string;
@@ -50,15 +38,6 @@ interface InstitutionRecord {
 }
 
 const PAGE_SIZE = 50;
-const VALID_STATUSES = [
-	"invited",
-	"registered",
-	"shortlisted",
-	"submitted",
-	"selected",
-	"rejected",
-	"withdrawn",
-] as const;
 export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb, request }) => {
 	pb.autoCancellation(false);
 
@@ -89,7 +68,7 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 	if (
 		status &&
 		status !== "all" &&
-		VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])
+		TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
 	) {
 		teamClauses.push(pb.filter("status = {:status}", { status }));
 	}
@@ -111,7 +90,7 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 			// District has no institutions — short-circuit to empty.
 			return {
 				user,
-				teams: [] as TeamWithExpand[],
+				teams: [] as TeamView[],
 				institutions: institutions.items,
 				memberCounts: {} as Record<string, number>,
 				page: 1,
@@ -140,7 +119,7 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 	const COUNT_SCAN_CAP = 1000;
 
 	const [teamsPage, countScan] = await Promise.all([
-		pb.collection("teams").getList<TeamWithExpand>(page, PAGE_SIZE, {
+		pb.collection("teams").getList<TeamView>(page, PAGE_SIZE, {
 			filter: teamFilter,
 			expand: "institutionId,leaderUserId",
 			sort: "-created",
@@ -220,7 +199,7 @@ export default function CoordinatorDashboard() {
 		uniqueInstitutionIds,
 		activeFilters,
 	} = useLoaderData() as {
-		teams: TeamWithExpand[];
+		teams: TeamView[];
 		institutions: InstitutionRecord[];
 		memberCounts: Record<string, number>;
 		page: number;

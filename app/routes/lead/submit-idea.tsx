@@ -27,48 +27,9 @@ import { PanelHeader } from "~/components/shared/panel-header";
 import { ReviewSummary } from "~/components/shared/review-summary";
 import { useActionToast } from "~/hooks/use-action-toast";
 import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from "~/lib/constants";
+import { validateFileSignature } from "~/lib/file-validation.server";
+import { extractFieldErrors } from "~/lib/utils";
 
-// Magic bytes for file type verification (first bytes of the file)
-// Prevents renamed .exe files from being uploaded as PDF/PPT
-const MAGIC_BYTES: Record<string, number[][]> = {
-	pdf: [[0x25, 0x50, 0x44, 0x46]], // %PDF
-	// Accept both old OLE2 PPT and modern ZIP-based PPTX (which has ZIP header).
-	// The ZIP check alone is not unique to PPTX (also matches .docx, .xlsx, .zip),
-	// but combined with the MIME type and file extension check above this is
-	// sufficient to prevent renamed .exe files.
-	ppt: [
-		[0xd0, 0xcf, 0x11, 0xe0], // OLE2 (PPT)
-		[0x50, 0x4b, 0x03, 0x04], // ZIP/OpenXML (PPTX)
-	],
-};
-/**
- * Verify a file's magic bytes match the expected type.
- * Returns true if the file passes validation.
- */
-async function validateFileSignature(file: File): Promise<boolean> {
-	// Read 16 bytes for magic byte checking — sufficient for PDF (%PDF) and
-	// OLE2 PPT (D0CF11E0). ZIP header (PK\x03\x04) is at offset 0-3, also
-	// covered by 16 bytes. Insufficient for deep MIME validation, but good
-	// enough to reject renamed .exe files.
-	const buffer = await file.slice(0, 16).arrayBuffer();
-	const bytes = new Uint8Array(buffer);
-
-	// Check PDF magic bytes
-	if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-		return MAGIC_BYTES.pdf.some((sig) => sig.every((b, i) => bytes[i] === b));
-	}
-
-	// Check PPT/PPTX magic bytes (OLE2 or ZIP/OpenXML format)
-	if (
-		file.type.includes("presentation") ||
-		file.name.endsWith(".ppt") ||
-		file.name.endsWith(".pptx")
-	) {
-		return MAGIC_BYTES.ppt.some((sig) => sig.every((b, i) => bytes[i] === b));
-	}
-
-	return false;
-}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,12 +82,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 
 	if (!parsed.success) {
 		return fail({
-			fieldErrors: Object.fromEntries(
-				Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
-					k,
-					Array.isArray(v) ? v[0] : (v ?? "Invalid"),
-				]),
-			),
+			fieldErrors: extractFieldErrors(parsed.error),
 		});
 	}
 

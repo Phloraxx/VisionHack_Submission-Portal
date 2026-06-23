@@ -9,6 +9,7 @@ import { fail, ok, secureAction } from "~/lib/action.server";
 import { secureLoader } from "~/lib/loader.server";
 import { createCampusLead } from "~/lib/team.server";
 import { createCampusLeadSchema } from "~/lib/schemas/campus-leads";
+import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,12 +92,7 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 
 		if (!parsed.success) {
 			return fail({
-				fieldErrors: Object.fromEntries(
-					Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
-						k,
-						Array.isArray(v) ? v[0] : (v ?? "Invalid"),
-					]),
-				),
+				fieldErrors: extractFieldErrors(parsed.error),
 			});
 		}
 

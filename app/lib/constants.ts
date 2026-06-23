@@ -14,3 +14,14 @@ export const ALLOWED_MIME_TYPES = [
 	"application/vnd.ms-powerpoint",
 	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ] as const;
+
+/** All valid team statuses (sorted by progression). */
+export const TEAM_STATUSES = [
+	"invited",
+	"registered",
+	"shortlisted",
+	"submitted",
+	"selected",
+	"rejected",
+	"withdrawn",
+] as const;

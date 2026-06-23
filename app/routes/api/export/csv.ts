@@ -7,16 +7,8 @@ import { requireAuthJson } from "~/lib/auth.server";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus, TeamView, MemberRecord } from "~/lib/types";
 import { escapeCsv } from "~/lib/utils";
+import { TEAM_STATUSES } from "~/lib/constants";
 
-const TEAM_STATUSES: TeamStatus[] = [
-	"invited",
-	"registered",
-	"shortlisted",
-	"submitted",
-	"selected",
-	"rejected",
-	"withdrawn",
-];
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	const auth = await requireAuthJson(request);

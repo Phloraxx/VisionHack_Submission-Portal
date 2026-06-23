@@ -3,6 +3,7 @@ import { useLoaderData, useSearchParams, useNavigation, isRouteErrorResponse, us
 import { secureLoader } from "~/lib/loader.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
+import { TEAM_STATUSES } from "~/lib/constants";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { MetricCard } from "~/components/shared/metric-card";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -10,28 +11,6 @@ import { Users } from "lucide-react";
 import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 
 const PAGE_SIZE = 50;
-const VALID_STATUSES = [
-	"invited",
-	"registered",
-	"shortlisted",
-	"submitted",
-	"selected",
-	"rejected",
-	"withdrawn",
-] as const;
-interface TeamWithExpand {
-	id: string;
-	name: string;
-	teamCode: string;
-	status: TeamStatus;
-	created: string;
-	institutionId: string;
-	leaderUserId: string;
-	expand?: {
-		institutionId?: { name: string; district: string };
-		leaderUserId?: { name: string; email: string };
-	};
-}
 
 export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb, request }) => {
 	const url = new URL(request.url);
@@ -54,7 +33,7 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb, requ
 	if (
 		status &&
 		status !== "all" &&
-		VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])
+		TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
 	) {
 		clauses.push(pb.filter("status = {:status}", { status }));
 	}
@@ -67,7 +46,7 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb, requ
 	const COUNT_SCAN_CAP = 500;
 
 	const [pageResult, countScan] = await Promise.all([
-		pb.collection("teams").getList<TeamWithExpand>(page, PAGE_SIZE, {
+		pb.collection("teams").getList<TeamView>(page, PAGE_SIZE, {
 			filter,
 			expand: "institutionId,leaderUserId",
 			sort: "-created",
@@ -119,7 +98,7 @@ export default function AdminTeams() {
 		scannedCount,
 		scannedCap,
 	} = useLoaderData() as {
-		teams: TeamWithExpand[];
+		teams: TeamView[];
 		memberCounts: Record<string, number>;
 		page: number;
 		perPage: number;
@@ -137,8 +116,6 @@ export default function AdminTeams() {
 	const searchQuery = searchParams.get("q") ?? "";
 	const statusFilter = searchParams.get("status") ?? "all";
 
-	// Push search input into the URL with a 250ms debounce so the loader
-	// doesn't refire on every keystroke.
 	const [searchInput, setSearchInput] = useState(searchQuery);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const updateQuery = (next: string) => {
@@ -174,7 +151,7 @@ export default function AdminTeams() {
 	const visibleTeams = useMemo(() => {
 		if (!searchQuery) return teams;
 		const q = searchQuery.toLowerCase();
-		return teams.filter((t: TeamWithExpand) => {
+		return teams.filter((t: TeamView) => {
 			const lead = t.expand?.leaderUserId;
 			const inst = t.expand?.institutionId;
 			return (

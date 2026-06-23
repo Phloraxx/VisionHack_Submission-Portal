@@ -35,6 +35,7 @@ import { PanelHeader } from "~/components/shared/panel-header";
 import { useAutoSave } from "~/hooks/use-auto-save";
 import { useActionToast } from "~/hooks/use-action-toast";
 import { ReviewSummary } from "~/components/shared/review-summary";
+import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,12 +117,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 
 	if (!parsed.success) {
 		return fail({
-			fieldErrors: Object.fromEntries(
-				Object.entries(parsed.error.flatten().fieldErrors).map(([k, v]) => [
-					k,
-					Array.isArray(v) ? v[0] : (v ?? "Invalid"),
-				]),
-			),
+			fieldErrors: extractFieldErrors(parsed.error),
 		});
 	}
 

@@ -24,17 +24,6 @@ import { Label } from "~/components/ui/label";
 import { EventMark } from "~/components/shared/event-mark";
 import { ArrowRight, Loader2, KeyRound, Mail } from "lucide-react";
 import { AnimatedGrid } from "~/components/ui/animated-grid";
-interface LoginStats {
-	teamCount: number;
-	institutionCount: number;
-	registrationOpen: boolean;
-	questionnaireOpen: boolean;
-	submissionOpen: boolean;
-	cachedAt: number;
-}
-let statsCache: LoginStats | null = null;
-let statsPromise: Promise<LoginStats> | null = null;
-const STATS_TTL_MS = 60_000;
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	const token = getAuthFromCookie(request);
@@ -51,62 +40,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
 				throw redirect(target);
 			}
 		} catch (err) {
-			// Re-throw redirects and Responses — they are not errors.
 			if (err instanceof Response) throw err;
-			// Invalid token — proceed to login
 		}
 	}
 
-	// Config phase flags are now publicly readable (collection listRule is "").
-	// Team and institution counts still need elevated access — use the
-	// server-side admin client for those.
-	// Stats are cached in memory for 60s to avoid hitting PocketBase on every load.
-	const now = Date.now();
-	if (statsCache && now - statsCache.cachedAt < STATS_TTL_MS) {
-		return data({
-			teamCount: statsCache.teamCount,
-			institutionCount: statsCache.institutionCount,
-			registrationOpen: statsCache.registrationOpen,
-			questionnaireOpen: statsCache.questionnaireOpen,
-			submissionOpen: statsCache.submissionOpen,
-		});
-	}
-
-	// Deduplicate concurrent cache-miss requests
-	const promise =
-		statsPromise ??
-		(statsPromise = (async () => {
-			try {
-				const [cfg, adminPb] = await Promise.all([
-					getConfig(createPocketBaseClient()),
-					getAdminClient(),
-				]);
-				const [teams, institutions] = await Promise.all([
-					adminPb.collection("teams").getList(1, 1, { fields: "id" }),
-					adminPb.collection("institutions").getList(1, 1, { fields: "id" }),
-				]);
-				const result = {
-					teamCount: teams.totalItems,
-					institutionCount: institutions.totalItems,
-					registrationOpen: !!cfg.registration_open,
-					questionnaireOpen: !!cfg.questionnaire_open,
-					submissionOpen: !!cfg.submission_open,
-					cachedAt: Date.now(),
-				};
-				statsCache = result;
-				return result;
-			} finally {
-				statsPromise = null;
-			}
-		})());
-	const stats = await promise;
+	const [cfg, adminPb] = await Promise.all([
+		getConfig(createPocketBaseClient()),
+		getAdminClient(),
+	]);
+	const [teams, institutions] = await Promise.all([
+		adminPb.collection("teams").getList(1, 1, { fields: "id" }),
+		adminPb.collection("institutions").getList(1, 1, { fields: "id" }),
+	]);
 
 	return data({
-		teamCount: stats.teamCount,
-		institutionCount: stats.institutionCount,
-		registrationOpen: stats.registrationOpen,
-		questionnaireOpen: stats.questionnaireOpen,
-		submissionOpen: stats.submissionOpen,
+		teamCount: teams.totalItems,
+		institutionCount: institutions.totalItems,
+		registrationOpen: !!cfg.registration_open,
+		questionnaireOpen: !!cfg.questionnaire_open,
+		submissionOpen: !!cfg.submission_open,
 	});
 }
 

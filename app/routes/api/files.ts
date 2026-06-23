@@ -33,7 +33,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
 		return new Response("Invalid filename", { status: 400 });
 	}
-	if (!/^[A-Za-z0-9]{15}$/.test(recordId)) {
+	if (!/^[A-Za-z0-9]{10,30}$/.test(recordId)) {
 		return new Response("Not found", { status: 404 });
 	}
 
