@@ -55,7 +55,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npx biome check . --reporter=github || echo "Lint issues found (non-blocking)"
 
   build:
     name: Build

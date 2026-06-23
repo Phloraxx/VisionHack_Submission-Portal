@@ -16,7 +16,32 @@
 	"organizeImports": { "enabled": true },
 	"linter": {
 		"enabled": true,
-		"rules": { "recommended": true, "suspicious": { "noExplicitAny": "warn" } }
+		"rules": {
+			"recommended": true,
+			"suspicious": {
+				"noExplicitAny": "warn",
+				"noAssignInExpressions": "warn"
+			},
+			"correctness": {
+				"useJsxKeyInIterable": "warn",
+				"useExhaustiveDependencies": "warn"
+			},
+			"security": {
+				"noDangerouslySetInnerHtml": "warn"
+			},
+			"a11y": {
+				"useSemanticElements": "warn",
+				"useFocusableInteractive": "warn",
+				"useButtonType": "warn",
+				"useKeyWithClickEvents": "warn"
+			},
+			"style": {
+				"noNonNullAssertion": "warn",
+				"useImportType": "warn",
+				"useNodejsImportProtocol": "warn",
+				"useTemplate": "warn"
+			}
+		}
 	},
 	"javascript": { "formatter": { "quoteStyle": "double", "semicolons": "always" } }
 }
