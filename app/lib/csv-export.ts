@@ -1,8 +1,4 @@
-import type {
-	MemberRecord,
-	QuestionnaireResponseRecord,
-	TeamView,
-} from "~/lib/types";
+import type { MemberRecord, QuestionnaireResponseRecord, TeamView } from "~/lib/types";
 import { QUESTIONNAIRE_EXCLUDE_KEYS, escapeCsv } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -65,10 +61,13 @@ export function downloadTeamCSV(
 	const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement("a");
-	a.href = url;
-	a.download = `${team.name?.replace(/[^a-z0-9]/gi, "_").toLowerCase() || "team"}_details.csv`;
-	document.body.appendChild(a);
-	a.click();
-	document.body.removeChild(a);
-	setTimeout(() => URL.revokeObjectURL(url), 1000);
+	try {
+		a.href = url;
+		a.download = `${team.name?.replace(/[^a-z0-9]/gi, "_").toLowerCase() || "team"}_details.csv`;
+		document.body.appendChild(a);
+		a.click();
+	} finally {
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	}
 }

@@ -16,6 +16,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { ROLE_DASHBOARD_MAP, getAuthFromCookie, login, setAuthCookie } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
+import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import {
 	createAuthenticatedClient,
@@ -37,7 +38,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 				if (!target) {
 					throw new Response("No dashboard configured for your account role.", { status: 403 });
 				}
-				throw redirect(target);
+				const headers = new Headers();
+				headers.append("Set-Cookie", setAuthCookie(pb.authStore.token));
+				throw redirect(target, { headers });
 			}
 		} catch (err) {
 			if (err instanceof Response) throw err;
@@ -77,11 +80,7 @@ export async function action({ request }: ActionFunctionArgs) {
 	}
 
 	// App-level rate limiting
-	const ip =
-		request.headers.get("CF-Connecting-IP") ??
-		request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
-		request.headers.get("x-real-ip") ??
-		"unknown";
+	const ip = getClientIp(request);
 	checkRateLimit(`login:ip:${ip}`, 20, 60_000);
 	checkRateLimit(`login:email:${email}`, 5, 60_000);
 
