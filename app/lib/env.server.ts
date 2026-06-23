@@ -13,8 +13,6 @@
 
 export interface EnvConfig {
 	POCKETBASE_URL: string;
-	POCKETBASE_ADMIN_EMAIL: string;
-	POCKETBASE_ADMIN_PASSWORD: string;
 	ALLOWED_ORIGINS?: string;
 	/** Sentry DSN for error tracking. Set in production to enable. */
 	SENTRY_DSN?: string;
@@ -33,18 +31,6 @@ export function getEnv(): EnvConfig {
 		throw new Error("POCKETBASE_URL is not set. Check your .env file.");
 	}
 
-	// Warn if PocketBase is accessed over plain HTTP in production.
-	// Ideally PocketBase should be behind a reverse proxy with TLS
-	// (nginx + Let's Encrypt) or Cloudflare Tunnel.
-	const isDev = process.env.NODE_ENV !== "production";
-	if (pbUrl && !isDev && !pbUrl.startsWith("https://")) {
-		console.warn(
-			"[env] \u26a0\ufe0f  POCKETBASE_URL is using plain HTTP in production. " +
-				"Traffic between the server and PocketBase is not encrypted. " +
-				"Use HTTPS when PocketBase is accessed over the network.",
-		);
-	}
-
 	const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL ?? "";
 	const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD ?? "";
 	if (!adminEmail || !adminPassword) {
@@ -56,17 +42,11 @@ export function getEnv(): EnvConfig {
 
 	const config: EnvConfig = {
 		POCKETBASE_URL: pbUrl,
-		POCKETBASE_ADMIN_EMAIL: process.env.POCKETBASE_ADMIN_EMAIL ?? "",
-		POCKETBASE_ADMIN_PASSWORD: process.env.POCKETBASE_ADMIN_PASSWORD ?? "",
 		ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
 		RESEND_API_KEY: process.env.RESEND_API_KEY,
 		SENTRY_DSN: process.env.SENTRY_DSN,
 	};
 
-	// Mark admin credentials as non-enumerable so they don't leak via
-	// console.log() / JSON.stringify() — only pocketbase.server.ts reads them.
-	Object.defineProperty(config, "POCKETBASE_ADMIN_EMAIL", { enumerable: false });
-	Object.defineProperty(config, "POCKETBASE_ADMIN_PASSWORD", { enumerable: false });
 	envCache = config;
 	return config;
 }

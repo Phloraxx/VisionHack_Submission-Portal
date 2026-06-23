@@ -75,10 +75,9 @@ let _adminClient: PocketBase | null = null;
 let _adminInitPromise: Promise<PocketBase> | null = null;
 
 async function initAdminClient(): Promise<PocketBase> {
-	const env = getEnv();
-	const pbUrl = env.POCKETBASE_URL;
-	const email = env.POCKETBASE_ADMIN_EMAIL;
-	const password = env.POCKETBASE_ADMIN_PASSWORD;
+	const pbUrl = getEnv().POCKETBASE_URL;
+	const email = process.env.POCKETBASE_ADMIN_EMAIL ?? "";
+	const password = process.env.POCKETBASE_ADMIN_PASSWORD ?? "";
 
 	if (!email || !password) {
 		throw new Error("POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD must be set");
