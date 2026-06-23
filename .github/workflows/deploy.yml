@@ -1,0 +1,31 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check branch and status
+        id: gate
+        run: |
+          EVENT_BRANCH="${{ github.event.workflow_run.head_branch }}"
+          EVENT_STATUS="${{ github.event.workflow_run.conclusion }}"
+          echo "branch=${EVENT_BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "status=${EVENT_STATUS}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_BRANCH" != "v2" ] || [ "$EVENT_STATUS" != "success" ]; then
+            echo "Skipping deploy: branch=${EVENT_BRANCH} status=${EVENT_STATUS}"
+            exit 0
+          fi
+
+      - name: Trigger Dokploy deployment
+        if: steps.gate.outputs.branch == 'v2' && steps.gate.outputs.status == 'success'
+        run: |
+          curl -X POST "${{ secrets.DOKPLOY_WEBHOOK }}" \
+            --header "Content-type: application/json" \
+            --data '{"ref": "refs/heads/v2"}'
