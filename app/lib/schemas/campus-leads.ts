@@ -13,7 +13,7 @@ export const createCampusLeadSchema = z.object({
 		.string()
 		.min(1, "Code is required")
 		.max(12, "Code must be at most 12 characters")
-		.regex(/^[A-Z0-9]+$/, "Code must contain only uppercase letters and digits"),
+		.regex(/^[A-Z0-9]+$/i, "Code must contain only uppercase letters and digits"),
 	leadName: z
 		.string()
 		.min(1, "Lead name is required")
