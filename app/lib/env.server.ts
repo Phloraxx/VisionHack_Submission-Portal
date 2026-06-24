@@ -43,6 +43,7 @@ export function getEnv(): EnvConfig {
 	const config: EnvConfig = {
 		POCKETBASE_URL: pbUrl,
 		ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+		APP_URL: process.env.APP_URL,
 		RESEND_API_KEY: process.env.RESEND_API_KEY,
 		SENTRY_DSN: process.env.SENTRY_DSN,
 	};

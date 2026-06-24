@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const questionnaireSchema = z.object({
-	age: z.string().min(1, "Age is required"),
+	age: z.coerce.number().min(1, "Age is required").max(120, "Age must be at most 120"),
 	gender: z.string().min(1, "Gender is required"),
 	education: z
 		.string()
