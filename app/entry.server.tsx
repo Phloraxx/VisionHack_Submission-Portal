@@ -2,8 +2,8 @@ import { renderToReadableStream } from "react-dom/server";
 import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 
-import { getEnv } from "./lib/env.server";
 import * as Sentry from "@sentry/node";
+import { getEnv } from "./lib/env.server";
 
 export default async function handleRequest(
 	request: Request,
@@ -32,14 +32,15 @@ export default async function handleRequest(
 	const manifest = routerContext.manifest;
 	const entryModule = manifest.entry.module;
 	const routes = manifest.routes;
-	const routeEntries = Object.entries(routes).filter(([, r]) => r && r.module);
+	const routeEntries = Object.entries(routes).filter(([, r]) => r?.module);
 
 	// Build route import statements & module registry
 	const importLines: string[] = [];
 	const moduleEntries: string[] = [];
-	routeEntries.forEach(([id, _route], i) => {
+	routeEntries.forEach(([id, route], i) => {
+		if (!route?.module) return;
 		const vn = `route${i}`;
-		importLines.push(`import * as ${vn} from ${JSON.stringify(manifest.routes[id]!.module)};`);
+		importLines.push(`import * as ${vn} from ${JSON.stringify(route.module)};`);
 		moduleEntries.push(`${JSON.stringify(id)}:${vn}`);
 	});
 
@@ -59,7 +60,7 @@ export default async function handleRequest(
 		`import(${JSON.stringify(entryModule)});`,
 	].join("\n");
 
-	const patch = `<script type="module" async="">${moduleScript}</script>\n`;
+	const patch = `<script type="module" async="" nonce="${nonce}">${moduleScript}</script>\n`;
 
 	const transform = new TransformStream<Uint8Array, Uint8Array>();
 	const writer = transform.writable.getWriter();
@@ -89,7 +90,10 @@ export default async function handleRequest(
 				}
 			}
 		}
-	})().catch(err => { writer.abort(err); console.error('[entry.server] Stream transform error:', err); });
+	})().catch((err) => {
+		writer.abort(err);
+		console.error("[entry.server] Stream transform error:", err);
+	});
 
 	responseHeaders.set("Content-Type", "text/html; charset=utf-8");
 	responseHeaders.set("X-Content-Type-Options", "nosniff");
@@ -103,7 +107,7 @@ export default async function handleRequest(
 			"Content-Security-Policy",
 			[
 				"default-src 'self'",
-				"script-src 'self' 'unsafe-inline'",
+				`script-src 'self' 'nonce-${nonce}'`,
 				"style-src 'self' 'unsafe-inline'",
 				"img-src 'self' data: blob:",
 				"font-src 'self' data:",

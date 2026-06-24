@@ -13,21 +13,6 @@ import stylesheet from "./app.css?url";
 
 export const links: Route.LinksFunction = () => [{ rel: "stylesheet", href: stylesheet }];
 
-/**
- * Inline script that applies the user's saved theme before paint.
- * Prevents theme flash on load.
- */
-const themeScript = `
-(function() {
-  try {
-    var saved = localStorage.getItem('vh-theme');
-    var prefers = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    var theme = saved || (prefers ? 'dark' : 'light');
-    if (theme === 'dark') document.documentElement.classList.add('dark');
-  } catch (e) {}
-})();
-`;
-
 export function Layout({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en" suppressHydrationWarning>
@@ -37,7 +22,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<meta name="theme-color" content="#2a2620" media="(prefers-color-scheme: dark)" />
 				<Meta />
 				<Links />
-				<script dangerouslySetInnerHTML={{ __html: themeScript }} />
 			</head>
 			<body className="min-h-screen bg-background text-foreground antialiased">
 				{children}
