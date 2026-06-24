@@ -20,6 +20,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { EventMark } from "~/components/shared/event-mark";
 import { PageTransition } from "~/components/shared/page-transition";
 import { Skeleton } from "~/components/ui/skeleton";
+import { getAuthFromCookie, requireAuth, setAuthCookie } from "~/lib/auth.server";
 import type { Role, UserRecord } from "~/lib/types";
 
 const navItems: Record<
