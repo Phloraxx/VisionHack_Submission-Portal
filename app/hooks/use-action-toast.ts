@@ -37,5 +37,5 @@ export function useActionToast(
 				toast.error(options.error ?? actionData.error);
 			}
 		}
-	}, [actionData]);
+	}, [actionData, options]);
 }

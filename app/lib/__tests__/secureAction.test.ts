@@ -10,7 +10,9 @@ import type { UserRecord } from "../types";
 vi.mock("~/lib/auth.server", () => ({
 	requireRole: vi.fn(),
 	getAuthFromCookie: vi.fn(() => "jwt-token"),
-	setAuthCookie: vi.fn(() => "auth=token; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800"),
+	setAuthCookie: vi.fn(
+		() => "auth=token; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800",
+	),
 }));
 
 vi.mock("~/lib/origin.server", () => ({

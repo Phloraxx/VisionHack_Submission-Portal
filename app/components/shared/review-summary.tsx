@@ -1,6 +1,6 @@
-import { cn } from "~/lib/utils";
 import { ChevronDown, ChevronUp, Clipboard } from "lucide-react";
 import { useId } from "react";
+import { cn } from "~/lib/utils";
 
 interface ReviewSummaryProps {
 	open: boolean;

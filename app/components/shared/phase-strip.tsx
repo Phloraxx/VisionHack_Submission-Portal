@@ -15,21 +15,19 @@ export interface PhaseStripProps {
  */
 export function PhaseStrip({ phases, className }: PhaseStripProps) {
 	return (
-		<div
+		<ul
 			className={cn(
 				"grid grid-cols-2 sm:flex sm:items-stretch rounded-md border border-border bg-card divide-x-0 sm:divide-x divide-border overflow-hidden",
 				className,
 			)}
-			role="list"
 			aria-label="Event phases"
 		>
 			{phases.map((phase, idx) => {
 				const isOpen = phase.open;
 				const needsBottomBorder = phases.length > 2 && idx < 2;
 				return (
-					<div
+					<li
 						key={phase.label}
-						role="listitem"
 						className={cn(
 							"flex-1 px-3 py-2.5 min-w-0",
 							needsBottomBorder && "border-b border-border sm:border-b-0",
@@ -55,9 +53,9 @@ export function PhaseStrip({ phases, className }: PhaseStripProps) {
 						{phase.detail && (
 							<p className="mt-0.5 text-[10px] text-muted-foreground truncate">{phase.detail}</p>
 						)}
-					</div>
+					</li>
 				);
 			})}
-		</div>
+		</ul>
 	);
 }

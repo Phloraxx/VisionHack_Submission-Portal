@@ -1,11 +1,6 @@
-export { default as ErrorBoundary } from '~/components/shared/route-error-boundary';
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";
 import { Building2, CheckCircle, Mail, MapPin, Upload, Users, XCircle } from "lucide-react";
-import {
-	Form,
-	useActionData,
-	useLoaderData,
-	useNavigation,
-} from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
@@ -312,11 +307,16 @@ export default function AdminCampusLeads() {
 		actionData && "type" in actionData && actionData.type === "bulk" && actionData.success
 			? (actionData as BulkSuccess)
 			: null;
-	const actionErr = actionData && !("success" in actionData) ? (actionData as Record<string, unknown>) : null;
+	const actionErr =
+		actionData && !("success" in actionData) ? (actionData as Record<string, unknown>) : null;
 	let errorMessage: string | null = null;
 	if (actionErr?.error) {
 		errorMessage = actionErr.error as string;
-	} else if (actionErr?.fieldErrors && typeof actionErr.fieldErrors === "object" && actionErr.fieldErrors != null) {
+	} else if (
+		actionErr?.fieldErrors &&
+		typeof actionErr.fieldErrors === "object" &&
+		actionErr.fieldErrors != null
+	) {
 		errorMessage = Object.values(actionErr.fieldErrors as Record<string, string>).join(". ");
 	}
 	return (
@@ -502,4 +502,3 @@ export default function AdminCampusLeads() {
 		</div>
 	);
 }
-

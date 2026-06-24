@@ -12,7 +12,11 @@ import {
 } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { ReviewSummary } from "~/components/shared/review-summary";
-import { StepIndicator, getStatusStepStates, resolveActiveStep } from "~/components/shared/step-indicator";
+import {
+	StepIndicator,
+	getStatusStepStates,
+	resolveActiveStep,
+} from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -33,8 +37,8 @@ import { getAllStr, getStr } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
 import { registerSchema } from "~/lib/schemas/register";
 import { getLeadTeam } from "~/lib/team.server";
-import type { MemberRecord, TeamRecord } from "~/lib/types";
 import { canTransition } from "~/lib/transitions";
+import type { MemberRecord, TeamRecord } from "~/lib/types";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -529,127 +533,131 @@ export default function LeadRegister() {
 							</p>
 						)}
 
-						{Array.from({ length: memberCount }, (_, index) => (
-							<fieldset
-								key={index}
-								className="rounded-md border border-border bg-background p-4 space-y-4"
-							>
-								<div className="flex items-center justify-between">
-									<legend className="text-sm font-semibold text-foreground">
-										<span className="inline-flex items-center gap-2">
-											<span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-												Member
+						{Array.from({ length: memberCount }, (_, index) => {
+							const slotId = `member-slot-${index}`;
+							return (
+								<fieldset
+									key={slotId}
+									className="rounded-md border border-border bg-background p-4 space-y-4"
+								>
+									<div className="flex items-center justify-between">
+										<legend className="text-sm font-semibold text-foreground">
+											<span className="inline-flex items-center gap-2">
+												<span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+													Member
+												</span>
+												<span className="font-mono text-xs tabular-nums text-primary">
+													{String(index + 1).padStart(2, "0")}
+												</span>
 											</span>
-											<span className="font-mono text-xs tabular-nums text-primary">
-												{String(index + 1).padStart(2, "0")}
-											</span>
-										</span>
-									</legend>
-									{memberCount > 1 && registrationOpen && (
-										<button
-											type="button"
-											onClick={() => removeMember(index)}
-											className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-danger hover:bg-danger/8 transition-colors"
-										>
-											Remove
-										</button>
-									)}
-								</div>
+										</legend>
+										{memberCount > 1 && registrationOpen && (
+											<button
+												type="button"
+												onClick={() => removeMember(index)}
+												className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-danger hover:bg-danger/8 transition-colors"
+											>
+												Remove
+											</button>
+										)}
+									</div>
 
-								<div className="grid gap-4 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label htmlFor={`member-name-${index}`}>Full Name</Label>
-										<Input
-											id={`member-name-${index}`}
-											placeholder="Full name"
-											{...register(`memberName.${index}`)}
-											disabled={!registrationOpen}
-											required
-										/>
-										{errors.memberName?.[index]?.message && (
-											<p className="text-sm text-destructive" role="alert">
-												{errors.memberName[index]?.message}
-											</p>
-										)}
-									</div>
-									<div className="space-y-2">
-										<Label htmlFor={`member-email-${index}`}>Email</Label>
-										<Input
-											id={`member-email-${index}`}
-											type="email"
-											placeholder="email@example.com"
-											{...register(`memberEmail.${index}`)}
-											disabled={!registrationOpen}
-											required
-										/>
-										{errors.memberEmail?.[index]?.message && (
-											<p className="text-sm text-destructive" role="alert">
-												{errors.memberEmail[index]?.message}
-											</p>
-										)}
-									</div>
-									<div className="space-y-2">
-										<Label htmlFor={`member-phone-${index}`}>Phone</Label>
-										<Input
-											id={`member-phone-${index}`}
-											placeholder="+91 1234567890"
-											{...register(`memberPhone.${index}`)}
-											disabled={!registrationOpen}
-											required
-										/>
-										{errors.memberPhone?.[index]?.message && (
-											<p className="text-sm text-destructive" role="alert">
-												{errors.memberPhone[index]?.message}
-											</p>
-										)}
-									</div>
-									<div className="space-y-2">
-										<Label htmlFor={`member-gender-${index}`}>Gender</Label>
-										<Controller
-											control={control}
-											name={`memberGender.${index}` as any}
-											render={({ field }) => (
-												<Select
-													value={field.value ?? ""}
-													onValueChange={field.onChange}
-													disabled={!registrationOpen}
-													name={field.name}
-												>
-													<SelectTrigger id={`member-gender-${index}`}>
-														<SelectValue placeholder="Select gender" />
-													</SelectTrigger>
-													<SelectContent>
-														<SelectItem value="Male">Male</SelectItem>
-														<SelectItem value="Female">Female</SelectItem>
-														<SelectItem value="Other">Other</SelectItem>
-													</SelectContent>
-												</Select>
+									<div className="grid gap-4 md:grid-cols-2">
+										<div className="space-y-2">
+											<Label htmlFor={`member-name-${index}`}>Full Name</Label>
+											<Input
+												id={`member-name-${index}`}
+												placeholder="Full name"
+												{...register(`memberName.${index}`)}
+												disabled={!registrationOpen}
+												required
+											/>
+											{errors.memberName?.[index]?.message && (
+												<p className="text-sm text-destructive" role="alert">
+													{errors.memberName[index]?.message}
+												</p>
 											)}
-										/>
-										{errors.memberGender?.[index]?.message && (
-											<p className="text-sm text-destructive" role="alert">
-												{errors.memberGender[index]?.message}
-											</p>
-										)}
+										</div>
+										<div className="space-y-2">
+											<Label htmlFor={`member-email-${index}`}>Email</Label>
+											<Input
+												id={`member-email-${index}`}
+												type="email"
+												placeholder="email@example.com"
+												{...register(`memberEmail.${index}`)}
+												disabled={!registrationOpen}
+												required
+											/>
+											{errors.memberEmail?.[index]?.message && (
+												<p className="text-sm text-destructive" role="alert">
+													{errors.memberEmail[index]?.message}
+												</p>
+											)}
+										</div>
+										<div className="space-y-2">
+											<Label htmlFor={`member-phone-${index}`}>Phone</Label>
+											<Input
+												id={`member-phone-${index}`}
+												placeholder="+91 1234567890"
+												{...register(`memberPhone.${index}`)}
+												disabled={!registrationOpen}
+												required
+											/>
+											{errors.memberPhone?.[index]?.message && (
+												<p className="text-sm text-destructive" role="alert">
+													{errors.memberPhone[index]?.message}
+												</p>
+											)}
+										</div>
+										<div className="space-y-2">
+											<Label htmlFor={`member-gender-${index}`}>Gender</Label>
+											<Controller
+												control={control}
+												// biome-ignore lint/suspicious/noExplicitAny: dynamic field path required by Controller
+												name={`memberGender.${index}` as any}
+												render={({ field }) => (
+													<Select
+														value={field.value ?? ""}
+														onValueChange={field.onChange}
+														disabled={!registrationOpen}
+														name={field.name}
+													>
+														<SelectTrigger id={`member-gender-${index}`}>
+															<SelectValue placeholder="Select gender" />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="Male">Male</SelectItem>
+															<SelectItem value="Female">Female</SelectItem>
+															<SelectItem value="Other">Other</SelectItem>
+														</SelectContent>
+													</Select>
+												)}
+											/>
+											{errors.memberGender?.[index]?.message && (
+												<p className="text-sm text-destructive" role="alert">
+													{errors.memberGender[index]?.message}
+												</p>
+											)}
+										</div>
+										<div className="space-y-2 md:col-span-2">
+											<Label htmlFor={`member-role-${index}`}>Role</Label>
+											<Input
+												id={`member-role-${index}`}
+												placeholder="e.g., Developer, Designer, Manager"
+												{...register(`memberRole.${index}`)}
+												disabled={!registrationOpen}
+												required
+											/>
+											{errors.memberRole?.[index]?.message && (
+												<p className="text-sm text-destructive" role="alert">
+													{errors.memberRole[index]?.message}
+												</p>
+											)}
+										</div>
 									</div>
-									<div className="space-y-2 md:col-span-2">
-										<Label htmlFor={`member-role-${index}`}>Role</Label>
-										<Input
-											id={`member-role-${index}`}
-											placeholder="e.g., Developer, Designer, Manager"
-											{...register(`memberRole.${index}`)}
-											disabled={!registrationOpen}
-											required
-										/>
-										{errors.memberRole?.[index]?.message && (
-											<p className="text-sm text-destructive" role="alert">
-												{errors.memberRole[index]?.message}
-											</p>
-										)}
-									</div>
-								</div>
-							</fieldset>
-						))}
+								</fieldset>
+							);
+						})}
 					</CardContent>
 				</Card>
 
@@ -680,10 +688,14 @@ export default function LeadRegister() {
 						) : (
 							<ul className="mt-1 space-y-1">
 								{Array.from({ length: memberCount }, (_, i) => {
+									// biome-ignore lint/suspicious/noExplicitAny: dynamic field path required by getValues
 									const name = getValues(`memberName.${i}` as any);
+									// biome-ignore lint/suspicious/noExplicitAny: dynamic field path required by getValues
 									const email = getValues(`memberEmail.${i}` as any);
+									// biome-ignore lint/suspicious/noExplicitAny: dynamic field path required by getValues
 									const role = getValues(`memberRole.${i}` as any);
 									return (
+										// biome-ignore lint/suspicious/noArrayIndexKey: stable index for non-reorderable form fields
 										<li key={i} className="flex items-center gap-1 text-muted-foreground">
 											<span className="font-medium text-foreground">
 												{name || `Member ${i + 1}`}
@@ -734,6 +746,7 @@ export function ErrorBoundary() {
 				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
 				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
 				<button
+					type="button"
 					onClick={() => window.location.reload()}
 					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
 				>

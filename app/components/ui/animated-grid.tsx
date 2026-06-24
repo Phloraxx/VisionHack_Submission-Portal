@@ -36,6 +36,7 @@ export function AnimatedGrid({
 	const rows = 32;
 
 	const cells = Array.from({ length: numCells }, (_, i) => ({
+		id: i,
 		col: Math.floor(sr(i * 3) * cols),
 		row: Math.floor(sr(i * 3 + 1) * rows),
 		dur: 4 + sr(i * 3 + 2) * 5,
@@ -67,9 +68,9 @@ export function AnimatedGrid({
 
 			<rect width="100%" height="100%" fill="url(#vh-agl)" />
 
-			{cells.map(({ col, row, dur, del }, i) => (
+			{cells.map(({ id, col, row, dur, del }) => (
 				<rect
-					key={i}
+					key={id}
 					className="vh-gc"
 					x={col * cellSize + 1}
 					y={row * cellSize + 1}

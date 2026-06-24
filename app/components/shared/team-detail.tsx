@@ -38,7 +38,6 @@ export interface TeamDetailProps {
 	exportCard?: React.ReactNode;
 }
 
-
 // ---------------------------------------------------------------------------
 // Shared Team Detail Component
 //

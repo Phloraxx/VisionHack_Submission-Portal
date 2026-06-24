@@ -1,11 +1,11 @@
 import { Download } from "lucide-react";
 import { useLoaderData } from "react-router";
 import { Link } from "react-router";
-import { downloadTeamCSV } from "~/lib/csv-export";
 import TeamDetail from "~/components/shared/team-detail";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { fail, ok, secureAction } from "~/lib/action.server";
+import { downloadTeamCSV } from "~/lib/csv-export";
 import { secureLoader } from "~/lib/loader.server";
 import { getValidTransitions } from "~/lib/team-status";
 import {
@@ -83,6 +83,7 @@ export const loader = secureLoader(
 				]);
 
 				if (!institution) throw new Response("Institution not found", { status: 404 });
+				if (!team) throw new Response("Team not found", { status: 404 });
 				if (team.institutionId !== institution.id) {
 					throw new Response("Team not found", { status: 404 });
 				}
@@ -208,7 +209,7 @@ export const action = secureAction(
 					leadName: lead.name || "Team Lead",
 					teamName: team.name,
 					status: toStatus,
-			});
+				});
 			}
 
 			return ok({ newStatus: toStatus });

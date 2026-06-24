@@ -1,4 +1,4 @@
-export { default as ErrorBoundary } from '~/components/shared/route-error-boundary';
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";
 import { Download, FileDown, Search } from "lucide-react";
 import { useState } from "react";
 import { useLoaderData } from "react-router";
@@ -177,4 +177,3 @@ export default function AdminExport() {
 		</div>
 	);
 }
-

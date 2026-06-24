@@ -18,8 +18,11 @@ import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { PhaseStrip } from "~/components/shared/phase-strip";
 import { ProgressBar } from "~/components/shared/progress-bar";
-import { Row } from "~/components/shared/row";
-import { StepIndicator, getStatusStepStates, resolveActiveStep } from "~/components/shared/step-indicator";
+import {
+	StepIndicator,
+	getStatusStepStates,
+	resolveActiveStep,
+} from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -482,18 +485,40 @@ export default function LeadDashboard() {
 					</CardHeader>
 					<CardContent className="space-y-3">
 						<div className="grid gap-3 sm:grid-cols-2">
-							<Row label="Team name">{team.name}</Row>
-							{team.teamCode && <Row label="Team code">{team.teamCode}</Row>}
-							{institutionName && <Row label="Institution">{institutionName}</Row>}
+							<div className="flex items-baseline justify-between gap-4">
+								<dt className="text-sm text-muted-foreground">Team name</dt>
+								<dd className="text-sm font-medium text-foreground text-right">{team.name}</dd>
+							</div>
+							{team.teamCode && (
+								<div className="flex items-baseline justify-between gap-4">
+									<dt className="text-sm text-muted-foreground">Team code</dt>
+									<dd className="text-sm font-medium text-foreground text-right">
+										{team.teamCode}
+									</dd>
+								</div>
+							)}
+							{institutionName && (
+								<div className="flex items-baseline justify-between gap-4">
+									<dt className="text-sm text-muted-foreground">Institution</dt>
+									<dd className="text-sm font-medium text-foreground text-right">
+										{institutionName}
+									</dd>
+								</div>
+							)}
 							{campusLeadName && (
-								<Row label="Campus lead">
-									<span>
-										{campusLeadName}
-										{campusLeadEmail && (
-											<span className="block text-xs text-muted-foreground">{campusLeadEmail}</span>
-										)}
-									</span>
-								</Row>
+								<div className="flex items-baseline justify-between gap-4">
+									<dt className="text-sm text-muted-foreground">Campus lead</dt>
+									<dd className="text-sm font-medium text-foreground text-right">
+										<span>
+											{campusLeadName}
+											{campusLeadEmail && (
+												<span className="block text-xs text-muted-foreground">
+													{campusLeadEmail}
+												</span>
+											)}
+										</span>
+									</dd>
+								</div>
 							)}
 						</div>
 

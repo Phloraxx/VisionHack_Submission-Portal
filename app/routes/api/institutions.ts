@@ -16,12 +16,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	try {
 		// Admin/coordinator: full list with institution codes
 		if (user.role === "admin" || user.role === "coordinator") {
-			const institutions = await pb
-				.collection("institutions")
-				.getList<InstitutionRecord>(1, 1000, {
-					sort: "name",
-					fields: "id,name,district,code",
-				});
+			const institutions = await pb.collection("institutions").getList<InstitutionRecord>(1, 1000, {
+				sort: "name",
+				fields: "id,name,district,code",
+			});
 
 			return Response.json(
 				{ institutions: institutions.items },

@@ -15,22 +15,12 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import {
-	Form,
-	Link,
-	Outlet,
-	data,
-	useLoaderData,
-	useLocation,
-	useNavigation,
-} from "react-router";
+import { Form, Link, Outlet, data, useLoaderData, useLocation, useNavigation } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { EventMark } from "~/components/shared/event-mark";
 import { PageTransition } from "~/components/shared/page-transition";
 import { Skeleton } from "~/components/ui/skeleton";
-import { getAuthFromCookie, requireAuth, setAuthCookie } from "~/lib/auth.server";
 import type { Role, UserRecord } from "~/lib/types";
-import { cn } from "~/lib/utils";
 
 const navItems: Record<
 	Role,
@@ -193,6 +183,7 @@ export default function DashboardLayout() {
 				<div
 					className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden vh-safe-top"
 					onClick={() => setSidebarOpen(false)}
+					onKeyDown={() => {}}
 					aria-hidden="true"
 				/>
 			)}
@@ -386,8 +377,8 @@ export function HydrateFallback() {
 					<Skeleton className="h-3 w-40 bg-sidebar-accent" />
 				</div>
 				<nav className="flex-1 space-y-1 p-3">
-					{Array.from({ length: 4 }).map((_, i) => (
-						<Skeleton key={i} className="h-9 w-full rounded-md bg-sidebar-accent" />
+					{[1, 2, 3, 4].map((n) => (
+						<Skeleton key={n} className="h-9 w-full rounded-md bg-sidebar-accent" />
 					))}
 				</nav>
 			</aside>

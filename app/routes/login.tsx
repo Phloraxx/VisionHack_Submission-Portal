@@ -18,12 +18,7 @@ import { ROLE_DASHBOARD_MAP, getAuthFromCookie, login, setAuthCookie } from "~/l
 import { getConfig } from "~/lib/config.server";
 import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
-import {
-	createAuthenticatedClient,
-	createPocketBaseClient,
-	getAdminClient,
-} from "~/lib/pocketbase.server";
-import { checkRateLimit } from "~/lib/rate-limiter.server";
+import { createAuthenticatedClient, createPocketBaseClient } from "~/lib/pocketbase.server";
 import type { UserRecord } from "~/lib/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -47,10 +42,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		}
 	}
 
-	const [cfg, adminPb] = await Promise.all([getConfig(createPocketBaseClient()), getAdminClient()]);
+	// Guest page - show team/institution counts. We use the public client so
+	// the login page never loads the admin client into memory.
+	const cfg = await getConfig(createPocketBaseClient());
+	const pb = createPocketBaseClient();
 	const [teams, institutions] = await Promise.all([
-		adminPb.collection("teams").getList(1, 1, { fields: "id" }),
-		adminPb.collection("institutions").getList(1, 1, { fields: "id" }),
+		pb
+			.collection("teams")
+			.getList(1, 1, { fields: "id" })
+			.catch(() => ({ totalItems: 0 })),
+		pb
+			.collection("institutions")
+			.getList(1, 1, { fields: "id" })
+			.catch(() => ({ totalItems: 0 })),
 	]);
 
 	return data({
@@ -81,7 +85,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	// App-level rate limiting
 	const ip = getClientIp(request);
-	checkRateLimit(`login:ip:${ip}`, 20, 60_000);
+	checkRateLimit(`login:ip:${ip}`, 5, 60_000);
 	checkRateLimit(`login:email:${email}`, 5, 60_000);
 
 	try {

@@ -61,7 +61,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 	const membersByTeam: Record<string, MemberRecord[]> = {};
 	for (const m of members) {
-		(membersByTeam[m.teamId] ??= []).push(m);
+		const list = membersByTeam[m.teamId] ?? (membersByTeam[m.teamId] = []);
+		list.push(m);
 	}
 
 	const headers = [
@@ -155,7 +156,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 			controller.close();
 		},
 	});
-	
+
 	const responseHeaders: Record<string, string> = {
 		"Content-Type": "text/csv; charset=utf-8",
 		"Content-Disposition": `attachment; filename="teams_export_${new Date().toISOString().split("T")[0]}.csv"`,
@@ -163,10 +164,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		"Cache-Control": "no-store",
 		"X-Total-Count": String(filteredResult.totalItems),
 	};
-	
+
 	return new Response(stream, {
 		status: 200,
 		headers: responseHeaders,
 	});
-
 }

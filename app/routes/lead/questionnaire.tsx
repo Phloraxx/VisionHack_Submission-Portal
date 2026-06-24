@@ -11,7 +11,11 @@ import {
 	useRouteError,
 } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
-import { StepIndicator, getStatusStepStates, resolveActiveStep } from "~/components/shared/step-indicator";
+import {
+	StepIndicator,
+	getStatusStepStates,
+	resolveActiveStep,
+} from "~/components/shared/step-indicator";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -150,7 +154,7 @@ export const action = secureAction(
 		const payload: Record<string, unknown> = {
 			teamId: team.id,
 			userId: user.id,
-			age: Number(age),
+			age,
 			gender,
 			education,
 			college_name: collegeName.slice(0, 200),
@@ -230,6 +234,7 @@ export default function LeadQuestionnaire() {
 
 	useEffect(() => {
 		topRef.current?.scrollIntoView({ behavior: "smooth" });
+		void currentSection;
 	}, [currentSection]);
 
 	const steps = resolveActiveStep(getStatusStepStates(team?.status ?? null), "/lead/questionnaire");
@@ -696,6 +701,7 @@ export function ErrorBoundary() {
 				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
 				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
 				<button
+					type="button"
 					onClick={() => window.location.reload()}
 					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
 				>

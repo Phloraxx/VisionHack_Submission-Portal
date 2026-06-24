@@ -109,7 +109,10 @@ export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb
 
 	const membersByTeam: Record<string, MemberRecord[]> = {};
 	for (const m of allMembers) {
-		(membersByTeam[m.teamId] ??= []).push(m);
+		if (!membersByTeam[m.teamId]) {
+			membersByTeam[m.teamId] = [];
+		}
+		membersByTeam[m.teamId].push(m);
 	}
 
 	return {
@@ -416,13 +419,10 @@ export default function InstitutionDashboard() {
 							/>
 						</div>
 						{atCapacity && (
-							<div
-								role="status"
-								className="rounded-md border border-warning/30 bg-warning/8 px-3 py-2 text-xs text-warning leading-relaxed"
-							>
+							<output className="block rounded-md border border-warning/30 bg-warning/8 px-3 py-2 text-xs text-warning leading-relaxed">
 								This institution has reached its maximum of {institution.maxTeams} teams. Contact
 								the event admin to increase capacity.
-							</div>
+							</output>
 						)}
 						<Form method="post">
 							<input type="hidden" name="intent" value="invite-lead" />
@@ -511,8 +511,9 @@ export default function InstitutionDashboard() {
 
 							return (
 								<div key={team.id} className="rounded-lg border bg-card card-hover">
-									<div
-										className="flex cursor-pointer items-start justify-between p-4"
+									<button
+										type="button"
+										className="flex w-full cursor-pointer items-start justify-between p-4 text-left"
 										onClick={() => toggleTeamExpansion(team.id)}
 										onKeyDown={(e) => {
 											if (e.key === "Enter" || e.key === " ") {
@@ -520,8 +521,6 @@ export default function InstitutionDashboard() {
 												toggleTeamExpansion(team.id);
 											}
 										}}
-										role="button"
-										tabIndex={0}
 										aria-expanded={isExpanded}
 									>
 										<div className="flex-1 space-y-2">
@@ -553,7 +552,7 @@ export default function InstitutionDashboard() {
 												<ChevronDown className="h-5 w-5 text-muted-foreground" />
 											)}
 										</div>
-									</div>
+									</button>
 
 									{isExpanded && (
 										<div className="border-t bg-muted/30 px-4 pb-4 pt-3">
@@ -690,6 +689,7 @@ export function ErrorBoundary() {
 				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
 				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
 				<button
+					type="button"
 					onClick={() => window.location.reload()}
 					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
 				>

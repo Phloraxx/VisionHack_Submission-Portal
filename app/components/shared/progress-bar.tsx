@@ -50,6 +50,7 @@ export function ProgressBar({
 				aria-valuenow={value}
 				aria-valuemin={0}
 				aria-valuemax={max}
+				tabIndex={0}
 			>
 				<div
 					className={cn(

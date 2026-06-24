@@ -84,7 +84,8 @@ export function ConfirmButton({
 				)}
 				ref={containerRef}
 				role="alertdialog"
-				aria-label={`Confirm: ${confirmMessage}`}>
+				aria-label={`Confirm: ${confirmMessage}`}
+			>
 				<AlertTriangle className="h-4 w-4 shrink-0 text-danger" />
 				<span className="flex-1 text-xs font-medium text-danger">{confirmMessage}</span>
 				<button

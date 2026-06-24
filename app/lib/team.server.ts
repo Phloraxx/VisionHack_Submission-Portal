@@ -198,7 +198,7 @@ export async function sendStatusChangeEmail(args: SendStatusChangeEmailArgs): Pr
 			to: args.to,
 			// Subject is plain text (not HTML), so no HTML escaping needed.
 			// The HTML body above uses escapeHtml() correctly.
-			subject: `Team "${args.teamName.replace(/[\r\n]/g, '')}" status: ${statusLabel.replace(/[\r\n]/g, '')}`,
+			subject: `Team "${args.teamName.replace(/[\r\n]/g, "")}" status: ${statusLabel.replace(/[\r\n]/g, "")}`,
 			html,
 		});
 	} catch (err) {

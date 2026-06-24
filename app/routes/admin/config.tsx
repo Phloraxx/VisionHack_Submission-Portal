@@ -1,13 +1,8 @@
-export { default as ErrorBoundary } from '~/components/shared/route-error-boundary';
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";
 import { FileText, Loader2, ShieldCheck, Upload, UserPlus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-	useActionData,
-	useLoaderData,
-	useNavigation,
-	useSubmit,
-} from "react-router";
+import { useActionData, useLoaderData, useNavigation, useSubmit } from "react-router";
 import { toast } from "sonner";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -31,13 +26,14 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) =>
 	const configMap = await getConfig(pb);
 	return { user, configMap };
 });
+
 export const action = secureAction(
 	{ roles: ["admin"], schema: configUpdateSchema },
 	async ({ formData, pb, validated }) => {
 		const { key } = validated as { key: string };
 
 		if (!FEATURE_FLAGS.some((f) => f.key === key)) {
-		return fail({ error: 'Invalid configuration key' });
+			return fail({ error: "Invalid configuration key" });
 		}
 
 		// Config writes use the admin user's own auth token — the config
@@ -47,7 +43,7 @@ export const action = secureAction(
 			.getFirstListItem(pb.filter("key = {:key}", { key }))
 			.catch(() => null);
 		if (!target) {
-		return fail({ error: 'Configuration key not found' });
+			return fail({ error: "Configuration key not found" });
 		}
 
 		// Server-authoritative toggle: read the current value from the DB and flip it.
@@ -139,4 +135,3 @@ export default function AdminConfig() {
 		</div>
 	);
 }
-

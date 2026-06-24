@@ -60,41 +60,6 @@ export function DataList({ rows, emptyMessage, emptyHint, className }: DataListP
 			)}
 		>
 			{rows.map((row) => {
-				const inner = (
-					<div className="flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4 transition-colors hover:bg-muted/40 vh-touch-row">
-						<div className="min-w-0 flex-1">
-							<div className="flex items-center gap-2 min-w-0">
-								<span className="truncate text-sm font-medium text-foreground">{row.primary}</span>
-								{row.code && (
-									<span className="hidden sm:inline-flex font-mono text-[10px] tracking-wider uppercase text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
-										{row.code}
-									</span>
-								)}
-							</div>
-							{row.secondary && (
-								<div className="mt-0.5 truncate text-xs text-muted-foreground">{row.secondary}</div>
-							)}
-						</div>
-						{row.metric && (
-							<div className="shrink-0 text-right hidden sm:block">
-								<div className="font-mono text-sm font-semibold tabular-nums text-foreground">
-									{row.metric.value}
-								</div>
-								<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-									{row.metric.label}
-								</div>
-							</div>
-						)}
-						{row.indicator && <div className="shrink-0">{row.indicator}</div>}
-						{row.href && (
-							<ChevronRight
-								className="h-4 w-4 shrink-0 text-muted-foreground/50"
-								aria-hidden="true"
-							/>
-						)}
-					</div>
-				);
-
 				return row.href ? (
 					<Link
 						key={row.id}
@@ -102,10 +67,82 @@ export function DataList({ rows, emptyMessage, emptyHint, className }: DataListP
 						aria-label={row.primary}
 						className="block focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
 					>
-						{inner}
+						<div className="flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4 transition-colors hover:bg-muted/40 vh-touch-row">
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-2 min-w-0">
+									<span className="truncate text-sm font-medium text-foreground">
+										{row.primary}
+									</span>
+									{row.code && (
+										<span className="hidden sm:inline-flex font-mono text-[10px] tracking-wider uppercase text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
+											{row.code}
+										</span>
+									)}
+								</div>
+								{row.secondary && (
+									<div className="mt-0.5 truncate text-xs text-muted-foreground">
+										{row.secondary}
+									</div>
+								)}
+							</div>
+							{row.metric && (
+								<div className="shrink-0 text-right hidden sm:block">
+									<div className="font-mono text-sm font-semibold tabular-nums text-foreground">
+										{row.metric.value}
+									</div>
+									<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+										{row.metric.label}
+									</div>
+								</div>
+							)}
+							{row.indicator && <div className="shrink-0">{row.indicator}</div>}
+							{row.href && (
+								<ChevronRight
+									className="h-4 w-4 shrink-0 text-muted-foreground/50"
+									aria-hidden="true"
+								/>
+							)}
+						</div>
 					</Link>
 				) : (
-					<div key={row.id}>{inner}</div>
+					<div key={row.id}>
+						<div className="flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4 transition-colors hover:bg-muted/40 vh-touch-row">
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-2 min-w-0">
+									<span className="truncate text-sm font-medium text-foreground">
+										{row.primary}
+									</span>
+									{row.code && (
+										<span className="hidden sm:inline-flex font-mono text-[10px] tracking-wider uppercase text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
+											{row.code}
+										</span>
+									)}
+								</div>
+								{row.secondary && (
+									<div className="mt-0.5 truncate text-xs text-muted-foreground">
+										{row.secondary}
+									</div>
+								)}
+							</div>
+							{row.metric && (
+								<div className="shrink-0 text-right hidden sm:block">
+									<div className="font-mono text-sm font-semibold tabular-nums text-foreground">
+										{row.metric.value}
+									</div>
+									<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+										{row.metric.label}
+									</div>
+								</div>
+							)}
+							{row.indicator && <div className="shrink-0">{row.indicator}</div>}
+							{row.href && (
+								<ChevronRight
+									className="h-4 w-4 shrink-0 text-muted-foreground/50"
+									aria-hidden="true"
+								/>
+							)}
+						</div>
+					</div>
 				);
 			})}
 		</div>
