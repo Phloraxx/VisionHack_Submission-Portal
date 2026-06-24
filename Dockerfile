@@ -52,4 +52,4 @@ USER apprunner
 
 EXPOSE 3000
 
-CMD ["node", "--env-file=.env", "server.ts"]
+CMD ["node", "server.ts"]

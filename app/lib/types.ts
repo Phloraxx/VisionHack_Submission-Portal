@@ -92,4 +92,3 @@ export interface QuestionnaireResponseRecord {
 	created: string;
 	updated: string;
 }
-
