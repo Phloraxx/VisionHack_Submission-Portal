@@ -67,7 +67,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	validateOrigin(request, true);
+	try {
+		validateOrigin(request, true);
+	} catch {
+		return data({ error: "Invalid request origin. Please try again." }, { status: 403 });
+	}
 
 	const formData = await request.formData();
 	const email = (formData.get("email") as string | null)?.trim()?.toLowerCase() ?? "";
