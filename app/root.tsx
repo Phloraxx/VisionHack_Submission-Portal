@@ -31,7 +31,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 			<body className="min-h-screen bg-background text-foreground antialiased">
 				{children}
 				<Toaster
-					closeButton
 					position="bottom-right"
 					toastOptions={{
 						duration: 4000,
