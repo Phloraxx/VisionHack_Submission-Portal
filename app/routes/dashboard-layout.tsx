@@ -22,6 +22,7 @@ import { PageTransition } from "~/components/shared/page-transition";
 import { Skeleton } from "~/components/ui/skeleton";
 import { getAuthFromCookie, requireAuth, setAuthCookie } from "~/lib/auth.server";
 import type { Role, UserRecord } from "~/lib/types";
+import { cn } from "~/lib/utils";
 
 const navItems: Record<
 	Role,
