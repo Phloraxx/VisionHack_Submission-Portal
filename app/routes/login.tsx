@@ -19,6 +19,7 @@ import { getConfig } from "~/lib/config.server";
 import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { createAuthenticatedClient, createPocketBaseClient } from "~/lib/pocketbase.server";
+import { checkRateLimit } from "~/lib/rate-limiter.server";
 import type { UserRecord } from "~/lib/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
