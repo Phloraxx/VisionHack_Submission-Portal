@@ -7,7 +7,9 @@ services:
       - APP_URL=${APP_URL}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - POCKETBASE_URL=${POCKETBASE_URL}
-      - POCKETBASE_ADMIN_EMAIL=${POCKETBASE_ADMIN_EMAIL}
-      - POCKETBASE_ADMIN_PASSWORD=${POCKETBASE_ADMIN_PASSWORD}
       - RESEND_API_KEY=${RESEND_API_KEY}
       - SENTRY_DSN=${SENTRY_DSN}
+      # Trust forwarded IP headers (CF-Connecting-IP / X-Forwarded-For) for
+      # per-IP rate limiting. Only set when behind Cloudflare / a trusted
+      # ingress that overwrites these headers.
+      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-0}
