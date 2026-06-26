@@ -26,7 +26,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 				{
 					status: 200,
 					headers: {
-						"Cache-Control": "public, max-age=60, s-maxage=120",
+						// Role-dependent response under one URL: a shared/CDN cache
+						// would hand an admin's full list (with codes) to a lead, or
+						// vice versa. Keep it private to the authenticated client.
+						"Cache-Control": "private, max-age=60",
 					},
 				},
 			);
@@ -42,10 +45,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		return Response.json(
 			{ institutions: [institution] },
 			{
-				status: 200,
-				headers: {
-					"Cache-Control": "public, max-age=60, s-maxage=120",
-				},
+				headers: { "Cache-Control": "private, max-age=60" },
 			},
 		);
 	} catch (err) {
