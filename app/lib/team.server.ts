@@ -244,6 +244,7 @@ export async function createCampusLead(
 
 	const tempPassword = crypto.randomUUID();
 	let createdUser: { id: string } | null = null;
+	let createdInstitutionId: string | null = null;
 	try {
 		const campusLead = await pb.collection("users").create({
 			email: leadEmail,
@@ -262,12 +263,22 @@ export async function createCampusLead(
 			maxTeams,
 			status: "active",
 		});
+		createdInstitutionId = institution.id;
 
 		await pb.collection("users").update(campusLead.id, {
 			institutionId: institution.id,
 		});
 	} catch (err) {
-		// Attempt to clean up the created user
+		// Best-effort rollback of any partially-created records so we
+		// don't leave an institution pointing at a deleted user, or a
+		// user with no institution. Failures here are swallowed because
+		// the original error is the one to surface.
+		if (createdInstitutionId) {
+			await pb
+				.collection("institutions")
+				.delete(createdInstitutionId)
+				.catch(() => {});
+		}
 		if (createdUser) {
 			await pb
 				.collection("users")

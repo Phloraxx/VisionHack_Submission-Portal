@@ -149,12 +149,29 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 			});
 		}
 
-		const updated = await pb.collection("teams").update(existingTeam.id, {
-			name: teamName.slice(0, 100),
-			status: "registered",
-			status_changed_at: new Date().toISOString(),
-		});
-		teamId = updated.id;
+		// Optimistic lock on the status we just checked — rejects a
+		// concurrent transition (e.g. institution shortlisting the team)
+		// rather than silently overwriting it back to "registered".
+		try {
+			const updated = await pb.collection("teams").update(
+				existingTeam.id,
+				{
+					name: teamName.slice(0, 100),
+					status: "registered",
+					status_changed_at: new Date().toISOString(),
+				},
+				{
+					filter: pb.filter("status = {:expected}", { expected: existingTeam.status }),
+					$autoCancel: false,
+				},
+			);
+			teamId = updated.id;
+		} catch {
+			return fail({
+				error: "This team's status was changed by another action. Please refresh and try again.",
+				status: 409,
+			});
+		}
 	} else {
 		const newTeam = await pb.collection("teams").create({
 			name: teamName.slice(0, 100),
