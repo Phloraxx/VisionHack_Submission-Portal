@@ -7,7 +7,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
 import { getEnv } from "~/lib/env.server";
-import { getAdminClient } from "~/lib/pocketbase.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
 	if (request.method !== "GET") {
@@ -38,9 +37,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	}
 
 	// Authorize: confirm the requesting user is allowed to view this
-	// team's record. The PB schema's `viewRule` for `teams` does this
-	// already, but we re-check here so the file proxy is safe to keep
-	// even if the schema rules regress.
+	// team's record. The PB schema's `viewRule` for `teams` enforces the
+	// same scoping at the storage layer (re-checked below via the file
+	// token), but we re-check here to return a clean 403 before the
+	// fetch and so the proxy stays safe even if the schema rules regress.
 	const team = await auth.pb
 		.collection("teams")
 		.getOne(recordId, { fields: "id,institutionId,leaderUserId,submission_file" })
@@ -69,15 +69,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	const pbUrl = getEnv().POCKETBASE_URL.replace(/\/+$/, "");
 	const fileUrl = `${pbUrl}/api/files/${collection}/${recordId}/${encodeURIComponent(filename)}`;
 
-	// Fetch the file with the admin client so the proxy doesn't depend on
-	// the requesting user's own PB file read rights.
-	const adminPb = await getAdminClient();
-	const token = adminPb.authStore.token;
+	// Fetch the file via PocketBase's protected-file flow: mint a
+	// short-lived file token from the requesting user's own auth client,
+	// then request the bytes with `?token=…`. PB evaluates the `teams`
+	// `viewRule` against the user's auth record when issuing the token,
+	// so this enforces ownership at the storage layer too — defense in
+	// depth on top of the `canRead` check above. No superuser credentials
+	// are involved.
+	const fileToken = await auth.pb.files.getToken();
 
 	try {
-		const response = await fetch(fileUrl, {
-			headers: { Authorization: `Bearer ${token}` },
-		});
+		const response = await fetch(`${fileUrl}?token=${encodeURIComponent(fileToken)}`);
 
 		if (!response.ok) {
 			return new Response("File not found", { status: 404 });

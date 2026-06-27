@@ -31,15 +31,6 @@ export function getEnv(): EnvConfig {
 		throw new Error("POCKETBASE_URL is not set. Check your .env file.");
 	}
 
-	const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL ?? "";
-	const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD ?? "";
-	if (!adminEmail || !adminPassword) {
-		console.warn(
-			"[env] \u26a0\ufe0f  POCKETBASE_ADMIN_EMAIL and/or POCKETBASE_ADMIN_PASSWORD is not set. " +
-				"Admin operations will fail. Check your .env file.",
-		);
-	}
-
 	const config: EnvConfig = {
 		POCKETBASE_URL: pbUrl,
 		ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
