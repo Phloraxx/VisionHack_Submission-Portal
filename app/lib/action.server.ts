@@ -65,14 +65,13 @@ function withTokenCookie(
 ): ActionResult {
 	if (token === originalToken) return result as ActionResult;
 	const cookie = setAuthCookie(token);
-	const headers = new Headers([["Set-Cookie", cookie]]);
 
 	if (result instanceof Response) {
 		result.headers.append("Set-Cookie", cookie);
 		return result;
 	}
 
-	return data(result, { headers });
+	return data(result, { headers: new Headers([["Set-Cookie", cookie]]) });
 }
 
 /**

@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Inbox, Loader2, Mail } from "lucide-react";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, Link, useActionData, useNavigation } from "react-router";
 import { data } from "react-router";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs } from "react-router";
 import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -10,10 +10,6 @@ import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { createPocketBaseClient } from "~/lib/pocketbase.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
-
-export async function loader({ request }: LoaderFunctionArgs) {
-	return data({});
-}
 
 export async function action({ request }: ActionFunctionArgs) {
 	try {

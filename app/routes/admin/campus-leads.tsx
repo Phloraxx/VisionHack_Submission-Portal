@@ -163,6 +163,18 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 			return fail({ error: "CSV must have a header row and at least one data row" });
 		}
 
+		// Validate the header so a reordered CSV fails clearly instead of
+		// silently mismapping fields into the wrong columns. Match
+		// case-insensitively on the first 5 header cells.
+		const EXPECTED_HEADER = ["institutionname", "district", "code", "leadname", "leademail"];
+		const headerCols = parseCsvLine(lines[0]).map((c) => c.trim().toLowerCase());
+		const headerMatches = EXPECTED_HEADER.every((h, i) => headerCols[i] === h);
+		if (!headerMatches) {
+			return fail({
+				error:
+					"CSV header must be: institutionName,district,code,leadName,leadEmail (in that order).",
+			});
+		}
 		const results: Array<{ row: number; name: string; status: string; error?: string }> = [];
 		let created = 0;
 

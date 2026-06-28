@@ -204,7 +204,7 @@ export const action = secureAction(
 			// Send notification email best-effort.
 			if (team?.expand?.leaderUserId) {
 				const lead = team.expand.leaderUserId;
-				sendStatusChangeEmail({
+				void sendStatusChangeEmail({
 					to: lead.email,
 					leadName: lead.name || "Team Lead",
 					teamName: team.name,
