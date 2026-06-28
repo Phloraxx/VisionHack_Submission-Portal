@@ -163,10 +163,10 @@ const CONFIG_RULES = {
 // ---------------------------------------------------------------------------
 // Role-scoped rules — close IDOR on cross-team reads.
 //
-// All app code uses getAdminClient() for writes and the user's own
-// client for reads, so the rules below restrict *direct* PB REST access
-// (i.e. from a leaked JWT or a developer mistake) to the minimum each role
-// legitimately needs.
+// App code writes through the acting user's own auth client (the admin/
+// coordinator/institution/lead role is enforced by these rules), so the
+// rules below restrict *direct* PB REST access (i.e. from a leaked JWT
+// or a developer mistake) to the minimum each role legitimately needs.
 //
 // Roles: admin (everything) | coordinator (read all) | institution (read
 // own institution's teams) | lead (read/write own team).
@@ -1046,6 +1046,33 @@ async function ensureQuestionnaireResponsesCollection(
 		} else {
 			console.log("  ✅ «questionnaire_responses» collection already has all expected fields");
 		}
+
+		// Enforce one response per team. Adding a UNIQUE index fails if
+		// duplicate rows already exist, so surface that clearly rather than
+		// crashing the whole setup. Only send the new unique index — the two
+		// non-unique indexes (idx_qr_team / idx_qr_user) were already created
+		// by the create-from-scratch path on prior runs, and re-issuing
+		// `CREATE INDEX` for an existing name would error.
+		const hasUnique = (existing.indexes ?? []).some((i: string) =>
+			i.includes("idx_qr_team_unique"),
+		);
+		if (!hasUnique) {
+			console.log("  📝 Adding unique index on «questionnaire_responses.teamId»…");
+			try {
+				await updateCollection(token, "questionnaire_responses", {
+					indexes: [
+						...(existing.indexes ?? []),
+						"CREATE UNIQUE INDEX idx_qr_team_unique ON questionnaire_responses (teamId)",
+					],
+				});
+			} catch (idxErr) {
+				console.warn(
+					"  ⚠️  Could not add unique index on questionnaire_responses.teamId — " +
+						"this means duplicate rows already exist. Resolve them then re-run setup. " +
+						`Detail: ${idxErr instanceof Error ? idxErr.message : String(idxErr)}`,
+				);
+			}
+		}
 		return;
 	}
 
@@ -1095,6 +1122,9 @@ async function ensureQuestionnaireResponsesCollection(
 		indexes: [
 			"CREATE INDEX idx_qr_team ON questionnaire_responses (teamId)",
 			"CREATE INDEX idx_qr_user ON questionnaire_responses (userId)",
+			// One response per team — prevents concurrent submits from
+			// creating duplicate rows (see lead/questionnaire.tsx upsert).
+			"CREATE UNIQUE INDEX idx_qr_team_unique ON questionnaire_responses (teamId)",
 		],
 		...NO_RULES,
 	});
@@ -1229,9 +1259,10 @@ async function ensureRateLimiting(token: string): Promise<void> {
  * 2. Make `role` a `select` field with the four known values — a free-text
  *    `role` field accepts any string and is a privilege-escalation surface.
  * 3. Update the rule to block setting the `role` or `institutionId`
- *    fields from regular user updates. Superuser operations (via
- *    getAdminClient()) bypass API rules entirely, so admin flows
- *    still work.
+ *    fields from regular user updates. The admin route handlers run with
+ *    the admin-role user's own auth token and go through these rules,
+ *    so admin flows work via the `admin` role select value, not by
+ *    bypassing the API rules.
  */
 async function ensureUsersCollection(token: string): Promise<void> {
 	console.log("\n🔧 Locking down users collection…");
@@ -1320,7 +1351,7 @@ async function ensureUsersCollection(token: string): Promise<void> {
  * Track schema version in config collection for migration awareness.
  * Bump SCHEMA_VERSION when making breaking schema changes.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 async function ensureSchemaVersion(token: string): Promise<void> {
 	const resp = await pbFetch(
