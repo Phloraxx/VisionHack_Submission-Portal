@@ -34,6 +34,8 @@ export async function sendEmail(options: {
 		return;
 	}
 
+	const sanitizedTo = options.to.replace(/[\r\n]/g, "");
+	const sanitizedSubject = options.subject.replace(/[\r\n]/g, "");
 	const response = await fetch(RESEND_API_URL, {
 		method: "POST",
 		headers: {
@@ -42,8 +44,8 @@ export async function sendEmail(options: {
 		},
 		body: JSON.stringify({
 			from: DEFAULT_FROM,
-			to: options.to,
-			subject: options.subject,
+			to: sanitizedTo,
+			subject: sanitizedSubject,
 			html: options.html,
 		}),
 	});

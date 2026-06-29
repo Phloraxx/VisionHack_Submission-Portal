@@ -27,6 +27,8 @@ export interface ActionContext {
 	intent: string;
 	params: Record<string, string>;
 	validated?: unknown;
+	/** Pre-extracted File fields when `fileFields` option is used. */
+	fileFields?: Record<string, File>;
 }
 
 type Handler = (ctx: ActionContext) => unknown | Promise<unknown>;
@@ -79,9 +81,8 @@ function withTokenCookie(
  *
  *  1. **Origin check** — Origin header validated against allow-list; 403 on mismatch.
  *  2. **Form parse** — reads the body as FormData; 400 on parse failure.
- *  3. **CSRF token validation** — double-submit cookie; 403 on mismatch.
- *  4. **Auth** — caller must be one of `roles`; otherwise 403.
- *  5. **Intent dispatch** — the `intent` form field is exposed to the
+ *  3. **Auth** — caller must be one of `roles`; otherwise 403.
+ *  4. **Intent dispatch** — the `intent` form field is exposed to the
  *     handler so multi-intent actions can `switch` on it.
  *
  * Rate limiting is intentionally NOT in the wrapper — it must run BEFORE
@@ -104,11 +105,14 @@ function withTokenCookie(
  * );
  * ```
  */
-export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, handler: Handler) {
+export function secureAction(
+	options: { roles: Role[]; schema?: ZodSchema; fileFields?: string[] },
+	handler: Handler,
+) {
 	return async ({ request, params }: ActionFunctionArgs): Promise<ActionResult> => {
 		// 1. Origin check
 		try {
-			validateOrigin(request);
+			validateOrigin(request, true);
 		} catch {
 			return fail({ error: "Invalid request origin", status: 403 });
 		}
@@ -146,21 +150,26 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 		}
 
 		// 5. Schema validation
-		// NOTE: Object.fromEntries(formData.entries()) silently converts File
-		// objects to filename strings. Routes with file uploads must use
-		// formData.get("field") directly, not the schema validation path.
-		if (options.schema) {
-			// Guard: Object.fromEntries silently converts File objects to "[object File]"
-			// strings. Routes with file uploads must use formData.get() directly.
-			for (const [key, value] of formData.entries()) {
+		// Pre-extract declared File fields so they don't get mangled by
+		// Object.fromEntries (which converts Files to "[object File]" strings).
+		const extractedFiles: Record<string, File> = {};
+		if (options.fileFields) {
+			for (const key of options.fileFields) {
+				const value = formData.get(key);
 				if (value instanceof File && !(value.size === 0 && value.name === "")) {
-					return fail({
-						error: `File field "${key}" is not supported in schema validation. Use formData.get() directly.`,
-						status: 400,
-					});
+					extractedFiles[key] = value;
 				}
 			}
-			const parsed = options.schema.safeParse(Object.fromEntries(formData.entries()));
+		}
+
+		if (options.schema) {
+			// Build a plain-object snapshot of FormData, omitting extracted file
+			// fields so they don't pollute the zod parse.
+			const formEntries = Object.fromEntries(formData.entries());
+			for (const key of Object.keys(extractedFiles)) {
+				delete formEntries[key];
+			}
+			const parsed = options.schema.safeParse(formEntries);
 			if (!parsed.success) {
 				return fail({
 					fieldErrors: extractFieldErrors(parsed.error),
@@ -175,6 +184,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 				intent: String(formData.get("intent") ?? "").toLowerCase(),
 				params: params as Record<string, string>,
 				validated: parsed.data,
+				fileFields: Object.keys(extractedFiles).length > 0 ? extractedFiles : undefined,
 			} satisfies ActionContext;
 
 			try {
@@ -209,6 +219,7 @@ export function secureAction(options: { roles: Role[]; schema?: ZodSchema }, han
 			formData,
 			intent: String(formData.get("intent") ?? "").toLowerCase(),
 			params: params as Record<string, string>,
+			fileFields: Object.keys(extractedFiles).length > 0 ? extractedFiles : undefined,
 		} satisfies ActionContext;
 
 		try {

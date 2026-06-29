@@ -21,7 +21,7 @@ export interface LoaderContext {
 	params: Record<string, string>;
 }
 
-type LoaderHandler<C extends LoaderContext> = (ctx: C) => unknown | Promise<unknown>;
+type LoaderHandler<C extends LoaderContext, R> = (ctx: C) => R | Promise<R>;
 
 /**
  * Wrap a route loader with authentication and role checks.
@@ -42,11 +42,11 @@ type LoaderHandler<C extends LoaderContext> = (ctx: C) => unknown | Promise<unkn
  *   },
  * );
  */
-export function secureLoader<C extends LoaderContext = LoaderContext>(
+export function secureLoader<C extends LoaderContext = LoaderContext, R = unknown>(
 	options: { roles: Role[] },
-	handler: LoaderHandler<C>,
+	handler: LoaderHandler<C, R>,
 ) {
-	return async ({ request, params }: LoaderFunctionArgs): Promise<unknown> => {
+	return async ({ request, params }: LoaderFunctionArgs): Promise<R | ReturnType<typeof data>> => {
 		// 1. Auth + role — catch redirects and return JSON instead
 		let pb: PocketBase;
 		let user: UserRecord;

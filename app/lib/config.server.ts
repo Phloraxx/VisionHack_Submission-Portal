@@ -26,6 +26,7 @@ export async function getConfig(pb: PocketBase): Promise<Record<string, boolean>
 	const records = result.items;
 	const value: Record<string, boolean> = {};
 	for (const record of records) {
+		if (record.key === "schema_version" || record.key.startsWith("_")) continue;
 		value[record.key] = record.value === true;
 	}
 

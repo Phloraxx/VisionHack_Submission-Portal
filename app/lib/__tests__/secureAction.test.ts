@@ -112,7 +112,7 @@ describe("secureAction", () => {
 		const req = makeRequest("http://localhost:5173/admin/test", new URLSearchParams("intent=foo"));
 		await action(makeArgs(req));
 
-		expect(mockValidateOrigin).toHaveBeenCalledWith(req);
+		expect(mockValidateOrigin).toHaveBeenCalledWith(req, true);
 	});
 
 	it("returns 403 when origin validation fails", async () => {
