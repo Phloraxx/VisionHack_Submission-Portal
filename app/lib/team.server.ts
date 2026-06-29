@@ -243,46 +243,48 @@ export async function createCampusLead(
 	} = args;
 
 	const tempPassword = crypto.randomUUID();
-	let createdUser: { id: string } | null = null;
 	let createdInstitutionId: string | null = null;
+	let createdUserId: string | null = null;
 	try {
+		// Step 1: Create institution first (campusLeadId nullable).
+		// This eliminates the window where a user exists with no institutionId.
+		const institution = await pb.collection("institutions").create({
+			name: institutionName,
+			district,
+			code,
+			campusLeadId: null,
+			maxTeams,
+			status: "active",
+		});
+		createdInstitutionId = institution.id;
+
+		// Step 2: Create user with institutionId set from the start.
 		const campusLead = await pb.collection("users").create({
 			email: leadEmail,
 			password: tempPassword,
 			passwordConfirm: tempPassword,
 			name: leadName,
 			role: "institution",
-		});
-		createdUser = campusLead;
-
-		const institution = await pb.collection("institutions").create({
-			name: institutionName,
-			district,
-			code,
-			campusLeadId: campusLead.id,
-			maxTeams,
-			status: "active",
-		});
-		createdInstitutionId = institution.id;
-
-		await pb.collection("users").update(campusLead.id, {
 			institutionId: institution.id,
 		});
+		createdUserId = campusLead.id;
+
+		// Step 3: Back-link institution to the campus lead user.
+		await pb.collection("institutions").update(institution.id, {
+			campusLeadId: campusLead.id,
+		});
 	} catch (err) {
-		// Best-effort rollback of any partially-created records so we
-		// don't leave an institution pointing at a deleted user, or a
-		// user with no institution. Failures here are swallowed because
-		// the original error is the one to surface.
+		// Best-effort rollback of any partially-created records.
+		if (createdUserId) {
+			await pb
+				.collection("users")
+				.delete(createdUserId)
+				.catch(() => {});
+		}
 		if (createdInstitutionId) {
 			await pb
 				.collection("institutions")
 				.delete(createdInstitutionId)
-				.catch(() => {});
-		}
-		if (createdUser) {
-			await pb
-				.collection("users")
-				.delete(createdUser.id)
 				.catch(() => {});
 		}
 		throw err;

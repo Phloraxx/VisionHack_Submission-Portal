@@ -5,7 +5,8 @@ import TeamDetail from "~/components/shared/team-detail";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { fail, ok, secureAction } from "~/lib/action.server";
-import { downloadTeamCSV } from "~/lib/csv-export";
+import { ROLE_DASHBOARD_MAP } from "~/lib/auth.server";
+import { downloadTeamCSV } from "~/lib/csv-export.client";
 import { secureLoader } from "~/lib/loader.server";
 import { getValidTransitions } from "~/lib/team-status";
 import {
@@ -77,9 +78,12 @@ export const loader = secureLoader(
 			case "institution": {
 				const [institution, team] = await Promise.all([
 					getInstitutionForUser(pb, user.id, { fields: "id" }),
-					pb.collection("teams").getOne<TeamView>(teamId, {
-						expand: "institutionId,leaderUserId",
-					}),
+					pb
+						.collection("teams")
+						.getOne<TeamView>(teamId, {
+							expand: "institutionId,leaderUserId",
+						})
+						.catch(() => null),
 				]);
 
 				if (!institution) throw new Response("Institution not found", { status: 404 });
@@ -114,9 +118,12 @@ export const loader = secureLoader(
 			// Admin & Coordinator — global access, transitions filtered per role
 			case "admin":
 			case "coordinator": {
-				const team = await pb.collection("teams").getOne<TeamView>(teamId, {
-					expand: "institutionId,leaderUserId",
-				});
+				const team = await pb
+					.collection("teams")
+					.getOne<TeamView>(teamId, {
+						expand: "institutionId,leaderUserId",
+					})
+					.catch(() => null);
 				if (!team) throw new Response("Team not found", { status: 404 });
 
 				const [members, questionnaire] = await Promise.all([
@@ -160,6 +167,7 @@ export const action = secureAction(
 		if (intent === "transition") {
 			const toStatus = formData.get("toStatus") as TeamStatus;
 			const VALID_TRANSITION_STATUSES = [
+				"registered",
 				"shortlisted",
 				"selected",
 				"rejected",
@@ -234,14 +242,9 @@ export function meta() {
 export default function TeamDetailPage() {
 	const { user, team, members, questionnaire, validTransitions } = useLoaderData() as LoaderData;
 
-	const backConfig: Record<string, { url: string; label: string }> = {
-		admin: { url: "/admin/teams", label: "Back to Teams" },
-		coordinator: { url: "/coordinator/dashboard", label: "Back to Dashboard" },
-		institution: { url: "/institution/dashboard", label: "Back to Dashboard" },
-		lead: { url: "/lead/dashboard", label: "Back to Dashboard" },
-	};
-
-	const { url: backUrl, label: backLabel } = backConfig[user.role] ?? backConfig.admin;
+	// Admin navigates back to the team list; every other role returns to their dashboard.
+	const backUrl = user.role === "admin" ? "/admin/teams" : ROLE_DASHBOARD_MAP[user.role];
+	const backLabel = user.role === "admin" ? "Back to Teams" : "Back to Dashboard";
 
 	return (
 		<TeamDetail
