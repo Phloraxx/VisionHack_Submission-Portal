@@ -43,24 +43,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		}
 	}
 
-	// Guest page - show team/institution counts. We use the public client so
-	// the login page never loads the admin client into memory.
 	const cfg = await getConfig(createPocketBaseClient());
-	const pb = createPocketBaseClient();
-	const [teams, institutions] = await Promise.all([
-		pb
-			.collection("teams")
-			.getList(1, 1, { fields: "id" })
-			.catch(() => ({ totalItems: 0 })),
-		pb
-			.collection("institutions")
-			.getList(1, 1, { fields: "id" })
-			.catch(() => ({ totalItems: 0 })),
-	]);
 
 	return data({
-		teamCount: teams.totalItems,
-		institutionCount: institutions.totalItems,
 		registrationOpen: !!cfg.registration_open,
 		questionnaireOpen: !!cfg.questionnaire_open,
 		submissionOpen: !!cfg.submission_open,
@@ -90,8 +75,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	// App-level rate limiting
 	const ip = getClientIp(request);
-	checkRateLimit(`login:ip:${ip}`, 5, 60_000);
-	checkRateLimit(`login:email:${email}`, 5, 60_000);
+	try {
+		checkRateLimit(`login:ip:${ip}`, 5, 60_000);
+		checkRateLimit(`login:email:${email}`, 5, 60_000);
+	} catch {
+		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });
+	}
 
 	try {
 		const { token, record } = await login(email, password);
@@ -170,14 +159,11 @@ function PhaseIndicator({
 }
 
 export default function Login() {
-	const { teamCount, institutionCount, registrationOpen, questionnaireOpen, submissionOpen } =
-		useLoaderData() as {
-			teamCount: number;
-			institutionCount: number;
-			registrationOpen: boolean;
-			questionnaireOpen: boolean;
-			submissionOpen: boolean;
-		};
+	const { registrationOpen, questionnaireOpen, submissionOpen } = useLoaderData() as {
+		registrationOpen: boolean;
+		questionnaireOpen: boolean;
+		submissionOpen: boolean;
+	};
 	const actionData = useActionData<{ error?: string }>();
 	const navigation = useNavigation();
 	const isSubmitting = navigation.state === "submitting";
@@ -232,28 +218,7 @@ export default function Login() {
 						questionnaireOpen={questionnaireOpen}
 						submissionOpen={submissionOpen}
 					/>
-
-					{/* Quick stats */}
-					<div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border">
-						<div className="bg-background px-5 py-4">
-							<p className="font-mono text-lg font-semibold tabular-nums text-foreground sm:text-xl">
-								{teamCount}
-							</p>
-							<p className="mt-0.5 text-[10px] uppercase tracking-wider text-foreground/50">
-								Teams
-							</p>
-						</div>
-						<div className="bg-background px-5 py-4">
-							<p className="font-mono text-lg font-semibold tabular-nums text-foreground sm:text-xl">
-								{institutionCount}
-							</p>
-							<p className="mt-0.5 text-[10px] uppercase tracking-wider text-foreground/50">
-								Campuses
-							</p>
-						</div>
-					</div>
 				</div>
-
 				<div className="relative z-10 mt-auto flex items-center justify-between border-t border-border/60 pt-5 text-xs text-foreground/40">
 					<span>μLearn SCET · VisionHack</span>
 					<span className="hidden sm:inline">v2.0 · 2026</span>

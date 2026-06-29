@@ -27,8 +27,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	// Rate limiting
 	const ip = getClientIp(request);
-	checkRateLimit(`forgot:ip:${ip}`, 10, 60_000); // 10/min per IP
-	checkRateLimit(`forgot:email:${email}`, 3, 60_000); // 3/min per account
+	try {
+		checkRateLimit(`forgot:ip:${ip}`, 10, 60_000); // 10/min per IP
+		checkRateLimit(`forgot:email:${email}`, 3, 60_000); // 3/min per account
+	} catch {
+		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });
+	}
 
 	const pb = createPocketBaseClient();
 
