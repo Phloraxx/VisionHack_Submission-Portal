@@ -67,6 +67,9 @@ export default async function handleRequest(
 	const writer = transform.writable.getWriter();
 	const encoder = new TextEncoder();
 	const injectTarget = /<\/body\s*>/i;
+	// Match <script tags that do NOT already carry a nonce attribute.
+	const nonceRe = /<script(?![^>]*\bnonce=)/g;
+	const addNonce = (html: string) => html.replace(nonceRe, `<script nonce="${nonce}"`);
 
 	(async () => {
 		const reader = body.getReader();
@@ -77,7 +80,7 @@ export default async function handleRequest(
 			const { done, value } = await reader.read();
 			if (done) {
 				if (!injected) buffer = buffer.replace(injectTarget, `${patch}$&`);
-				await writer.write(encoder.encode(buffer));
+				await writer.write(encoder.encode(addNonce(buffer)));
 				await writer.close();
 				break;
 			}
@@ -86,7 +89,7 @@ export default async function handleRequest(
 				const idx = buffer.search(injectTarget);
 				if (idx !== -1) {
 					injected = true;
-					await writer.write(encoder.encode(buffer.slice(0, idx) + patch));
+					await writer.write(encoder.encode(addNonce(buffer.slice(0, idx)) + patch));
 					buffer = buffer.slice(idx);
 				}
 			}
