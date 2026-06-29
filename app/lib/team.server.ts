@@ -128,7 +128,7 @@ export async function transitionTeamStatus(
 				status_changed_at: new Date().toISOString(),
 			},
 			{
-				filter: pb.filter("status = {:expected}", { expected: team.status }),
+				query: { expectedStatus: team.status },
 				$autoCancel: false,
 			},
 		);

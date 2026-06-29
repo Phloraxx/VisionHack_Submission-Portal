@@ -107,7 +107,7 @@ export default async function handleRequest(
 			"Content-Security-Policy",
 			[
 				"default-src 'self'",
-				"script-src 'self' 'unsafe-inline'",
+				`script-src 'self' 'nonce-${nonce}' 'sha256-Tyt5rkhF/2kq3L/Kts+uouDQOJgb3zmTtq1i7+zAnQ8='`,
 				"style-src 'self' 'unsafe-inline'",
 				"img-src 'self' data: blob:",
 				"font-src 'self' data:",

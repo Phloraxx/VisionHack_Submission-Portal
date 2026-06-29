@@ -128,12 +128,12 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 		form.append("status_changed_at", new Date().toISOString());
 		try {
 			await pb.collection("teams").update(team.id, form, {
-				filter: pb.filter("status = {:expected}", { expected: team.status }),
+				query: { expectedStatus: team.status },
 				$autoCancel: false,
 			});
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (msg.includes("Failed to apply") || msg.includes("condition")) {
+			// PB returns 404 when updateRule fails (optimistic lock mismatch)
+			if (err && typeof err === "object" && "status" in err && err.status === 404) {
 				return fail({ error: "Team status changed. Please refresh and try again.", status: 409 });
 			}
 			throw err;
@@ -167,13 +167,12 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 					status_changed_at: new Date().toISOString(),
 				},
 				{
-					filter: pb.filter("status = {:expected}", { expected: team.status }),
+					query: { expectedStatus: team.status },
 					$autoCancel: false,
 				},
 			);
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (msg.includes("Failed to apply") || msg.includes("condition")) {
+			if (err && typeof err === "object" && "status" in err && err.status === 404) {
 				return fail({ error: "Team status changed. Please refresh and try again.", status: 409 });
 			}
 			throw err;

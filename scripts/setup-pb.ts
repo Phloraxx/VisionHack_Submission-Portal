@@ -215,6 +215,7 @@ const TEAMS_RULES = {
 		"institutionId ?= @request.auth.institutionId && " +
 		"@request.body.leaderUserId:isset = false && " +
 		"@request.body.institutionId:isset = false && " +
+		"status = @request.query.expectedStatus && " +
 		"(@request.body.status:isset = false || " +
 		'@request.body.status = "registered" || ' +
 		'@request.body.status = "shortlisted" || ' +
@@ -222,10 +223,11 @@ const TEAMS_RULES = {
 		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead" && ' +
 		"@request.body.leaderUserId:isset = false && " +
 		"@request.body.institutionId:isset = false && " +
-		"@request.body.status:isset = false || " +
+		"status = @request.query.expectedStatus && " +
+		"(@request.body.status:isset = false || " +
 		'@request.body.status = "registered" || ' +
 		'@request.body.status = "submitted" || ' +
-		'@request.body.status = "withdrawn")',
+		'@request.body.status = "withdrawn"))',
 	// Only admin can delete teams.
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
@@ -1400,7 +1402,7 @@ async function ensureUsersCollection(token: string): Promise<void> {
  * Track schema version in config collection for migration awareness.
  * Bump SCHEMA_VERSION when making breaking schema changes.
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 async function ensureSchemaVersion(token: string): Promise<void> {
 	const resp = await pbFetch(

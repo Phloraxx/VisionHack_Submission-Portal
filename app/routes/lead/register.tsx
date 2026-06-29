@@ -161,7 +161,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 					status_changed_at: new Date().toISOString(),
 				},
 				{
-					filter: pb.filter("status = {:expected}", { expected: existingTeam.status }),
+					query: { expectedStatus: existingTeam.status },
 					$autoCancel: false,
 				},
 			);
