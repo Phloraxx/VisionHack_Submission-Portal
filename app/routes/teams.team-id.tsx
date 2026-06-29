@@ -5,9 +5,9 @@ import TeamDetail from "~/components/shared/team-detail";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { fail, ok, secureAction } from "~/lib/action.server";
-import { ROLE_DASHBOARD_MAP } from "~/lib/auth.server";
 import { downloadTeamCSV } from "~/lib/csv-export.client";
 import { secureLoader } from "~/lib/loader.server";
+import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
 import { getValidTransitions } from "~/lib/team-status";
 import {
 	getInstitutionForUser,

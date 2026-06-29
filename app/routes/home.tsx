@@ -1,6 +1,7 @@
 import { redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { ROLE_DASHBOARD_MAP, requireAuth } from "~/lib/auth.server";
+import { requireAuth } from "~/lib/auth.server";
+import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
 
 /**
  * Root index route — redirects authenticated users to their

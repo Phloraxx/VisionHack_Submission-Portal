@@ -31,3 +31,11 @@ export function canSubmitIdea(status: TeamStatus): boolean {
 export function canWithdraw(status: TeamStatus, role: Role): boolean {
 	return canTransition(status, "withdrawn", role);
 }
+
+/** Map of role → default dashboard path */
+export const ROLE_DASHBOARD_MAP: Record<Role, string> = {
+	admin: "/admin/dashboard",
+	coordinator: "/coordinator/dashboard",
+	institution: "/institution/dashboard",
+	lead: "/lead/dashboard",
+};

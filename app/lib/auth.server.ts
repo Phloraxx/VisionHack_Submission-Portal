@@ -21,14 +21,6 @@ const COOKIE_MAX_AGE = 3600; // 1 hour — PB RLS reads role from JWT claims
 
 const authCache = new WeakMap<Request, Promise<AuthResult>>();
 
-/** Map of role → default dashboard path */
-export const ROLE_DASHBOARD_MAP: Record<Role, string> = {
-	admin: "/admin/dashboard",
-	coordinator: "/coordinator/dashboard",
-	institution: "/institution/dashboard",
-	lead: "/lead/dashboard",
-};
-
 // ---------------------------------------------------------------------------
 // Cookie helpers
 // ---------------------------------------------------------------------------

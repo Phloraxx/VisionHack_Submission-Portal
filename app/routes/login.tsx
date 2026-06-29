@@ -14,12 +14,13 @@ import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { ROLE_DASHBOARD_MAP, getAuthFromCookie, login, setAuthCookie } from "~/lib/auth.server";
+import { getAuthFromCookie, login, setAuthCookie } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
 import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { createAuthenticatedClient, createPocketBaseClient } from "~/lib/pocketbase.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
+import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
 import type { UserRecord } from "~/lib/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
