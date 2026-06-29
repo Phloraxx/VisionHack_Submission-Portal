@@ -18,6 +18,7 @@ import { STATUS_COLORS, STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus } from "~/lib/types";
 
 export const loader = secureLoader({ roles: ["admin"] }, async ({ pb }) => {
+	pb.autoCancellation(false);
 	// PB's list rules allow admin-role clients for teams, institutions,
 	// and users — the user's own auth token is sufficient here.
 
