@@ -6,6 +6,7 @@ Sentry.init({
 });
 import fs from "node:fs";
 import http from "node:http";
+import type { Socket } from "node:net";
 import path from "node:path";
 import { createRequestListener } from "@react-router/node";
 import type { ServerBuild } from "react-router";
@@ -69,13 +70,10 @@ const server = http.createServer((req, res) => {
 	const ext = path.extname(url.pathname).toLowerCase();
 	if ((req.method === "GET" || req.method === "HEAD") && MIME[ext]) {
 		const filePath = path.join(clientDir, url.pathname);
-
-		// Prevent directory traversal — the resolved path must be inside clientDir.
-		// Resolve symlinks so that a symlink outside clientDir can't bypass the check.
-		const resolved = path.resolve(filePath);
-		const realResolved = fs.realpathSync(resolved);
-		if (realResolved.startsWith(realClientDir + path.sep)) {
-			try {
+		try {
+			const resolved = path.resolve(filePath);
+			const realResolved = fs.realpathSync(resolved);
+			if (realResolved.startsWith(realClientDir + path.sep)) {
 				const stat = fs.statSync(resolved);
 				if (stat.isFile()) {
 					res.writeHead(200, {
@@ -102,9 +100,9 @@ const server = http.createServer((req, res) => {
 					}
 					return;
 				}
-			} catch {
-				// File not found — fall through to RR7 handler
 			}
+		} catch {
+			// Missing/invalid path — fall through to React Router
 		}
 	}
 
@@ -116,13 +114,12 @@ const server = http.createServer((req, res) => {
 
 process.on("uncaughtException", (err) => {
 	Sentry.captureException(err);
-	console.error("[server] Uncaught exception — exiting");
-	process.exit(1);
+	console.error("[server] Uncaught exception — keeping process alive", err);
+	// Do NOT exit — process-level restart is handled externally (Docker, PM2, etc.)
 });
 process.on("unhandledRejection", (reason) => {
 	Sentry.captureException(reason);
-	console.error("[server] Unhandled rejection — exiting");
-	process.exit(1);
+	console.error("[server] Unhandled rejection — keeping process alive", reason);
 });
 
 const rawPort = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -130,18 +127,34 @@ const port = Number.isFinite(rawPort) ? rawPort : 3000;
 server.listen(port, () => {
 	console.log(`Server listening on http://localhost:${port}`);
 });
+if (process.env.TRUST_PROXY_HEADERS !== "1" && process.env.NODE_ENV === "production") {
+	console.warn(
+		"[SECURITY] TRUST_PROXY_HEADERS is not set to 1 in production. " +
+			"Per-IP rate limiting on login/forgot-password is disabled — all users share a single bucket. " +
+			"Set TRUST_PROXY_HEADERS=1 if the app is behind Cloudflare or a trusted ingress.",
+	);
+}
+// Track open sockets for clean shutdown
+const activeSockets = new Set<Socket>();
+server.on("connection", (socket) => {
+	activeSockets.add(socket);
+	socket.once("close", () => activeSockets.delete(socket));
+});
 
 function gracefulShutdown(signal: string): void {
 	console.log(`\n${signal} received. Shutting down gracefully...`);
-	const forceExit = setTimeout(() => {
-		console.error("[server] Forced exit after timeout");
-		process.exit(1);
-	}, 10000);
 	server.close(() => {
-		clearTimeout(forceExit);
 		console.log("HTTP server closed.");
+		for (const socket of activeSockets) socket.destroy();
+		activeSockets.clear();
 		process.exit(0);
 	});
+	const forceExit = setTimeout(() => {
+		console.error("[server] Forced exit after timeout");
+		for (const socket of activeSockets) socket.destroy();
+		activeSockets.clear();
+		process.exit(1);
+	}, 10000);
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));

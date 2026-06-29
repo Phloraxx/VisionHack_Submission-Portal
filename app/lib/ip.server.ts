@@ -14,12 +14,17 @@
  */
 export function getClientIp(request: Request): string {
 	const trustProxy = process.env.TRUST_PROXY_HEADERS === "1";
-	if (!trustProxy) return "unknown";
-
-	return (
-		request.headers.get("CF-Connecting-IP") ??
-		request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
-		request.headers.get("x-real-ip") ??
-		"unknown"
-	);
+	if (trustProxy) {
+		return (
+			request.headers.get("CF-Connecting-IP") ??
+			request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
+			request.headers.get("x-real-ip") ??
+			"unknown"
+		);
+	}
+	// Web Request objects (used by React Router) have no .socket property.
+	// Per-IP rate limiting only works behind a trusted proxy that sets
+	// CF-Connecting-IP / X-Forwarded-For. Without a proxy, all clients
+	// share a single rate-limit bucket (per-email limits still apply).
+	return "unknown";
 }

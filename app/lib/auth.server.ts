@@ -5,9 +5,8 @@ import { decodeJwtPayload, isExpiringSoon } from "./jwt.server";
 import { createAuthenticatedClient, createPocketBaseClient } from "./pocketbase.server";
 import type { Role, UserRecord } from "./types";
 
-const COOKIE_NAME = "pb_jwt";
-const COOKIE_MAX_AGE = 432000; // 5 days in seconds
-const COOKIE_PATH = "/";
+const COOKIE_NAME = "__Host-pb_jwt";
+const COOKIE_MAX_AGE = 3600; // 1 hour — PB RLS reads role from JWT claims
 
 // ---------------------------------------------------------------------------
 // Per-request auth cache
@@ -51,13 +50,12 @@ export function getAuthFromCookie(request: Request): string | null {
  * ```
  */
 export function setAuthCookie(token: string): string {
-	const secure = process.env.NODE_ENV === "production";
 	return [
 		`${COOKIE_NAME}=${token}`,
 		"HttpOnly",
-		...(secure ? ["Secure"] : []),
+		"Secure",
 		"SameSite=Strict",
-		`Path=${COOKIE_PATH}`,
+		"Path=/",
 		`Max-Age=${COOKIE_MAX_AGE}`,
 	].join("; ");
 }
@@ -67,15 +65,9 @@ export function setAuthCookie(token: string): string {
  * (immediate expiry).
  */
 export function clearAuthCookie(): string {
-	const secure = process.env.NODE_ENV === "production";
-	return [
-		`${COOKIE_NAME}=`,
-		"HttpOnly",
-		...(secure ? ["Secure"] : []),
-		"SameSite=Strict",
-		`Path=${COOKIE_PATH}`,
-		"Max-Age=0",
-	].join("; ");
+	return [`${COOKIE_NAME}=`, "HttpOnly", "Secure", "SameSite=Strict", "Path=/", "Max-Age=0"].join(
+		"; ",
+	);
 }
 
 // ---------------------------------------------------------------------------
