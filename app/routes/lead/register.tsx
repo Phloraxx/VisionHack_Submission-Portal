@@ -173,6 +173,23 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 			});
 		}
 	} else {
+		// SEC-9: capacity check — fetch institution's maxTeams and current team count
+		const institution = await pb
+			.collection("institutions")
+			.getFirstListItem(pb.filter("id = {:id}", { id: user.institutionId }), {
+				fields: "id,maxTeams",
+			});
+		const currentTeamCount = await pb.collection("teams").getList(1, 1, {
+			filter: pb.filter("institutionId = {:id}", { id: user.institutionId }),
+			fields: "id",
+		});
+		if (institution.maxTeams > 0 && currentTeamCount.totalItems >= institution.maxTeams) {
+			return fail({
+				error: "Your institution has reached the maximum number of teams allowed",
+				status: 403,
+			});
+		}
+
 		const newTeam = await pb.collection("teams").create({
 			name: teamName.slice(0, 100),
 			institutionId: user.institutionId,
@@ -181,6 +198,19 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 			status_changed_at: new Date().toISOString(),
 		});
 		teamId = newTeam.id;
+		// Best-effort audit log for self-registration
+		try {
+			await pb.collection("status_transitions").create({
+				teamId: newTeam.id,
+				actorUserId: user.id,
+				fromStatus: "",
+				toStatus: "registered",
+				role: user.role,
+				at: new Date().toISOString(),
+			});
+		} catch {
+			// Audit log failure is non-blocking
+		}
 	}
 
 	// Create leader member record + others (parallel, bounded). Drop any
@@ -207,8 +237,34 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 			}))
 			.filter((m) => m.email !== leadEmailLower),
 	];
-	// Delete OLD members first, then create new ones.
-	// Creating-then-deleting caused a bug where all members (old + new) were deleted.
+	// Create NEW members first, verify all succeeded, then delete old ones.
+	// If any create fails, clean up the successful creates and return error.
+	// Track per-create success for rollback on partial failure
+	const createdIds: string[] = [];
+	const results = await Promise.allSettled(
+		memberPayloads.map((payload) =>
+			pb
+				.collection("members")
+				.create(payload)
+				.then((r) => {
+					createdIds.push(r.id);
+					return r;
+				}),
+		),
+	);
+	const failures = results.filter((r) => r.status === "rejected");
+	if (failures.length > 0) {
+		// Roll back all members that were successfully created
+		if (createdIds.length > 0) {
+			await Promise.allSettled(createdIds.map((id) => pb.collection("members").delete(id)));
+		}
+		return fail({
+			error: "Failed to save team members. Please try again.",
+			status: 500,
+		});
+	}
+
+	// All creates succeeded — now safely delete old members
 	if (existingTeam) {
 		const oldMembers = await pb.collection("members").getFullList({
 			filter: pb.filter("teamId = {:teamId}", { teamId }),
@@ -216,10 +272,6 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 		});
 		await Promise.all(oldMembers.map((m) => pb.collection("members").delete(m.id)));
 	}
-
-	const creates = await Promise.all(
-		memberPayloads.map((payload) => pb.collection("members").create(payload)),
-	);
 
 	return ok();
 });

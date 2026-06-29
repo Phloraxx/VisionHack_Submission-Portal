@@ -29,8 +29,8 @@ import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "~/lib/constants";
 import { validateFileSignature } from "~/lib/file-validation.server";
 import { secureLoader } from "~/lib/loader.server";
 import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
+import { canSubmitIdea } from "~/lib/team-policy";
 import { getLeadTeam } from "~/lib/team.server";
-import { canTransition } from "~/lib/transitions";
 import type { TeamRecord } from "~/lib/types";
 import { extractFieldErrors } from "~/lib/utils";
 
@@ -98,7 +98,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 	if (!team) return fail({ error: "Team not found", status: 404 });
 
 	// Validate status transition
-	if (!canTransition(team.status, "submitted", "lead")) {
+	if (!canSubmitIdea(team.status)) {
 		return fail({ error: "Your team must be shortlisted before submitting an idea", status: 403 });
 	}
 
@@ -126,29 +126,71 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 		form.append("idea_tech_stack", techStack.slice(0, 500));
 		form.append("status", "submitted");
 		form.append("status_changed_at", new Date().toISOString());
-		await pb.collection("teams").update(team.id, form, {
-			filter: pb.filter("status = {:expected}", { expected: team.status }),
-			$autoCancel: false,
-		});
+		try {
+			await pb.collection("teams").update(team.id, form, {
+				filter: pb.filter("status = {:expected}", { expected: team.status }),
+				$autoCancel: false,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("Failed to apply") || msg.includes("condition")) {
+				return fail({ error: "Team status changed. Please refresh and try again.", status: 409 });
+			}
+			throw err;
+		}
+		// Best-effort audit log
+		try {
+			await pb.collection("status_transitions").create({
+				teamId: team.id,
+				actorUserId: user.id,
+				fromStatus: team.status,
+				toStatus: "submitted",
+				role: user.role,
+				at: new Date().toISOString(),
+			});
+		} catch {
+			// Audit log failure is non-blocking
+		}
 		return ok();
 	}
 
 	// No new file — re-submit text only if the file already exists
 	if (team.submission_file) {
-		await pb.collection("teams").update(
-			team.id,
-			{
-				idea_title: ideaTitle.slice(0, 200),
-				idea_desc: ideaDescription.slice(0, 5000),
-				idea_tech_stack: techStack.slice(0, 500),
-				status: "submitted",
-				status_changed_at: new Date().toISOString(),
-			},
-			{
-				filter: pb.filter("status = {:expected}", { expected: team.status }),
-				$autoCancel: false,
-			},
-		);
+		try {
+			await pb.collection("teams").update(
+				team.id,
+				{
+					idea_title: ideaTitle.slice(0, 200),
+					idea_desc: ideaDescription.slice(0, 5000),
+					idea_tech_stack: techStack.slice(0, 500),
+					status: "submitted",
+					status_changed_at: new Date().toISOString(),
+				},
+				{
+					filter: pb.filter("status = {:expected}", { expected: team.status }),
+					$autoCancel: false,
+				},
+			);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("Failed to apply") || msg.includes("condition")) {
+				return fail({ error: "Team status changed. Please refresh and try again.", status: 409 });
+			}
+			throw err;
+		}
+		// Best-effort audit log
+		try {
+			await pb.collection("status_transitions").create({
+				teamId: team.id,
+				actorUserId: user.id,
+				fromStatus: team.status,
+				toStatus: "submitted",
+				role: user.role,
+				at: new Date().toISOString(),
+			});
+		} catch {
+			// Audit log failure is non-blocking
+		}
 		return ok();
 	}
 

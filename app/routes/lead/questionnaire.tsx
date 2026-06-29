@@ -32,6 +32,7 @@ import { fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { secureLoader } from "~/lib/loader.server";
 import { type QuestionnaireInput, questionnaireSchema } from "~/lib/schemas/questionnaire";
+import { canSubmitQuestionnaire } from "~/lib/team-policy";
 import { getLeadTeam } from "~/lib/team.server";
 import type { TeamRecord } from "~/lib/types";
 
@@ -43,7 +44,7 @@ interface QuestionnaireData {
 	id?: string;
 	teamId: string;
 	userId: string;
-	age?: string;
+	age?: number;
 	gender?: string;
 	education?: string;
 	college_name?: string;
@@ -139,7 +140,7 @@ export const action = secureAction(
 		});
 		if (!team) return fail({ error: "Team not found", status: 404 });
 
-		if (team.status === "withdrawn" || team.status === "rejected") {
+		if (!canSubmitQuestionnaire(team.status)) {
 			return fail({ error: "Cannot submit questionnaire for a team in this status", status: 403 });
 		}
 
@@ -213,7 +214,7 @@ export default function LeadQuestionnaire() {
 	} = useForm({
 		resolver: zodResolver(questionnaireSchema),
 		defaultValues: {
-			age: questionnaire?.age?.toString() ?? "",
+			age: questionnaire?.age ?? 0,
 			gender: questionnaire?.gender ?? "",
 			education: questionnaire?.education ?? "",
 			college_name: questionnaire?.college_name ?? "",

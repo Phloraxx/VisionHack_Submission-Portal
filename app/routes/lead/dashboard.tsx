@@ -66,8 +66,12 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 			team.institutionId
 				? pb
 						.collection("institutions")
-						.getOne<{ campusLeadId?: string }>(team.institutionId, {
-							fields: "id,campusLeadId",
+						.getOne<{
+							campusLeadId?: string;
+							expand?: { campusLeadId?: { name?: string; email?: string } };
+						}>(team.institutionId, {
+							fields: "id,campusLeadId,expand.campusLeadId.name,expand.campusLeadId.email",
+							expand: "campusLeadId",
 						})
 						.catch(() => null)
 				: Promise.resolve(null),
@@ -75,18 +79,11 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 
 		memberCount = memberCountResult.totalItems;
 
-		// Campus lead is the only genuinely dependent hop (needs inst first).
-		if (inst?.campusLeadId) {
-			const lead = await pb
-				.collection("users")
-				.getOne<{ name?: string; email?: string }>(inst.campusLeadId, {
-					fields: "id,name,email",
-				})
-				.catch(() => null);
-			if (lead) {
-				campusLeadName = lead.name || "";
-				campusLeadEmail = lead.email || "";
-			}
+		// Campus lead is fetched via expand above — no separate hop needed.
+		const lead = inst?.expand?.campusLeadId as { name?: string; email?: string } | undefined;
+		if (lead) {
+			campusLeadName = lead.name || "";
+			campusLeadEmail = lead.email || "";
 		}
 	}
 
