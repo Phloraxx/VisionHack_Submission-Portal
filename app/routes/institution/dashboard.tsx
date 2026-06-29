@@ -93,16 +93,13 @@ export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb
 		console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
 
-	// Members: capped getList for the institution's teams. Uses
-	// parameterized filter bindings (not string interpolation).
+	// Members: single query via institution relation traversal (avoids
+	// building an OR chain of up to 500 team IDs).
 	const allMembers =
 		teams.length > 0
 			? (
 					await pb.collection("members").getList<MemberRecord>(1, MAX_SAFE_LIST, {
-						filter: pb.filter(
-							teams.map((_, i) => `teamId = {:t${i}}`).join(" || "),
-							Object.fromEntries(teams.map((t, i) => [`t${i}`, t.id])),
-						),
+						filter: pb.filter("teamId.institutionId = {:instId}", { instId: institution.id }),
 					})
 				).items
 			: [];
@@ -163,7 +160,7 @@ export const action = secureAction(
 						.catch(() => null),
 				]);
 
-				if (teamCount.totalItems >= institution.maxTeams) {
+				if (institution.maxTeams > 0 && teamCount.totalItems >= institution.maxTeams) {
 					return fail({
 						error: `This institution has reached its maximum of ${institution.maxTeams} teams.`,
 					});
@@ -306,7 +303,7 @@ export default function InstitutionDashboard() {
 
 	// Capacity check — invite button disables when this institution
 	// has hit its maxTeams ceiling (server enforces the same).
-	const atCapacity = teams.length >= institution.maxTeams;
+	const atCapacity = institution.maxTeams > 0 && teams.length >= institution.maxTeams;
 
 	const toggleTeamExpansion = (teamId: string) => {
 		setExpandedTeams((prev) => {

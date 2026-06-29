@@ -21,24 +21,33 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ pb }) => {
 	// PB's list rules allow admin-role clients for teams, institutions,
 	// and users — the user's own auth token is sufficient here.
 
-	// All three queries are independent — run them in parallel. Only the
-	// teams scan needs full rows (for per-status counts, and only the
-	// `status` field); institution/user totals come from `totalItems`.
-	const [teams, institutionsPage, usersPage] = await Promise.all([
-		pb.collection("teams").getList<{ status: TeamStatus }>(1, 1000, {
-			fields: "status",
-		}),
+	// Issue one count query per status instead of scanning all rows;
+	// institution/user totals come from `totalItems`.
+	const statusKeys: TeamStatus[] = [
+		"invited",
+		"registered",
+		"shortlisted",
+		"submitted",
+		"selected",
+		"rejected",
+		"withdrawn",
+	];
+	const countQueries = statusKeys.map((status) =>
+		pb
+			.collection("teams")
+			.getList(1, 1, { filter: pb.filter("status = {:status}", { status }), fields: "id" })
+			.then((page) => [status, page.totalItems] as const),
+	);
+	const [institutionsPage, usersPage, ...statusResults] = await Promise.all([
 		pb.collection("institutions").getList(1, 1, { fields: "id" }),
 		pb.collection("users").getList(1, 1, { fields: "id" }),
+		...countQueries,
 	]);
 
-	const statusCounts: Record<string, number> = {};
-	for (const team of teams.items) {
-		statusCounts[team.status] = (statusCounts[team.status] || 0) + 1;
-	}
+	const statusCounts: Record<string, number> = Object.fromEntries(statusResults);
 
 	return {
-		totalTeams: teams.totalItems,
+		totalTeams: Object.values(statusCounts).reduce((a, b) => a + b, 0),
 		totalInstitutions: institutionsPage.totalItems,
 		totalUsers: usersPage.totalItems,
 		statusCounts,
@@ -50,9 +59,14 @@ export function meta() {
 }
 
 export default function AdminDashboard() {
-	// @ts-expect-error secureLoader wraps the actual return type
-	const { totalTeams, totalInstitutions, totalUsers, statusCounts } =
-		useLoaderData<typeof loader>();
+	const { totalTeams, totalInstitutions, totalUsers, statusCounts } = useLoaderData<
+		typeof loader
+	>() as {
+		totalTeams: number;
+		totalInstitutions: number;
+		totalUsers: number;
+		statusCounts: Record<string, number>;
+	};
 
 	const statusEntries = (Object.entries(STATUS_LABELS) as [TeamStatus, string][]).filter(
 		([status]) => (statusCounts[status] || 0) > 0,

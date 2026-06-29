@@ -20,7 +20,9 @@ import { extractFieldErrors } from "~/lib/utils";
 const CODE_PATTERN = /^[A-Z0-9]+$/i;
 
 /** Simple CSV line parser — handles quoted fields and RFC 4180 escaped quotes ("" inside quotes) */
-function parseCsvLine(line: string): string[] {
+function parseCsvLine(rawLine: string): string[] {
+	// Strip trailing \r so Windows-style \r\n line endings are handled cleanly.
+	const line = rawLine.replace(/\r$/, "");
 	const result: string[] = [];
 	let current = "";
 	let inQuotes = false;
@@ -155,7 +157,7 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 			return fail({ error: "Invalid CSV upload" });
 		}
 
-		const lines = text.trim().split("\n");
+		const lines = text.trim().split(/\r?\n/);
 		if (lines.length > 101) {
 			return fail({ error: "CSV too many rows (max 100)" });
 		}
@@ -180,7 +182,15 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 
 		for (let i = 1; i < lines.length; i++) {
 			const cols = parseCsvLine(lines[i]);
-			if (cols.length < 5) continue;
+			if (cols.length < 5) {
+				results.push({
+					row: i + 1,
+					name: "unknown",
+					status: "skipped",
+					error: "Row has fewer than 5 columns",
+				});
+				continue;
+			}
 
 			const [instName, district, code, leadName, leadEmail] = cols;
 			const rowNum = i + 1;
@@ -221,6 +231,20 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 						name: cleanInst,
 						status: "skipped",
 						error: "Code already exists",
+					});
+					continue;
+				}
+				// COR-5: Check for existing user with this email.
+				const existingUser = await pb
+					.collection("users")
+					.getFirstListItem(pb.filter("email = {:email}", { email: cleanLeadEmail }))
+					.catch(() => null);
+				if (existingUser) {
+					results.push({
+						row: rowNum,
+						name: cleanInst,
+						status: "skipped",
+						error: `Email "${cleanLeadEmail}" already exists`,
 					});
 					continue;
 				}

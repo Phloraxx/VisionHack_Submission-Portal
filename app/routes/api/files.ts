@@ -79,7 +79,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	const fileToken = await auth.pb.files.getToken();
 
 	try {
-		const response = await fetch(`${fileUrl}?token=${encodeURIComponent(fileToken)}`);
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 30_000);
+		const response = await fetch(`${fileUrl}?token=${encodeURIComponent(fileToken)}`, {
+			signal: controller.signal,
+		});
+		clearTimeout(timeoutId);
 
 		if (!response.ok) {
 			return new Response("File not found", { status: 404 });
