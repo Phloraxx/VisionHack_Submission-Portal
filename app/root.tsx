@@ -22,11 +22,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<meta name="theme-color" content="#2a2620" media="(prefers-color-scheme: dark)" />
 				<Meta />
 				<Links />
-				<script
-					dangerouslySetInnerHTML={{
-						__html: `(function(){try{var s=localStorage.getItem('vh-theme');var p=window.matchMedia('(prefers-color-scheme:dark)').matches;if(s==='dark'||(!s&&p))document.documentElement.classList.add('dark');}catch(e){}})()`,
-					}}
-				/>
+				<script src="/theme-init.js" />
 			</head>
 			<body className="min-h-screen bg-background text-foreground antialiased">
 				{children}
