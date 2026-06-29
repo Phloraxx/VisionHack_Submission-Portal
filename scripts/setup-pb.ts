@@ -150,6 +150,14 @@ const NO_RULES = {
 	updateRule: null,
 	deleteRule: null,
 } as const;
+/** Audit log rules: any authenticated user can create; admin can read/delete. */
+const STATUS_TRANSITIONS_RULES = {
+	listRule: '@request.auth.role = "admin"',
+	viewRule: '@request.auth.role = "admin"',
+	createRule: '@request.auth.id != ""',
+	updateRule: null,
+	deleteRule: '@request.auth.role = "admin"',
+} as const;
 
 /** Public read; admin role for writes */
 const CONFIG_RULES = {
@@ -190,7 +198,7 @@ const TEAMS_RULES = {
 	// institution via the invite flow which then assigns a leader).
 	createRule:
 		'@request.auth.role = "admin" || ' +
-		'@request.auth.role = "institution" || ' +
+		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId) || ' +
 		'@request.auth.role = "lead"',
 	// Lead can update only their own team and only while the status
 	// transition is legal. Admin can update anything. Institution can
@@ -198,7 +206,7 @@ const TEAMS_RULES = {
 	updateRule:
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'@request.auth.role = "institution" || ' +
+		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId) || ' +
 		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead")',
 	// Only admin can delete teams.
 	deleteRule: '@request.auth.role = "admin"',
@@ -221,7 +229,7 @@ const MEMBERS_RULES = {
 	createRule:
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
-		'@request.auth.role = "institution" || ' +
+		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
 		"teamId.leaderUserId ?= @request.auth.id)",
 	updateRule:
 		'@request.auth.id != "" && (' +
@@ -239,14 +247,20 @@ const QUESTIONNAIRE_RULES = {
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
+		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
 		"userId ?= @request.auth.id)",
 	viewRule:
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
+		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
 		"userId ?= @request.auth.id)",
 	createRule:
-		'@request.auth.id != "" && (' + 'userId ?= @request.auth.id || @request.auth.role = "admin")',
+		'@request.auth.id != "" && (' +
+		'@request.auth.role = "admin" || ' +
+		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
+		'(@request.auth.role = "lead" && teamId.leaderUserId ?= @request.auth.id && userId ?= @request.auth.id) || ' +
+		"userId ?= @request.auth.id)",
 	updateRule:
 		'@request.auth.id != "" && (' + 'userId ?= @request.auth.id || @request.auth.role = "admin")',
 	deleteRule: '@request.auth.role = "admin"',
@@ -256,8 +270,16 @@ const QUESTIONNAIRE_RULES = {
  *  (needed for the institution picker and the team listing), but only
  *  admin can mutate. */
 const INSTITUTIONS_RULES = {
-	listRule: '@request.auth.id != ""',
-	viewRule: '@request.auth.id != ""',
+	listRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'(@request.auth.role = "institution" && id ?= @request.auth.institutionId) || ' +
+		'@request.auth.role = "lead"',
+	viewRule:
+		'@request.auth.role = "admin" || ' +
+		'@request.auth.role = "coordinator" || ' +
+		'(@request.auth.role = "institution" && id ?= @request.auth.institutionId) || ' +
+		'@request.auth.role = "lead"',
 	createRule: '@request.auth.role = "admin"',
 	updateRule: '@request.auth.role = "admin"',
 	deleteRule: '@request.auth.role = "admin"',
@@ -271,14 +293,15 @@ const USERS_RULES = {
 		"id = @request.auth.id || " +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'@request.auth.role = "institution"',
+		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId)',
 	viewRule:
 		"id = @request.auth.id || " +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'@request.auth.role = "institution"',
+		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId)',
 	createRule:
-		'@request.auth.role = "admin" || (@request.auth.role = "institution" && @request.body.role = "lead")',
+		'@request.auth.role = "admin" || ' +
+		'(@request.auth.role = "institution" && @request.body.role = "lead" && @request.body.institutionId ?= @request.auth.institutionId)',
 	updateRule:
 		"id = @request.auth.id && @request.body.role:isset = false && " +
 		"@request.body.institutionId:isset = false",
@@ -843,7 +866,13 @@ async function ensureMembersCollection(
 ): Promise<void> {
 	console.log("\n🔧 Ensuring «members» collection…");
 
+	const existing = await getCollection(token, "members");
 	const teamsId = collectionIds.get("teams");
+
+	if (existing) {
+		console.log("  ✅ Members collection already exists");
+		return;
+	}
 
 	await createCollection(token, {
 		name: "members",
@@ -1417,6 +1446,7 @@ async function main(): Promise<void> {
 		QUESTIONNAIRE_RULES,
 		"questionnaire",
 	);
+	await ensureAuthenticatedAccess(token, "status_transitions", STATUS_TRANSITIONS_RULES, "audit");
 	console.log("  ✅ All collections have role-scoped access rules");
 
 	// Protect users collection against self-role-escalation AND apply read scope
