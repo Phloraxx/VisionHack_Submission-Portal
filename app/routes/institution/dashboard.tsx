@@ -37,7 +37,11 @@ import { getConfig } from "~/lib/config.server";
 import { getStr, isEmail } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
 import { shortlistSchema, unshortlistSchema } from "~/lib/schemas/institution";
-import { getInstitutionForUser, transitionTeamStatus } from "~/lib/team.server";
+import {
+	getInstitutionForUser,
+	sendStatusChangeEmail,
+	transitionTeamStatus,
+} from "~/lib/team.server";
 import type { InstitutionRecord, MemberRecord, TeamStatus } from "~/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -257,6 +261,24 @@ export const action = secureAction(
 					actorUserId: user.id,
 				});
 				if (!result.ok) return result.response;
+				// Best-effort email notification to the lead
+				try {
+					const team = await pb.collection("teams").getOne(teamId, {
+						expand: "leaderUserId",
+						fields: "id,name,expand.leaderUserId.email,expand.leaderUserId.name",
+					});
+					const lead = team.expand?.leaderUserId;
+					if (lead?.email) {
+						void sendStatusChangeEmail({
+							to: lead.email,
+							leadName: lead.name || "Team Lead",
+							teamName: team.name,
+							status: to,
+						});
+					}
+				} catch {
+					// Email failure is non-blocking
+				}
 				return ok();
 			}
 

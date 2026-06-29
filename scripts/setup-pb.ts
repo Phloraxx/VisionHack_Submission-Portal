@@ -154,7 +154,8 @@ const NO_RULES = {
 const STATUS_TRANSITIONS_RULES = {
 	listRule: '@request.auth.role = "admin"',
 	viewRule: '@request.auth.role = "admin"',
-	createRule: '@request.auth.id != ""',
+	createRule:
+		'@request.auth.id != "" && actorUserId ?= @request.auth.id && role ?= @request.auth.role',
 	updateRule: null,
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
@@ -194,20 +195,37 @@ const TEAMS_RULES = {
 		'@request.auth.role = "coordinator" || ' +
 		'(institutionId ?= @request.auth.institutionId && @request.auth.role = "institution") || ' +
 		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead")',
-	// Only admin/institution create teams (admin for direct creation,
-	// institution via the invite flow which then assigns a leader).
+	// Admin: unrestricted. Institution: scoped to own, status=invited. Lead: scoped to own inst + self, status=registered.
 	createRule:
 		'@request.auth.role = "admin" || ' +
-		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId) || ' +
-		'@request.auth.role = "lead"',
-	// Lead can update only their own team and only while the status
-	// transition is legal. Admin can update anything. Institution can
-	// update teams within their institution (shortlist/unshortlist).
+		'(@request.auth.role = "institution" && ' +
+		"institutionId ?= @request.auth.institutionId && " +
+		"@request.body.leaderUserId:isset = false && " +
+		'(@request.body.status:isset = false || @request.body.status = "invited")) || ' +
+		'(@request.auth.role = "lead" && ' +
+		"institutionId ?= @request.auth.institutionId && " +
+		"leaderUserId ?= @request.auth.id && " +
+		'(@request.body.status:isset = false || @request.body.status = "registered"))',
+	// Field-scoped updates: prevent ownership/institution injection.
+	// Status allowlists per role prevent state-machine bypass via direct PB REST.
 	updateRule:
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
-		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId) || ' +
-		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead")',
+		'(@request.auth.role = "institution" && ' +
+		"institutionId ?= @request.auth.institutionId && " +
+		"@request.body.leaderUserId:isset = false && " +
+		"@request.body.institutionId:isset = false && " +
+		"(@request.body.status:isset = false || " +
+		'@request.body.status = "registered" || ' +
+		'@request.body.status = "shortlisted" || ' +
+		'@request.body.status = "invited")) || ' +
+		'(leaderUserId ?= @request.auth.id && @request.auth.role = "lead" && ' +
+		"@request.body.leaderUserId:isset = false && " +
+		"@request.body.institutionId:isset = false && " +
+		"@request.body.status:isset = false || " +
+		'@request.body.status = "registered" || ' +
+		'@request.body.status = "submitted" || ' +
+		'@request.body.status = "withdrawn")',
 	// Only admin can delete teams.
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
@@ -259,10 +277,12 @@ const QUESTIONNAIRE_RULES = {
 		'@request.auth.id != "" && (' +
 		'@request.auth.role = "admin" || ' +
 		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
-		'(@request.auth.role = "lead" && teamId.leaderUserId ?= @request.auth.id && userId ?= @request.auth.id) || ' +
-		"userId ?= @request.auth.id)",
+		'(@request.auth.role = "lead" && teamId.leaderUserId ?= @request.auth.id && userId ?= @request.auth.id))',
 	updateRule:
-		'@request.auth.id != "" && (' + 'userId ?= @request.auth.id || @request.auth.role = "admin")',
+		'@request.auth.id != "" && (' +
+		'@request.auth.role = "admin" || ' +
+		'(@request.auth.role = "institution" && teamId.institutionId ?= @request.auth.institutionId) || ' +
+		"(teamId.leaderUserId ?= @request.auth.id))",
 	deleteRule: '@request.auth.role = "admin"',
 } as const;
 
@@ -274,12 +294,12 @@ const INSTITUTIONS_RULES = {
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
 		'(@request.auth.role = "institution" && id ?= @request.auth.institutionId) || ' +
-		'@request.auth.role = "lead"',
+		'(@request.auth.role = "lead" && id ?= @request.auth.institutionId)',
 	viewRule:
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
 		'(@request.auth.role = "institution" && id ?= @request.auth.institutionId) || ' +
-		'@request.auth.role = "lead"',
+		'(@request.auth.role = "lead" && id ?= @request.auth.institutionId)',
 	createRule: '@request.auth.role = "admin"',
 	updateRule: '@request.auth.role = "admin"',
 	deleteRule: '@request.auth.role = "admin"',
