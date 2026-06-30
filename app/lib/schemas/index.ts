@@ -16,5 +16,5 @@ export type { CreateCampusLeadInput } from "./campus-leads";
 export { configUpdateSchema } from "./config";
 export type { ConfigUpdateInput } from "./config";
 
-export { shortlistSchema, unshortlistSchema } from "./institution";
-export type { ShortlistInput, UnshortlistInput } from "./institution";
+export { shortlistSchema, unshortlistSchema, transitionTeamSchema } from "./institution";
+export type { ShortlistInput, UnshortlistInput, TransitionTeamInput } from "./institution";

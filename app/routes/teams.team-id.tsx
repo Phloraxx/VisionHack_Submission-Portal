@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { fail, ok, secureAction } from "~/lib/action.server";
 import { downloadTeamCSV } from "~/lib/csv-export.client";
 import { secureLoader } from "~/lib/loader.server";
+import { transitionTeamSchema } from "~/lib/schemas/institution";
 import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
 import { getValidTransitions } from "~/lib/team-status";
 import {
@@ -165,19 +166,14 @@ export const action = secureAction(
 		const teamId = params.teamId ?? (formData.get("teamId") as string | null) ?? "";
 
 		if (intent === "transition") {
-			const toStatus = formData.get("toStatus") as TeamStatus;
-			const VALID_TRANSITION_STATUSES = [
-				"registered",
-				"shortlisted",
-				"selected",
-				"rejected",
-				"withdrawn",
-			] as const;
-			if (
-				!VALID_TRANSITION_STATUSES.includes(toStatus as (typeof VALID_TRANSITION_STATUSES)[number])
-			) {
-				return fail({ error: "Invalid target status", status: 400 });
+			const parsed = transitionTeamSchema.safeParse({
+				teamId,
+				toStatus: formData.get("toStatus"),
+			});
+			if (!parsed.success) {
+				return fail({ error: parsed.error.issues[0]?.message ?? "Invalid input.", status: 400 });
 			}
+			const { toStatus } = parsed.data;
 			// Coordinator now has write access via PB updateRule — use their own client.
 			const actionPb = pb;
 

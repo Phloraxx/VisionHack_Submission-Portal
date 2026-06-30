@@ -9,7 +9,8 @@
 			".react-router",
 			"package-lock.json",
 			"tests/*.mjs",
-			"tests/*.ps1"
+			"tests/*.ps1",
+			"test-results"
 		]
 	},
 	"formatter": { "enabled": true, "indentStyle": "tab", "lineWidth": 100 },

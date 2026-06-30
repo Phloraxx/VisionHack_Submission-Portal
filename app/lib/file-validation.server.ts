@@ -106,7 +106,7 @@ export async function validateFileSignature(file: File): Promise<boolean> {
 	if (matchesSignature(head, ZIP_HEADER)) {
 		const bytes = new Uint8Array(await file.arrayBuffer());
 		const contentTypes = extractContentTypesXml(bytes);
-		return contentTypes?.includes("presentationml");
+		return contentTypes?.includes("presentationml") ?? false;
 	}
 
 	return false;

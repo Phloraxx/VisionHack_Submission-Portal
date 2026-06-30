@@ -10,6 +10,7 @@ import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { createPocketBaseClient } from "~/lib/pocketbase.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
+import { forgotPasswordSchema } from "~/lib/schemas/auth";
 
 export async function action({ request }: ActionFunctionArgs) {
 	try {
@@ -19,11 +20,13 @@ export async function action({ request }: ActionFunctionArgs) {
 	}
 
 	const formData = await request.formData();
-	const email = (formData.get("email") as string | null)?.trim()?.toLowerCase() ?? "";
-
-	if (!email) {
-		return data({ error: "Email is required." }, { status: 400 });
+	const parsed = forgotPasswordSchema.safeParse({
+		email: (formData.get("email") as string | null)?.trim() ?? "",
+	});
+	if (!parsed.success) {
+		return data({ error: parsed.error.issues[0]?.message ?? "Invalid email." }, { status: 400 });
 	}
+	const email = parsed.data.email.toLowerCase();
 
 	// Rate limiting
 	const ip = getClientIp(request);

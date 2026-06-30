@@ -25,7 +25,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { useActionToast } from "~/hooks/use-action-toast";
 import { fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
-import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "~/lib/constants";
+import { MAX_FILE_SIZE } from "~/lib/constants";
 import { validateFileSignature } from "~/lib/file-validation.server";
 import { secureLoader } from "~/lib/loader.server";
 import { submitIdeaSchema } from "~/lib/schemas/submit-idea";

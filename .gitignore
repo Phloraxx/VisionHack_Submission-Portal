@@ -8,6 +8,8 @@ build/
 .codegraph/
 .wrangler/
 .playwright-mcp/
+.playwright-report/
+test-results/
 .reasonix/
 *.tsbuildinfo
 

@@ -20,6 +20,7 @@ import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { createAuthenticatedClient, createPocketBaseClient } from "~/lib/pocketbase.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
+import { loginSchema } from "~/lib/schemas/auth";
 import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
 import type { UserRecord } from "~/lib/types";
 
@@ -61,18 +62,15 @@ export async function action({ request }: ActionFunctionArgs) {
 	}
 
 	const formData = await request.formData();
-	const email = (formData.get("email") as string | null)?.trim()?.toLowerCase() ?? "";
-	const password = (formData.get("password") as string | null) ?? "";
-
-	if (!email || !password) {
-		return data({ error: "Email and password are required." }, { status: 400 });
+	const parsed = loginSchema.safeParse({
+		email: (formData.get("email") as string | null)?.trim() ?? "",
+		password: (formData.get("password") as string | null) ?? "",
+	});
+	if (!parsed.success) {
+		return data({ error: parsed.error.issues[0]?.message ?? "Invalid input." }, { status: 400 });
 	}
-
-	// Validate email format after confirming it's non-empty
-	const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-	if (!emailRegex.test(email)) {
-		return data({ error: "Valid email is required." }, { status: 400 });
-	}
+	const email = parsed.data.email.toLowerCase();
+	const password = parsed.data.password;
 
 	// App-level rate limiting
 	const ip = getClientIp(request);
