@@ -29,7 +29,26 @@ export function getStr(formData: FormData, key: string, opts: GetStrOptions = {}
 /** Read all repeated string fields with optional trim/max. */
 export function getAllStr(formData: FormData, key: string, opts: GetStrOptions = {}): string[] {
 	const { trim = true, lower = false, max } = opts;
-	return formData.getAll(key).map((v) => {
+
+	// First try the bare key (FormData.getAll).
+	let values = formData.getAll(key);
+
+	// If bare key returns nothing, collect react-hook-form indexed keys
+	// (e.g. "memberName.0", "memberName.1", …).
+	if (values.length === 0) {
+		const prefix = `${key}.`;
+		const entries: Array<{ index: number; value: FormDataEntryValue }> = [];
+		for (const [k, v] of formData.entries()) {
+			if (k.startsWith(prefix)) {
+				const idx = Number.parseInt(k.slice(prefix.length), 10);
+				if (!Number.isNaN(idx)) entries.push({ index: idx, value: v });
+			}
+		}
+		entries.sort((a, b) => a.index - b.index);
+		values = entries.map((e) => e.value);
+	}
+
+	return values.map((v) => {
 		let value = String(v ?? "");
 		if (trim) value = value.trim();
 		if (lower) value = value.toLowerCase();
