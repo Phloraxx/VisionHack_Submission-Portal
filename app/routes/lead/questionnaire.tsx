@@ -214,7 +214,7 @@ export default function LeadQuestionnaire() {
 	} = useForm({
 		resolver: zodResolver(questionnaireSchema),
 		defaultValues: {
-			age: questionnaire?.age ?? 0,
+			age: questionnaire?.age ?? ("" as unknown as number),
 			gender: questionnaire?.gender ?? "",
 			education: questionnaire?.education ?? "",
 			college_name: questionnaire?.college_name ?? "",

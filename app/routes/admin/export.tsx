@@ -47,8 +47,11 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) =>
 		console.warn(`[members] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
 
+	// Only count members whose team exists in the loaded set —
+	// avoids a total/filtered mismatch from orphaned member records.
+	const teamIds = new Set(teams.map((t) => t.id));
 	const memberCounts = countByKey(members, (m) => m.teamId);
-	const totalMembers = members.length;
+	const totalMembers = members.filter((m) => teamIds.has(m.teamId)).length;
 
 	return {
 		user,
@@ -160,11 +163,12 @@ export default function AdminExport() {
 				</CardHeader>
 				<CardContent>
 					<a
-						href={`/api/export/csv?filterStatus=${statusFilter}`}
+						href={`/api/export/csv?filterStatus=${statusFilter}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}`}
 						className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/80 transition-colors w-full sm:w-auto"
 					>
 						<Download className="h-5 w-5" />
-						Download CSV ({filteredTeams.length} teams, {filteredMemberCount} members)
+						Download CSV ({filteredTeams.length} {filteredTeams.length === 1 ? "team" : "teams"},{" "}
+						{filteredMemberCount} members)
 					</a>
 
 					{filteredTeams.length === 0 && (

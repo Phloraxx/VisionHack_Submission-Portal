@@ -333,7 +333,7 @@ export default function CoordinatorDashboard() {
 				<MetricCard label="Registered" value={stats.registered} tone="info" />
 				<MetricCard label="Shortlisted" value={stats.shortlisted} tone="primary" />
 				<MetricCard label="Submitted" value={stats.submitted} tone="success" />
-				<MetricCard label="Institutions" value={stats.totalInstitutions} icon={Building2} />
+				<MetricCard label="Inst. w/ Teams" value={stats.totalInstitutions} icon={Building2} />
 			</div>
 
 			{/* View Mode + Filters */}
@@ -413,7 +413,7 @@ export default function CoordinatorDashboard() {
 									</SelectContent>
 								</Select>
 							}
-							searchPlaceholder="Search teams\u2026"
+							searchPlaceholder="Search teams…"
 						/>
 					)}
 				</CardContent>

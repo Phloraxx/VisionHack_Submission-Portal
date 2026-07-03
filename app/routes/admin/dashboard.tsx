@@ -152,7 +152,7 @@ export default function AdminDashboard() {
 						<PanelHeader
 							eyebrow="Pipeline"
 							title="Where teams are"
-							description="Distribution across the seven workflow states."
+							description="Distribution across active workflow states."
 							actions={
 								<Link
 									to="/admin/teams"

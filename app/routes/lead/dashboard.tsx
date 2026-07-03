@@ -63,15 +63,13 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 				filter: pb.filter("teamId = {:tid}", { tid: team.id }),
 				fields: "id",
 			}),
+			// Campus lead: campusLeadId is a text field (user ID), not a
+			// relation — expand won't work. Fetch the user record directly.
 			team.institutionId
 				? pb
 						.collection("institutions")
-						.getOne<{
-							campusLeadId?: string;
-							expand?: { campusLeadId?: { name?: string; email?: string } };
-						}>(team.institutionId, {
-							fields: "id,campusLeadId,expand.campusLeadId.name,expand.campusLeadId.email",
-							expand: "campusLeadId",
+						.getOne<{ campusLeadId?: string }>(team.institutionId, {
+							fields: "id,campusLeadId",
 						})
 						.catch(() => null)
 				: Promise.resolve(null),
@@ -79,11 +77,18 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 
 		memberCount = memberCountResult.totalItems;
 
-		// Campus lead is fetched via expand above — no separate hop needed.
-		const lead = inst?.expand?.campusLeadId as { name?: string; email?: string } | undefined;
-		if (lead) {
-			campusLeadName = lead.name || "";
-			campusLeadEmail = lead.email || "";
+		// Fetch the campus lead user by the ID stored on the institution.
+		const campusLeadId = inst?.campusLeadId;
+		if (campusLeadId) {
+			try {
+				const lead = await pb
+					.collection("users")
+					.getOne<{ name?: string; email?: string }>(campusLeadId, { fields: "name,email" });
+				campusLeadName = lead.name || "";
+				campusLeadEmail = lead.email || "";
+			} catch {
+				// Campus lead user may have been deleted — leave fields empty.
+			}
 		}
 	}
 

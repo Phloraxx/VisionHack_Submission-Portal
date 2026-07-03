@@ -325,7 +325,10 @@ export default function InstitutionDashboard() {
 
 	// Capacity check — invite button disables when this institution
 	// has hit its maxTeams ceiling (server enforces the same).
-	const atCapacity = institution.maxTeams > 0 && teams.length >= institution.maxTeams;
+	// maxTeams=0 means unlimited (no cap).
+	const maxTeams = institution.maxTeams;
+	const shortlistCap = maxTeams > 0 ? maxTeams : Number.POSITIVE_INFINITY;
+	const atCapacity = maxTeams > 0 && teams.length >= maxTeams;
 
 	const toggleTeamExpansion = (teamId: string) => {
 		setExpandedTeams((prev) => {
@@ -383,11 +386,15 @@ export default function InstitutionDashboard() {
 					label="Total teams"
 					value={teams.length}
 					icon={Users}
-					context={`Capacity ${institution.maxTeams}`}
+					context={maxTeams > 0 ? `Capacity ${maxTeams}` : "Unlimited"}
 				/>
 				<MetricCard
 					label="Shortlisted"
-					value={`${shortlistedCount} / ${institution.maxTeams}`}
+					value={
+						shortlistCap === Number.POSITIVE_INFINITY
+							? `${shortlistedCount}`
+							: `${shortlistedCount} / ${maxTeams}`
+					}
 					icon={CheckCircle}
 					tone="primary"
 					context="Moved to submission phase"
@@ -509,8 +516,9 @@ export default function InstitutionDashboard() {
 						</ol>
 
 						<div className="rounded-md border border-info/30 bg-info/8 px-3 py-2.5 text-xs text-info leading-relaxed">
-							Invite as many teams as you want, but you can only shortlist up to{" "}
-							{institution.maxTeams} teams for final submission.
+							{shortlistCap === Number.POSITIVE_INFINITY
+								? "Invite and shortlist as many teams as you want for final submission."
+								: `Invite as many teams as you want, but you can only shortlist up to ${maxTeams} teams for final submission.`}
 						</div>
 					</CardContent>
 				</Card>

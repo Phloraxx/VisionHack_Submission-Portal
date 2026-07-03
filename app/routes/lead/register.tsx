@@ -173,6 +173,15 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 			});
 		}
 	} else {
+		// A lead without an institution cannot register — the team requires
+		// an institutionId, and the capacity check below needs it too.
+		if (!user.institutionId) {
+			return fail({
+				error:
+					"You have not been assigned to an institution. Contact your campus lead or event admin.",
+				status: 403,
+			});
+		}
 		// SEC-9: capacity check — fetch institution's maxTeams and current team count
 		const institution = await pb
 			.collection("institutions")

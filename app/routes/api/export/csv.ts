@@ -21,21 +21,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 	const url = new URL(request.url);
 	const rawStatus = url.searchParams.get("filterStatus") || "all";
-	// Only treat the value as a filter if it's a real status; otherwise "all".
+	// Only treat the value as a real status; otherwise "all".
 	const filterStatus = TEAM_STATUSES.includes(rawStatus as TeamStatus)
 		? (rawStatus as TeamStatus)
 		: "all";
+	const searchQuery = (url.searchParams.get("q") || "").trim().slice(0, 100);
 
 	const pb = auth.pb;
 
-	// Push the status filter into PocketBase instead of fetching everything
+	// Build the PocketBase filter from status + search query.
+	const clauses: string[] = [];
+	if (filterStatus !== "all") {
+		clauses.push(pb.filter("status = {:status}", { status: filterStatus }));
+	}
+	if (searchQuery) {
+		const safe = searchQuery.replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
+		clauses.push(pb.filter("(name ~ {:q} || teamCode ~ {:q})", { q: safe }));
+	}
+	const teamFilter = clauses.length > 0 ? clauses.join(" && ") : undefined;
+
+	// Push the filter into PocketBase instead of fetching everything
 	// and filtering in JS.
 	const MAX_SAFE_LIST = 500;
 	const filteredResult = await pb.collection("teams").getList<TeamView>(1, MAX_SAFE_LIST, {
-		filter:
-			filterStatus !== "all"
-				? pb.filter("status = {:status}", { status: filterStatus })
-				: undefined,
+		filter: teamFilter,
 		expand: "institutionId,leaderUserId",
 		sort: "-created",
 	});

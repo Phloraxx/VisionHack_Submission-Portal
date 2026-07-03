@@ -129,7 +129,7 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 				leadEmail,
 			});
 
-			return ok({ type: "single", institutionName, leadName, leadEmail });
+			return ok({ type: "single", success: true, institutionName, leadName, leadEmail });
 		} catch (err) {
 			console.error("[campus-leads] create-single failed:", err);
 			return fail({ error: "Failed to create campus lead" });
@@ -270,7 +270,7 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 			}
 		}
 
-		return ok({ type: "bulk", created, total: results.length, results });
+		return ok({ type: "bulk", success: true, created, total: results.length, results });
 	}
 
 	return fail({ error: "Invalid intent" });
