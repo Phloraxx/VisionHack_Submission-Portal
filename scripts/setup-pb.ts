@@ -315,11 +315,13 @@ const USERS_RULES = {
 		"id = @request.auth.id || " +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
+		'@request.auth.role = "lead" || ' +
 		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId)',
 	viewRule:
 		"id = @request.auth.id || " +
 		'@request.auth.role = "admin" || ' +
 		'@request.auth.role = "coordinator" || ' +
+		'@request.auth.role = "lead" || ' +
 		'(@request.auth.role = "institution" && institutionId ?= @request.auth.institutionId)',
 	createRule:
 		'@request.auth.role = "admin" || ' +
