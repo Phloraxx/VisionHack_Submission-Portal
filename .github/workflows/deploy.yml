@@ -11,21 +11,32 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Check branch and status
+      - name: Decide whether to deploy
         id: gate
         run: |
           EVENT_BRANCH="${{ github.event.workflow_run.head_branch }}"
           EVENT_STATUS="${{ github.event.workflow_run.conclusion }}"
           echo "branch=${EVENT_BRANCH}" >> "$GITHUB_OUTPUT"
-          echo "status=${EVENT_STATUS}" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT_BRANCH" != "v2" ] || [ "$EVENT_STATUS" != "success" ]; then
-            echo "Skipping deploy: branch=${EVENT_BRANCH} status=${EVENT_STATUS}"
+
+          if [ "$EVENT_STATUS" != "success" ]; then
+            echo "Skipping deploy: CI concluded ${EVENT_STATUS}"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # `v2` stays accepted until the rename to `main` has settled; remove it
+          # once no workflow run reports the old branch name.
+          if [ "$EVENT_BRANCH" != "main" ] && [ "$EVENT_BRANCH" != "v2" ]; then
+            echo "Skipping deploy: ${EVENT_BRANCH} is not a deploy branch"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
       - name: Trigger Dokploy deployment
-        if: steps.gate.outputs.branch == 'v2' && steps.gate.outputs.status == 'success'
+        if: steps.gate.outputs.deploy == 'true'
         run: |
-          curl -X POST "${{ secrets.DOKPLOY_WEBHOOK }}" \
+          curl --fail-with-body -X POST "${{ secrets.DOKPLOY_WEBHOOK }}" \
             --header "Content-type: application/json" \
-            --data '{"ref": "refs/heads/v2"}'
+            --data '{"ref": "refs/heads/${{ steps.gate.outputs.branch }}"}'
