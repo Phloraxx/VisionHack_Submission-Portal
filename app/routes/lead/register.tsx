@@ -31,14 +31,22 @@ import {
 import { Separator } from "~/components/ui/separator";
 import { useActionToast } from "~/hooks/use-action-toast";
 import { useAutoSave } from "~/hooks/use-auto-save";
-import { fail, ok, secureAction } from "~/lib/action.server";
+import { type ActionResult, fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
+import {
+	type MemberCreateInput,
+	institutions,
+	members,
+	statusTransitions,
+	teams,
+	withTransaction,
+} from "~/lib/db.server";
 import { getAllStr, getStr } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
 import { registerSchema } from "~/lib/schemas/register";
 import { getLeadTeam } from "~/lib/team.server";
 import { canTransition } from "~/lib/transitions";
-import type { MemberRecord, TeamRecord } from "~/lib/types";
+import type { MemberRecord, TeamRecord, UserRecord } from "~/lib/types";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -72,6 +80,24 @@ interface ActionData {
 	fieldErrors?: Record<string, string>;
 }
 
+/** Upper bound for the member reads — a team has at most six rows. */
+const MAX_SAFE_LIST = 500;
+
+/** `teams.name` is varchar(100); the form allows more. */
+const TEAM_NAME_MAX = 100;
+
+/**
+ * Abort the registration transaction with a ready-made action result.
+ *
+ * Thrown from inside `withTransaction` so every write rolls back, then caught
+ * by the action and returned to the client unchanged.
+ */
+class RegistrationError extends Error {
+	constructor(readonly response: ActionResult) {
+		super("registration aborted");
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Loader
 // ---------------------------------------------------------------------------
@@ -80,22 +106,186 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 	// Team and config are independent — fetch in parallel.
 	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(pb, user.id), getConfig(pb)]);
 
-	const MAX_SAFE_LIST = 500;
-	const members: MemberRecord[] = team
-		? (
-				await pb.collection("members").getList<MemberRecord>(1, MAX_SAFE_LIST, {
-					filter: pb.filter("teamId = {:teamId}", { teamId: team.id }),
-				})
-			).items
+	const memberRows: MemberRecord[] = team
+		? (await members.list(user, { teamId: team.id, perPage: MAX_SAFE_LIST })).items
 		: [];
 
 	return {
 		user,
 		team,
-		members,
+		members: memberRows,
 		registrationOpen: flags.registration_open ?? false,
 	} satisfies LoaderData;
 });
+
+// ---------------------------------------------------------------------------
+// Action helpers
+// ---------------------------------------------------------------------------
+
+interface ResolvedTeam {
+	id: string;
+	/** True when the team already existed, so its roster must be replaced. */
+	existing: boolean;
+}
+
+/**
+ * Find the lead's team or create it.
+ *
+ * Throws `RegistrationError` carrying the response the route has always
+ * returned when the lead may not register: a status they cannot re-register
+ * from, a lost optimistic lock, a missing institution, or a full institution
+ * (SEC-9).
+ */
+async function resolveTeam(user: UserRecord, teamName: string): Promise<ResolvedTeam> {
+	const existingTeam = await teams.findByLeader(user, user.id);
+
+	if (existingTeam) {
+		if (!canTransition(existingTeam.status, "registered", "lead")) {
+			throw new RegistrationError(
+				fail({
+					error: `Cannot re-register team in "${existingTeam.status}" status. Contact your institution lead.`,
+				}),
+			);
+		}
+
+		// Optimistic lock on the status we just checked — rejects a
+		// concurrent transition (e.g. institution shortlisting the team)
+		// rather than silently overwriting it back to "registered".
+		const updated = await teams.update(
+			user,
+			existingTeam.id,
+			{
+				name: teamName.slice(0, TEAM_NAME_MAX),
+				status: "registered",
+				statusChangedAt: new Date().toISOString(),
+			},
+			{ expectedStatus: existingTeam.status },
+		);
+		if (!updated) {
+			throw new RegistrationError(
+				fail({
+					error: "This team's status was changed by another action. Please refresh and try again.",
+					status: 409,
+				}),
+			);
+		}
+		return { id: updated.id, existing: true };
+	}
+
+	// A lead without an institution cannot register — the team requires an
+	// institutionId, and the capacity check below needs it too.
+	if (!user.institutionId) {
+		throw new RegistrationError(
+			fail({
+				error:
+					"You have not been assigned to an institution. Contact your campus lead or event admin.",
+				status: 403,
+			}),
+		);
+	}
+
+	// SEC-9: capacity check — the institution's maxTeams against its current
+	// team count.
+	const institution = await institutions.getOne(user, user.institutionId);
+	if (!institution) throw new Error("Institution not found");
+	const currentTeamCount = await teams.countByInstitution(user, user.institutionId);
+	if (institution.maxTeams > 0 && currentTeamCount >= institution.maxTeams) {
+		throw new RegistrationError(
+			fail({
+				error: "Your institution has reached the maximum number of teams allowed",
+				status: 403,
+			}),
+		);
+	}
+
+	const newTeam = await teams.create(user, {
+		name: teamName.slice(0, TEAM_NAME_MAX),
+		institutionId: user.institutionId,
+		leaderUserId: user.id,
+		status: "registered",
+		statusChangedAt: new Date().toISOString(),
+	});
+	if (!newTeam) throw new Error("Team could not be created");
+
+	// Audit row for self-registration — same transaction as the team, so the
+	// two can never disagree.
+	await statusTransitions.create(user, {
+		teamId: newTeam.id,
+		fromStatus: "",
+		toStatus: "registered",
+		at: new Date().toISOString(),
+	});
+
+	return { id: newTeam.id, existing: false };
+}
+
+interface RosterInput {
+	leadPhone: string;
+	leadGender: string;
+	leadRole: string;
+	names: string[];
+	emails: string[];
+	phones: string[];
+	genders: string[];
+	roles: string[];
+}
+
+/**
+ * Write the submitted roster for `team`.
+ *
+ * The lead is always written first; any member row whose email matches the
+ * lead's is dropped so the lead is never duplicated. A re-registration drops
+ * the previous rows first — `members` is unique on `(team_id, email)`, so
+ * creating before deleting would collide with the roster being replaced.
+ * Both steps share the registration transaction, so the roster is never
+ * observed half-written.
+ */
+async function replaceRoster(
+	user: UserRecord,
+	team: ResolvedTeam,
+	roster: RosterInput,
+): Promise<void> {
+	if (team.existing) {
+		const previous = await members.list(user, { teamId: team.id, perPage: MAX_SAFE_LIST });
+		for (const member of previous.items) {
+			await members.delete(user, member.id);
+		}
+	}
+
+	const leadEmailLower = user.email.toLowerCase();
+	const payloads: MemberCreateInput[] = [
+		{
+			teamId: team.id,
+			fullName: user.name,
+			email: user.email,
+			phone: roster.leadPhone,
+			gender: roster.leadGender,
+			role: roster.leadRole,
+		},
+		...roster.names
+			.map((rawName, i) => ({
+				teamId: team.id,
+				fullName: rawName.trim().slice(0, 100),
+				email: (roster.emails[i] ?? "").trim().toLowerCase().slice(0, 200),
+				phone: (roster.phones[i] ?? "").trim().slice(0, 20),
+				gender: roster.genders[i] ?? "",
+				role: (roster.roles[i] ?? "").trim().slice(0, 100),
+			}))
+			.filter((m) => m.email !== leadEmailLower),
+	];
+
+	for (const payload of payloads) {
+		// A rejected row — a duplicate email in the roster, or a scope failure
+		// — aborts the registration with the member-specific 500 the route has
+		// always returned.
+		const created = await members.create(user, payload).catch(() => null);
+		if (!created) {
+			throw new RegistrationError(
+				fail({ error: "Failed to save team members. Please try again.", status: 500 }),
+			);
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Action
@@ -136,150 +326,26 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 		memberGender: memberGenders,
 		memberRole: memberRoles,
 	} = parsed.data;
-	// Find or create team
-	const existingTeam = await getLeadTeam<TeamRecord>(pb, user.id, {
-		fields: "id,status",
-	});
-	let teamId: string;
 
-	if (existingTeam) {
-		if (!canTransition(existingTeam.status, "registered", "lead")) {
-			return fail({
-				error: `Cannot re-register team in "${existingTeam.status}" status. Contact your institution lead.`,
+	// The team row, its roster and the audit row are one unit: a failure
+	// anywhere rolls the whole registration back (plan §6.1).
+	try {
+		await withTransaction(async () => {
+			const team = await resolveTeam(user, teamName);
+			await replaceRoster(user, team, {
+				leadPhone,
+				leadGender,
+				leadRole,
+				names: memberNames,
+				emails: memberEmails,
+				phones: memberPhones,
+				genders: memberGenders,
+				roles: memberRoles,
 			});
-		}
-
-		// Optimistic lock on the status we just checked — rejects a
-		// concurrent transition (e.g. institution shortlisting the team)
-		// rather than silently overwriting it back to "registered".
-		try {
-			const updated = await pb.collection("teams").update(
-				existingTeam.id,
-				{
-					name: teamName.slice(0, 100),
-					status: "registered",
-					status_changed_at: new Date().toISOString(),
-				},
-				{
-					query: { expectedStatus: existingTeam.status },
-					$autoCancel: false,
-				},
-			);
-			teamId = updated.id;
-		} catch {
-			return fail({
-				error: "This team's status was changed by another action. Please refresh and try again.",
-				status: 409,
-			});
-		}
-	} else {
-		// A lead without an institution cannot register — the team requires
-		// an institutionId, and the capacity check below needs it too.
-		if (!user.institutionId) {
-			return fail({
-				error:
-					"You have not been assigned to an institution. Contact your campus lead or event admin.",
-				status: 403,
-			});
-		}
-		// SEC-9: capacity check — fetch institution's maxTeams and current team count
-		const institution = await pb
-			.collection("institutions")
-			.getFirstListItem(pb.filter("id = {:id}", { id: user.institutionId }), {
-				fields: "id,maxTeams",
-			});
-		const currentTeamCount = await pb.collection("teams").getList(1, 1, {
-			filter: pb.filter("institutionId = {:id}", { id: user.institutionId }),
-			fields: "id",
 		});
-		if (institution.maxTeams > 0 && currentTeamCount.totalItems >= institution.maxTeams) {
-			return fail({
-				error: "Your institution has reached the maximum number of teams allowed",
-				status: 403,
-			});
-		}
-
-		const newTeam = await pb.collection("teams").create({
-			name: teamName.slice(0, 100),
-			institutionId: user.institutionId,
-			leaderUserId: user.id,
-			status: "registered",
-			status_changed_at: new Date().toISOString(),
-		});
-		teamId = newTeam.id;
-		// Best-effort audit log for self-registration
-		try {
-			await pb.collection("status_transitions").create({
-				teamId: newTeam.id,
-				actorUserId: user.id,
-				fromStatus: "",
-				toStatus: "registered",
-				role: user.role,
-				at: new Date().toISOString(),
-			});
-		} catch {
-			// Audit log failure is non-blocking
-		}
-	}
-
-	// Create leader member record + others (parallel, bounded). Drop any
-	// member row whose email matches the lead's — the lead is always added
-	// explicitly, so this prevents a duplicate leader record.
-	const leadEmailLower = user.email.toLowerCase();
-	const memberPayloads: Array<Record<string, unknown>> = [
-		{
-			teamId,
-			fullName: user.name,
-			email: user.email,
-			phone: leadPhone,
-			gender: leadGender,
-			role: leadRole,
-		},
-		...memberNames
-			.map((rawName, i) => ({
-				teamId,
-				fullName: rawName.trim().slice(0, 100),
-				email: (memberEmails[i] ?? "").trim().toLowerCase().slice(0, 200),
-				phone: (memberPhones[i] ?? "").trim().slice(0, 20),
-				gender: memberGenders[i] ?? "",
-				role: (memberRoles[i] ?? "").trim().slice(0, 100),
-			}))
-			.filter((m) => m.email !== leadEmailLower),
-	];
-	// Create NEW members first, verify all succeeded, then delete old ones.
-	// If any create fails, clean up the successful creates and return error.
-	// Track per-create success for rollback on partial failure
-	const createdIds: string[] = [];
-	const results = await Promise.allSettled(
-		memberPayloads.map((payload) =>
-			pb
-				.collection("members")
-				.create(payload)
-				.then((r) => {
-					createdIds.push(r.id);
-					return r;
-				}),
-		),
-	);
-	const failures = results.filter((r) => r.status === "rejected");
-	if (failures.length > 0) {
-		// Roll back all members that were successfully created
-		if (createdIds.length > 0) {
-			await Promise.allSettled(createdIds.map((id) => pb.collection("members").delete(id)));
-		}
-		return fail({
-			error: "Failed to save team members. Please try again.",
-			status: 500,
-		});
-	}
-
-	// All creates succeeded — now safely delete old members
-	if (existingTeam) {
-		const oldMembers = await pb.collection("members").getFullList({
-			filter: pb.filter("teamId = {:teamId}", { teamId }),
-			fields: "id",
-		});
-		await Promise.all(oldMembers.map((m) => pb.collection("members").delete(m.id)));
+	} catch (err) {
+		if (err instanceof RegistrationError) return err.response;
+		throw err;
 	}
 
 	return ok();

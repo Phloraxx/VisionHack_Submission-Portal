@@ -23,15 +23,16 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 import { useActionToast } from "~/hooks/use-action-toast";
-import { fail, ok, secureAction } from "~/lib/action.server";
+import { type ActionResult, fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { MAX_FILE_SIZE } from "~/lib/constants";
+import { type TeamUpdateInput, statusTransitions, teams, withTransaction } from "~/lib/db.server";
 import { validateFileSignature } from "~/lib/file-validation.server";
 import { secureLoader } from "~/lib/loader.server";
 import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
 import { canSubmitIdea } from "~/lib/team-policy";
 import { getLeadTeam } from "~/lib/team.server";
-import type { TeamRecord } from "~/lib/types";
+import type { TeamRecord, UserRecord } from "~/lib/types";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +69,40 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 // ---------------------------------------------------------------------------
 // Action
 // ---------------------------------------------------------------------------
+
+/**
+ * Apply the `submitted` transition and its audit row atomically.
+ *
+ * The update carries the optimistic lock (`expectedStatus`), so a team that
+ * moved on since the read is rejected rather than overwritten. Returns the
+ * 409 the route has always returned on a lost race, or null on success.
+ */
+async function applySubmission(
+	user: UserRecord,
+	team: TeamRecord,
+	patch: TeamUpdateInput,
+): Promise<ActionResult | null> {
+	return withTransaction(async () => {
+		const updated = await teams.update(
+			user,
+			team.id,
+			{ ...patch, status: "submitted", statusChangedAt: new Date().toISOString() },
+			{ expectedStatus: team.status },
+		);
+		if (!updated) {
+			return fail({ error: "Team status changed. Please refresh and try again.", status: 409 });
+		}
+
+		await statusTransitions.create(user, {
+			teamId: team.id,
+			fromStatus: team.status,
+			toStatus: "submitted",
+			at: new Date().toISOString(),
+		});
+
+		return null;
+	});
+}
 
 export const action = secureAction({ roles: ["lead"] }, async ({ formData, user, pb }) => {
 	const flags = await getConfig(pb);
@@ -117,79 +152,27 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 		// Browser-provided MIME type is advisory and unreliable (often empty).
 		// The magic-byte check above is the real defense.
 
-		// PB needs a multipart form to upload a file
-		const form = new FormData();
+		// The row stores the sanitized filename; the bytes land in
+		// `$UPLOADS_DIR/teams/<id>/` (plan §4.2, Phase D).
 		const safeName = file.name.replace(/[^\w.\-]/g, "_").slice(0, 255);
-		form.append("submission_file", file, safeName);
-		form.append("idea_title", ideaTitle.slice(0, 200));
-		form.append("idea_desc", ideaDescription.slice(0, 5000));
-		form.append("idea_tech_stack", techStack.slice(0, 500));
-		form.append("status", "submitted");
-		form.append("status_changed_at", new Date().toISOString());
-		try {
-			await pb.collection("teams").update(team.id, form, {
-				query: { expectedStatus: team.status },
-				$autoCancel: false,
-			});
-		} catch (err) {
-			// PB returns 404 when updateRule fails (optimistic lock mismatch)
-			if (err && typeof err === "object" && "status" in err && err.status === 404) {
-				return fail({ error: "Team status changed. Please refresh and try again.", status: 409 });
-			}
-			throw err;
-		}
-		// Best-effort audit log
-		try {
-			await pb.collection("status_transitions").create({
-				teamId: team.id,
-				actorUserId: user.id,
-				fromStatus: team.status,
-				toStatus: "submitted",
-				role: user.role,
-				at: new Date().toISOString(),
-			});
-		} catch {
-			// Audit log failure is non-blocking
-		}
+		const rejected = await applySubmission(user, team, {
+			submissionFile: safeName,
+			ideaTitle: ideaTitle.slice(0, 200),
+			ideaDesc: ideaDescription.slice(0, 5000),
+			ideaTechStack: techStack.slice(0, 500),
+		});
+		if (rejected) return rejected;
 		return ok();
 	}
 
 	// No new file — re-submit text only if the file already exists
 	if (team.submission_file) {
-		try {
-			await pb.collection("teams").update(
-				team.id,
-				{
-					idea_title: ideaTitle.slice(0, 200),
-					idea_desc: ideaDescription.slice(0, 5000),
-					idea_tech_stack: techStack.slice(0, 500),
-					status: "submitted",
-					status_changed_at: new Date().toISOString(),
-				},
-				{
-					query: { expectedStatus: team.status },
-					$autoCancel: false,
-				},
-			);
-		} catch (err) {
-			if (err && typeof err === "object" && "status" in err && err.status === 404) {
-				return fail({ error: "Team status changed. Please refresh and try again.", status: 409 });
-			}
-			throw err;
-		}
-		// Best-effort audit log
-		try {
-			await pb.collection("status_transitions").create({
-				teamId: team.id,
-				actorUserId: user.id,
-				fromStatus: team.status,
-				toStatus: "submitted",
-				role: user.role,
-				at: new Date().toISOString(),
-			});
-		} catch {
-			// Audit log failure is non-blocking
-		}
+		const rejected = await applySubmission(user, team, {
+			ideaTitle: ideaTitle.slice(0, 200),
+			ideaDesc: ideaDescription.slice(0, 5000),
+			ideaTechStack: techStack.slice(0, 500),
+		});
+		if (rejected) return rejected;
 		return ok();
 	}
 

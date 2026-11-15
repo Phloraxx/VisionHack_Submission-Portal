@@ -16,8 +16,11 @@
  *   predicate in SQL. PocketBase's API rules were the second line of defence
  *   behind the route loaders; in Postgres they are gone, so the predicate lives
  *   here instead (docs/PG_PORT_PLAN.md §6.2).
+ * - Repository calls made inside `withTransaction` join that transaction, so a
+ *   route can compose several writes into one atomic unit.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 import { getEnv } from "./env.server";
 import type {
@@ -72,11 +75,27 @@ export function getPool(): Pool {
 // Query helpers
 // ---------------------------------------------------------------------------
 
-/** Run a parameterised query on the shared pool. */
+/**
+ * The client of the transaction the current async call chain is running in.
+ *
+ * `withTransaction` publishes its client here so the repository methods below
+ * join the transaction without every signature growing a `client` parameter:
+ * `query()` prefers the ambient client over the pool.
+ */
+const transactionStorage = new AsyncLocalStorage<PoolClient>();
+
+/**
+ * Run a parameterised query.
+ *
+ * Inside `withTransaction` the query runs on that transaction's client, so a
+ * repository call made from the callback is part of the same atomic unit.
+ */
 export function query<T extends QueryResultRow = QueryResultRow>(
 	text: string,
 	params: unknown[] = [],
 ): Promise<QueryResult<T>> {
+	const client = transactionStorage.getStore();
+	if (client) return client.query<T>(text, params);
 	return getPool().query<T>(text, params);
 }
 
@@ -84,13 +103,20 @@ export function query<T extends QueryResultRow = QueryResultRow>(
  * Run `fn` inside a transaction on a dedicated client.
  *
  * Commits when `fn` resolves, rolls back when it throws, and always releases
- * the client back to the pool.
+ * the client back to the pool. Repository calls made inside `fn` — directly or
+ * through a helper — run on the transaction's client (see `query`), so a
+ * multi-write sequence is all-or-nothing.
+ *
+ * Nested calls join the enclosing transaction instead of opening a second one.
  */
 export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+	const ambient = transactionStorage.getStore();
+	if (ambient) return fn(ambient);
+
 	const client = await getPool().connect();
 	try {
 		await client.query("BEGIN");
-		const result = await fn(client);
+		const result = await transactionStorage.run(client, () => fn(client));
 		await client.query("COMMIT");
 		return result;
 	} catch (err) {
@@ -533,6 +559,14 @@ export interface TeamsRepository {
 	getOne(user: ActingUser, id: string): Promise<TeamView | null>;
 	/** The team led by `leaderUserId`, scoped to that lead. */
 	findByLeader(user: ActingUser, leaderUserId: string): Promise<TeamView | null>;
+	/**
+	 * Count every team in an institution — the SEC-9 capacity check.
+	 *
+	 * The count is institution-wide by design (a lead must not register past
+	 * the campus limit), so it does not use `teamScope`; the predicate below
+	 * only lets the actor count their own institution.
+	 */
+	countByInstitution(user: ActingUser, institutionId: string): Promise<number>;
 	/** Create a team. Null when the acting user may not (§6.2 create rule). */
 	create(user: ActingUser, input: TeamCreateInput): Promise<TeamView | null>;
 	/**
@@ -625,6 +659,24 @@ export const teams: TeamsRepository = {
 		);
 		const row = result.rows[0];
 		return row ? toTeamView(row) : null;
+	},
+
+	async countByInstitution(user: ActingUser, institutionId: string): Promise<number> {
+		if (!isUuid(institutionId)) return 0;
+		const { params, p } = paramList();
+		const institutionParam = p(institutionId);
+		const actorRole = p(user.role);
+		const actorInstitution = p(user.institutionId);
+		const scope = [
+			`${actorRole}::text IN ('admin', 'coordinator')`,
+			`NULLIF(${actorInstitution}, '')::uuid = ${institutionParam}::uuid`,
+		].join(" OR ");
+		const result = await query<{ count: number }>(
+			`SELECT count(*)::int AS count FROM teams t
+			 WHERE t.institution_id = ${institutionParam}::uuid AND (${scope})`,
+			params,
+		);
+		return result.rows[0]?.count ?? 0;
 	},
 
 	async create(user: ActingUser, input: TeamCreateInput): Promise<TeamView | null> {

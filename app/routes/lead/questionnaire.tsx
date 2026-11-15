@@ -30,11 +30,12 @@ import {
 import { Textarea } from "~/components/ui/textarea";
 import { fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
+import { questionnaireResponses, teams, withTransaction } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { type QuestionnaireInput, questionnaireSchema } from "~/lib/schemas/questionnaire";
 import { canSubmitQuestionnaire } from "~/lib/team-policy";
 import { getLeadTeam } from "~/lib/team.server";
-import type { TeamRecord } from "~/lib/types";
+import type { QuestionnaireResponseRecord, TeamRecord } from "~/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,6 +86,39 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Repository record → the snake_case shape the form binds to.
+ *
+ * `questionnaireSchema` names its fields `college_name`, `team_experience`
+ * and `additional_info`, so the form's `defaultValues` read those keys while
+ * the repository returns camelCase. Translate here, not in the component.
+ */
+function toQuestionnaireData(record: QuestionnaireResponseRecord): QuestionnaireData {
+	const text = (key: string) => String(record[key] ?? "");
+	return {
+		id: record.id,
+		teamId: record.teamId,
+		userId: record.userId,
+		age: Number(record.age ?? 0),
+		gender: text("gender"),
+		education: text("education"),
+		college_name: text("collegeName"),
+		district: text("district"),
+		skills: text("skills"),
+		interests: text("interests"),
+		challenges: text("challenges"),
+		experience: text("experience"),
+		motivation: text("motivation"),
+		team_experience: text("teamExperience"),
+		expectations: text("expectations"),
+		additional_info: text("additionalInfo"),
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Loader
 // ---------------------------------------------------------------------------
 
@@ -92,17 +126,12 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 	// Team and config are independent — fetch in parallel.
 	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(pb, user.id), getConfig(pb)]);
 
-	const questionnaire: QuestionnaireData | null = team
-		? await pb
-				.collection("questionnaire_responses")
-				.getFirstListItem<QuestionnaireData>(pb.filter("teamId = {:teamId}", { teamId: team.id }))
-				.catch(() => null)
-		: null;
+	const record = team ? await questionnaireResponses.getByTeam(user, team.id) : null;
 
 	return {
 		user,
 		team,
-		questionnaire,
+		questionnaire: record ? toQuestionnaireData(record) : null,
 		questionnaireOpen: flags.questionnaire_open ?? false,
 	} satisfies LoaderData;
 });
@@ -144,45 +173,42 @@ export const action = secureAction(
 			return fail({ error: "Cannot submit questionnaire for a team in this status", status: 403 });
 		}
 
-		// Upsert response
-		const existing = await pb
-			.collection("questionnaire_responses")
-			.getFirstListItem(pb.filter("teamId = {:teamId}", { teamId: team.id }), {
-				fields: "id",
-			})
-			.catch(() => null);
-
-		const payload: Record<string, unknown> = {
-			teamId: team.id,
-			userId: user.id,
+		// One response per team: update it, or create it on the first
+		// submission. The denormalized team flag is written in the same
+		// transaction so the two can never disagree.
+		const patch = {
 			age,
 			gender,
 			education,
-			college_name: collegeName.slice(0, 200),
+			collegeName: collegeName.slice(0, 200),
 			district: district.slice(0, 100),
 			skills: skills.slice(0, 1000),
 			interests: interests.slice(0, 1000),
 			challenges: challenges.slice(0, 2000),
 			experience: experience.slice(0, 2000),
 			motivation: motivation.slice(0, 2000),
-			team_experience: teamExperience.slice(0, 2000),
+			teamExperience: teamExperience.slice(0, 2000),
 			expectations: expectations.slice(0, 2000),
-			additional_info: additionalInfo.slice(0, 2000),
+			additionalInfo: additionalInfo.slice(0, 2000),
 		};
 
-		if (existing) {
-			await pb.collection("questionnaire_responses").update(existing.id, payload);
-		} else {
-			await pb.collection("questionnaire_responses").create(payload);
-		}
+		await withTransaction(async () => {
+			const existing = await questionnaireResponses.getByTeam(user, team.id);
+			const saved = existing
+				? await questionnaireResponses.update(user, existing.id, patch)
+				: await questionnaireResponses.create(user, {
+						teamId: team.id,
+						userId: user.id,
+						...patch,
+					});
+			if (!saved) throw new Error("Questionnaire response could not be saved");
 
-		// Denormalize: mark the team as having completed the questionnaire
-		// so the rest of the app can read it without a join.
-		if (!team.questionnaire_completed) {
-			await pb.collection("teams").update(team.id, {
-				questionnaire_completed: true,
-			});
-		}
+			// Denormalize: mark the team as having completed the questionnaire
+			// so the rest of the app can read it without a join.
+			if (!team.questionnaire_completed) {
+				await teams.update(user, team.id, { questionnaireCompleted: true });
+			}
+		});
 
 		return ok();
 	},

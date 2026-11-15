@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
+import { institutions, members, users } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { STATUS_COLORS, STATUS_LABELS } from "~/lib/team-status";
 import { getLeadTeam, transitionTeamStatus } from "~/lib/team.server";
@@ -59,36 +60,21 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 		// Member count + institution record run in parallel (both depend only
 		// on the already-fetched team).
 		const [memberCountResult, inst] = await Promise.all([
-			pb.collection("members").getList(1, 1, {
-				filter: pb.filter("teamId = {:tid}", { tid: team.id }),
-				fields: "id",
-			}),
-			// Campus lead: campusLeadId is a text field (user ID), not a
-			// relation — expand won't work. Fetch the user record directly.
-			team.institutionId
-				? pb
-						.collection("institutions")
-						.getOne<{ campusLeadId?: string }>(team.institutionId, {
-							fields: "id,campusLeadId",
-						})
-						.catch(() => null)
-				: Promise.resolve(null),
+			members.list(user, { teamId: team.id, perPage: 1 }),
+			// Campus lead: campusLeadId is a plain user id, not a relation —
+			// expand won't work. Fetch the institution record directly.
+			team.institutionId ? institutions.getOne(user, team.institutionId) : Promise.resolve(null),
 		]);
 
 		memberCount = memberCountResult.totalItems;
 
 		// Fetch the campus lead user by the ID stored on the institution.
+		// A deleted campus lead reads as null, leaving the fields empty.
 		const campusLeadId = inst?.campusLeadId;
 		if (campusLeadId) {
-			try {
-				const lead = await pb
-					.collection("users")
-					.getOne<{ name?: string; email?: string }>(campusLeadId, { fields: "name,email" });
-				campusLeadName = lead.name || "";
-				campusLeadEmail = lead.email || "";
-			} catch {
-				// Campus lead user may have been deleted — leave fields empty.
-			}
+			const lead = await users.findById(campusLeadId);
+			campusLeadName = lead?.name || "";
+			campusLeadEmail = lead?.email || "";
 		}
 	}
 
