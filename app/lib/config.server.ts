@@ -1,33 +1,41 @@
 import type PocketBase from "pocketbase";
+import { query } from "./db.server";
 
 /**
- * Fetch all feature-flag records from the `config` collection and return
- * them as a flat `Record<string, boolean>` map.
+ * Fetch all feature-flag rows from the `config` table and return them as a
+ * flat `Record<string, boolean>` map.
  *
- * Each record is expected to have:
- * - `key`   (string)  — the feature name, e.g. `"registration_open"`
- * - `value` (bool)    — whether the feature is enabled
+ * Each row is expected to have:
+ * - `key`   (text)    — the feature name, e.g. `"registration_open"`
+ * - `value` (boolean) — whether the feature is enabled
+ *
+ * `schema_version` and any `_`-prefixed key are skipped: they are bookkeeping,
+ * not phase gates (plan §6.3).
  *
  * ```ts
  * const config = await getConfig(pb);
  * if (config.registration_open) { … }
  * ```
+ *
+ * `pb` is kept for call-site compatibility and never used — the flags come
+ * from Postgres (plan §10.8).
  */
 export async function getConfig(pb: PocketBase): Promise<Record<string, boolean>> {
+	void pb;
 	const MAX_SAFE_LIST = 100;
-	const result = await pb.collection("config").getList<{
-		key: string;
-		value: boolean;
-	}>(1, MAX_SAFE_LIST);
-	if (result.totalItems > MAX_SAFE_LIST) {
+	// One row over the cap is enough to know the warning applies.
+	const result = await query<{ key: string; value: boolean }>(
+		"SELECT key, value FROM config ORDER BY key LIMIT $1",
+		[MAX_SAFE_LIST + 1],
+	);
+	if (result.rows.length > MAX_SAFE_LIST) {
 		console.warn(`[config] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
 
-	const records = result.items;
 	const value: Record<string, boolean> = {};
-	for (const record of records) {
-		if (record.key === "schema_version" || record.key.startsWith("_")) continue;
-		value[record.key] = record.value === true;
+	for (const row of result.rows) {
+		if (row.key === "schema_version" || row.key.startsWith("_")) continue;
+		value[row.key] = row.value === true;
 	}
 
 	return value;
