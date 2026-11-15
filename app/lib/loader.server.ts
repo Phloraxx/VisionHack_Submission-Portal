@@ -3,20 +3,24 @@ import type PocketBase from "pocketbase";
 import { data } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "./auth.server";
+import type { Db } from "./db.server";
 import type { Role, UserRecord } from "./types";
 
 /**
  * Per-request context passed to a `secureLoader` handler.
  *
  * - `request` is the raw Request (rarely needed inside the handler)
- * - `user` is the authenticated PocketBase user record
- * - `pb` is a fresh authenticated PocketBase client
+ * - `user` is the authenticated user record
+ * - `db` is the Postgres handle for ported routes
+ * - `pb` is a fresh authenticated PocketBase client, kept for the routes
+ *   that are not ported yet (plan §10.8)
  * - `params` is the route's URL params (e.g. `teamId` from
  *   `/admin/teams/:teamId`)
  */
 export interface LoaderContext {
 	request: Request;
 	user: UserRecord;
+	db: Db;
 	pb: PocketBase;
 	params: Record<string, string>;
 }
@@ -36,8 +40,8 @@ type LoaderHandler<C extends LoaderContext, R> = (ctx: C) => R | Promise<R>;
  * @example
  * export const loader = secureLoader(
  *   { roles: ["admin"] },
- *   async ({ user, pb }) => {
- *     const items = await pb.collection("...").getList(1, 10);
+ *   async ({ user, db }) => {
+ *     const items = await db.query("SELECT … FROM teams LIMIT 10");
  *     return { items };
  *   },
  * );
@@ -48,10 +52,12 @@ export function secureLoader<C extends LoaderContext = LoaderContext, R = unknow
 ) {
 	return async ({ request, params }: LoaderFunctionArgs): Promise<R | ReturnType<typeof data>> => {
 		// 1. Auth + role — catch redirects and return JSON instead
+		let db: Db;
 		let pb: PocketBase;
 		let user: UserRecord;
 		try {
 			const auth = await requireRole(request, options.roles);
+			db = auth.db;
 			pb = auth.pb;
 			user = auth.user;
 		} catch (err) {
@@ -76,6 +82,7 @@ export function secureLoader<C extends LoaderContext = LoaderContext, R = unknow
 		const ctx = {
 			request,
 			user,
+			db,
 			pb,
 			params: params as Record<string, string>,
 		} as C;

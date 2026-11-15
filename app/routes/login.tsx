@@ -16,29 +16,33 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { getAuthFromCookie, login, setAuthCookie } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
+import { users } from "~/lib/db.server";
 import { getClientIp } from "~/lib/ip.server";
+import { verifyJwt } from "~/lib/jwt.server";
 import { validateOrigin } from "~/lib/origin.server";
-import { createAuthenticatedClient, createPocketBaseClient } from "~/lib/pocketbase.server";
+import { createPocketBaseClient } from "~/lib/pocketbase.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
 import { loginSchema } from "~/lib/schemas/auth";
 import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
-import type { UserRecord } from "~/lib/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	const token = getAuthFromCookie(request);
 	if (token) {
-		const pb = createAuthenticatedClient(token);
 		try {
-			await pb.collection("users").authRefresh();
-			const user = pb.authStore.model as unknown as UserRecord | null;
-			if (user?.role) {
-				const target = ROLE_DASHBOARD_MAP[user.role as keyof typeof ROLE_DASHBOARD_MAP];
-				if (!target) {
-					throw new Response("No dashboard configured for your account role.", { status: 403 });
+			// Verify the token locally and load the live row — the same pattern
+			// `resolveAuth` uses (plan §3.4). No PocketBase round trip.
+			const payload = verifyJwt(token);
+			if (payload && typeof payload.id === "string" && payload.id && !payload.purpose) {
+				const user = await users.findById(payload.id);
+				if (user?.role) {
+					const target = ROLE_DASHBOARD_MAP[user.role as keyof typeof ROLE_DASHBOARD_MAP];
+					if (!target) {
+						throw new Response("No dashboard configured for your account role.", { status: 403 });
+					}
+					const headers = new Headers();
+					headers.append("Set-Cookie", setAuthCookie(token));
+					throw redirect(target, { headers });
 				}
-				const headers = new Headers();
-				headers.append("Set-Cookie", setAuthCookie(pb.authStore.token));
-				throw redirect(target, { headers });
 			}
 		} catch (err) {
 			if (err instanceof Response) throw err;

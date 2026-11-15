@@ -36,6 +36,7 @@ import { fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
 import { getStr, isEmail } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
+import { sendPasswordResetEmail } from "~/lib/password-reset.server";
 import { shortlistSchema, unshortlistSchema } from "~/lib/schemas/institution";
 import {
 	getInstitutionForUser,
@@ -131,7 +132,7 @@ export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb
 
 export const action = secureAction(
 	{ roles: ["institution"] },
-	async ({ formData, user, pb, intent }) => {
+	async ({ formData, user, db, pb, intent }) => {
 		const institution = await getInstitutionForUser(pb, user.id);
 		if (!institution) return fail({ error: "Institution not found", status: 404 });
 
@@ -192,9 +193,9 @@ export const action = secureAction(
 					});
 					leadUserId = newUser.id;
 
-					// Trigger PB's password-reset email.
+					// Send the app's password-reset email.
 					try {
-						await pb.collection("users").requestPasswordReset(email);
+						await sendPasswordResetEmail(db, email);
 					} catch (err) {
 						console.error("[institution] Failed to send invite/reset email:", err);
 					}

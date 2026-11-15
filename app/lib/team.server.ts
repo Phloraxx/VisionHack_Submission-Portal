@@ -5,8 +5,10 @@
  */
 import type PocketBase from "pocketbase";
 import { type ActionResult, fail } from "./action.server";
+import { db } from "./db.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
+import { sendPasswordResetEmail } from "./password-reset.server";
 import { STATUS_LABELS } from "./team-status";
 import { canTransition } from "./transitions";
 import type { InstitutionRecord, Role, TeamRecord, TeamStatus, TeamView } from "./types";
@@ -225,7 +227,7 @@ export interface CreateCampusLeadResult {
 }
 
 /**
- * Create an institution + its campus-lead user, then trigger PocketBase's
+ * Create an institution + its campus-lead user, then send the app's
  * password-reset email so the lead sets their own password. Idempotency is
  * the caller's responsibility (check for an existing code/email first).
  */
@@ -291,7 +293,7 @@ export async function createCampusLead(
 	}
 
 	try {
-		await pb.collection("users").requestPasswordReset(leadEmail);
+		await sendPasswordResetEmail(db, leadEmail);
 	} catch (err) {
 		console.error("[team] campus-lead reset email failed:", err);
 	}

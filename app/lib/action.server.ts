@@ -4,6 +4,7 @@ import { data } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import type { ZodSchema } from "zod";
 import { getAuthFromCookie, requireRole, setAuthCookie } from "./auth.server";
+import type { Db } from "./db.server";
 import { validateOrigin } from "./origin.server";
 import type { Role, UserRecord } from "./types";
 import { extractFieldErrors } from "./utils";
@@ -12,8 +13,10 @@ import { extractFieldErrors } from "./utils";
  * Per-request context passed to a `secureAction` handler.
  *
  * - `request` is the raw Request (rarely needed inside the handler)
- * - `user` is the authenticated PocketBase user record
- * - `pb` is a fresh authenticated PocketBase client
+ * - `user` is the authenticated user record
+ * - `db` is the Postgres handle for ported routes
+ * - `pb` is a fresh authenticated PocketBase client, kept for the routes
+ *   that are not ported yet (plan §10.8)
  * - `formData` is the parsed form payload
  * - `intent` is the `intent` field from the form, normalized to lowercase
  * - `params` is the route's URL params (e.g. `teamId` from
@@ -22,6 +25,7 @@ import { extractFieldErrors } from "./utils";
 export interface ActionContext {
 	request: Request;
 	user: UserRecord;
+	db: Db;
 	pb: PocketBase;
 	formData: FormData;
 	intent: string;
@@ -129,11 +133,13 @@ export function secureAction(
 		// 4a. Save original token for rotation detection
 		const originalToken = getAuthFromCookie(request);
 
+		let db: Db;
 		let pb: PocketBase;
 		let user: UserRecord;
 		let token: string;
 		try {
 			const auth = await requireRole(request, options.roles);
+			db = auth.db;
 			pb = auth.pb;
 			user = auth.user;
 			token = auth.token;
@@ -179,6 +185,7 @@ export function secureAction(
 			const ctx = {
 				request,
 				user,
+				db,
 				pb,
 				formData,
 				intent: String(formData.get("intent") ?? "").toLowerCase(),
@@ -215,6 +222,7 @@ export function secureAction(
 		const ctx = {
 			request,
 			user,
+			db,
 			pb,
 			formData,
 			intent: String(formData.get("intent") ?? "").toLowerCase(),

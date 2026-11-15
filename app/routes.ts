@@ -5,6 +5,7 @@ export default [
 	index("routes/home.tsx"),
 	route("login", "routes/login.tsx"),
 	route("forgot-password", "routes/forgot-password.tsx"),
+	route("reset-password", "routes/reset-password.tsx"),
 
 	// Authenticated dashboard layout
 	layout("routes/dashboard-layout.tsx", [

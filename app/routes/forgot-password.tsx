@@ -6,9 +6,10 @@ import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { db } from "~/lib/db.server";
 import { getClientIp } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
-import { createPocketBaseClient } from "~/lib/pocketbase.server";
+import { sendPasswordResetEmail } from "~/lib/password-reset.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
 import { forgotPasswordSchema } from "~/lib/schemas/auth";
 
@@ -37,12 +38,10 @@ export async function action({ request }: ActionFunctionArgs) {
 		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });
 	}
 
-	const pb = createPocketBaseClient();
-
 	// Always succeed (don't reveal whether the email exists). Origin validation
 	// and rate limiting above prevent abuse.
 	try {
-		await pb.collection("users").requestPasswordReset(email);
+		await sendPasswordResetEmail(db, email);
 	} catch {
 		// Swallowed on purpose.
 	}

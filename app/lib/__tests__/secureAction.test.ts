@@ -1,6 +1,7 @@
 import { data } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { Db } from "../db.server";
 import type { UserRecord } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -67,9 +68,27 @@ function makeUser(overrides: Partial<UserRecord> = {}): UserRecord {
 	} as UserRecord;
 }
 
+/**
+ * Minimal `Db` stub. `secureAction` only forwards the handle into the handler
+ * context, so no query ever runs in these tests.
+ */
+function makeDb(): Db {
+	const unused = vi.fn();
+	return {
+		query: unused,
+		withTransaction: unused,
+		users: {
+			findByEmail: unused,
+			findById: unused,
+			findPasswordHashById: unused,
+			updatePasswordHash: unused,
+		},
+	} as unknown as Db;
+}
+
 function makeAuthResult(userOverrides: Partial<UserRecord> = {}) {
 	const user = makeUser(userOverrides);
-	return { user, pb: { collection: vi.fn() } as never, token: "jwt-token" };
+	return { db: makeDb(), user, pb: { collection: vi.fn() } as never, token: "jwt-token" };
 }
 
 function makeRequest(url = "http://localhost:5173/admin/test", body?: URLSearchParams) {
