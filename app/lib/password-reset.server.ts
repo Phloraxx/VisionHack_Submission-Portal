@@ -13,11 +13,12 @@
  * carry the same claim, so a reset also invalidates every other session.
  */
 
-import { hashPassword, passwordFingerprint } from "./auth.server";
+import { passwordFingerprint } from "./auth.server";
 import type { Db } from "./db.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
 import { signJwt, verifyJwt } from "./jwt.server";
+import { hashPassword } from "./password.server";
 import { escapeHtml } from "./utils";
 
 /** Reset links expire in 30 minutes, as the UI copy promises. */

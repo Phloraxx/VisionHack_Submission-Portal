@@ -25,12 +25,12 @@ import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { useActionToast } from "~/hooks/use-action-toast";
 import { type ActionResult, fail, ok, secureAction } from "~/lib/action.server";
-import { hashPassword } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
 import { institutions, members, teams, users, withTransaction } from "~/lib/db.server";
 import { getStr, isEmail } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
 import { sendPasswordResetEmail } from "~/lib/password-reset.server";
+import { hashPassword } from "~/lib/password.server";
 import { shortlistSchema } from "~/lib/schemas/institution";
 import {
 	getInstitutionForUser,

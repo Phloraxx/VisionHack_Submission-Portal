@@ -5,4 +5,4 @@ Disallow: /coordinator/
 Disallow: /institution/
 Disallow: /lead/
 
-Sitemap: https://visionhack.mulearn.org/sitemap.xml
+Sitemap: https://portal.phloraxx.us.to/sitemap.xml

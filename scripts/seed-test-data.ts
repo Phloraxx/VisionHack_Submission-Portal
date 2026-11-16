@@ -3,9 +3,10 @@
  * Deterministic fixtures for `tests/test-idor.mjs`.
  *
  * Purges the app tables in `$DATABASE_URL` and re-inserts one fixed fixture
- * set: one institution, an admin, a coordinator, a campus lead, two team leads
- * with one team each, their members, one questionnaire response, and one
- * submitted team whose submission file is written to the uploads volume.
+ * set: two institutions, an admin, a coordinator, two campus leads, three team
+ * leads with one team each, their members, one questionnaire response, and one
+ * submitted team whose submission file is written to the uploads volume. The
+ * second institution exists so cross-campus denial can be asserted.
  *
  * Usage:
  *   npm run seed:test
@@ -27,23 +28,33 @@
  * `members`, `questionnaire_responses` and `status_transitions`. Point it at a
  * test database — never at production.
  *
- * Passwords are hashed with `hashPassword()` from `app/lib/auth.server.ts`,
+ * Passwords are hashed with `hashPassword()` from `app/lib/password.server.ts`,
  * the same helper the app uses for every new hash (argon2id). `verifyPassword`
  * also accepts the bcrypt hashes carried over from the legacy backend, so a
  * seeded account logs in through the real `/login` action.
+ *
+ * The shared password comes from `SEED_TEST_PASSWORD`, or a random value when
+ * that is unset; either way it is written into the fixture map so the suite
+ * can log in. The script refuses to run against production.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Pool } from "pg";
-import { hashPassword } from "../app/lib/auth.server";
+import { hashPassword } from "../app/lib/password.server";
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** Shared password for every fixture account. Test-only. */
-const PASSWORD = "IdorTest!2026";
+/**
+ * Shared password for every fixture account.
+ *
+ * Taken from `SEED_TEST_PASSWORD` when set, otherwise a random value — never a
+ * literal, so a leaked fixture map cannot be replayed against another
+ * environment.
+ */
+const PASSWORD = process.env.SEED_TEST_PASSWORD || crypto.randomUUID();
 
 /**
  * Fixed uuids.
@@ -54,13 +65,17 @@ const PASSWORD = "IdorTest!2026";
  */
 const ID = {
 	institution: "11111111-1111-4111-8111-111111111111",
+	institutionB: "11111111-1111-4111-8111-111111111112",
 	admin: "22222222-2222-4222-8222-222222222222",
 	coordinator: "33333333-3333-4333-8333-333333333333",
 	campusLead: "44444444-4444-4444-8444-444444444444",
+	campusLeadB: "44444444-4444-4444-8444-444444444445",
 	priya: "55555555-5555-4555-8555-555555555555",
 	meera: "66666666-6666-4666-8666-666666666666",
+	asha: "66666666-6666-4666-8666-666666666667",
 	priyaTeam: "77777777-7777-4777-8777-777777777777",
 	meeraTeam: "88888888-8888-4888-8888-888888888888",
+	ashaTeam: "88888888-8888-4888-8888-888888888889",
 	priyaMember1: "99999999-9999-4999-8999-999999999991",
 	priyaMember2: "99999999-9999-4999-8999-999999999992",
 	meeraMember1: "99999999-9999-4999-8999-999999999993",
@@ -73,14 +88,25 @@ const EMAIL = {
 	admin: "admin@test.local",
 	coordinator: "coordinator@test.local",
 	campusLead: "campus@test.local",
+	campusLeadB: "campus.b@test.local",
 	priya: "priya@test.local",
 	meera: "meera@test.local",
+	asha: "asha@test.local",
 } as const;
 
 const INSTITUTION = {
 	name: "Test Institute of Technology",
 	district: "Ernakulam",
 	code: "TEST-001",
+	maxTeams: 10,
+	status: "active",
+} as const;
+
+/** A second campus, so cross-institution denial can be asserted end-to-end. */
+const INSTITUTION_B = {
+	name: "Other Institute of Science",
+	district: "Thrissur",
+	code: "TEST-002",
 	maxTeams: 10,
 	status: "active",
 } as const;
@@ -148,6 +174,20 @@ const USERS: FixtureUser[] = [
 		name: "Meera Iyer",
 		role: "lead",
 		institutionId: ID.institution,
+	},
+	{
+		id: ID.campusLeadB,
+		email: EMAIL.campusLeadB,
+		name: "Nithin Pillai",
+		role: "institution",
+		institutionId: ID.institutionB,
+	},
+	{
+		id: ID.asha,
+		email: EMAIL.asha,
+		name: "Asha Varma",
+		role: "lead",
+		institutionId: ID.institutionB,
 	},
 ];
 
@@ -224,8 +264,32 @@ function describeTarget(connectionString: string): string {
 // Seed
 // ---------------------------------------------------------------------------
 
+/**
+ * Refuse to run anywhere that looks like production.
+ *
+ * The script deletes every row in six tables, so a stray `DATABASE_URL` must
+ * fail loudly rather than wipe a live event.
+ */
+function assertSafeTarget(databaseUrl: string): void {
+	if (process.env.NODE_ENV === "production") {
+		throw new Error("seed-test-data refuses to run with NODE_ENV=production");
+	}
+	let databaseName: string;
+	try {
+		databaseName = new URL(databaseUrl).pathname.replace(/^\//, "");
+	} catch {
+		throw new Error("DATABASE_URL is not a valid connection string");
+	}
+	if (!databaseName.includes("test")) {
+		throw new Error(
+			`seed-test-data refuses to run against "${databaseName}": the database name must contain "test"`,
+		);
+	}
+}
+
 async function main(): Promise<void> {
 	const databaseUrl = requireEnv("DATABASE_URL");
+	assertSafeTarget(databaseUrl);
 	const uploadsDir = requireEnv("UPLOADS_DIR");
 	const fixturesPath =
 		process.env.FIXTURES_PATH || path.join("/tmp", "visionhack-test-fixtures.json");
@@ -264,6 +328,19 @@ async function main(): Promise<void> {
 			],
 		);
 
+		await client.query(
+			`INSERT INTO institutions (id, name, district, code, max_teams, status)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
+			[
+				ID.institutionB,
+				INSTITUTION_B.name,
+				INSTITUTION_B.district,
+				INSTITUTION_B.code,
+				INSTITUTION_B.maxTeams,
+				INSTITUTION_B.status,
+			],
+		);
+
 		for (const user of USERS) {
 			await client.query(
 				`INSERT INTO users (id, email, name, role, institution_id, password_hash, verified)
@@ -272,10 +349,14 @@ async function main(): Promise<void> {
 			);
 		}
 
-		// Back-link the institution to its campus lead.
+		// Back-link each institution to its campus lead.
 		await client.query("UPDATE institutions SET campus_lead_id = $2 WHERE id = $1", [
 			ID.institution,
 			ID.campusLead,
+		]);
+		await client.query("UPDATE institutions SET campus_lead_id = $2 WHERE id = $1", [
+			ID.institutionB,
+			ID.campusLeadB,
 		]);
 
 		// Priya's team: registered, questionnaire done, no submission yet.
@@ -315,6 +396,24 @@ async function main(): Promise<void> {
 				"A submission that exists so the file proxy has something to serve.",
 				"TypeScript, Postgres",
 				SUBMISSION_FILE,
+			],
+		);
+
+		// Asha's team lives in the second institution — the cross-campus probe.
+		await client.query(
+			`INSERT INTO teams (
+				id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
+				questionnaire_completed
+			 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			[
+				ID.ashaTeam,
+				"Team Asha",
+				ID.institutionB,
+				ID.asha,
+				"TA-003",
+				"registered",
+				STATUS_CHANGED_AT,
+				false,
 			],
 		);
 
@@ -384,12 +483,20 @@ async function main(): Promise<void> {
 			code: INSTITUTION.code,
 			district: INSTITUTION.district,
 		},
+		institutionB: {
+			id: ID.institutionB,
+			name: INSTITUTION_B.name,
+			code: INSTITUTION_B.code,
+			district: INSTITUTION_B.district,
+		},
 		users: {
 			admin: { id: ID.admin, email: EMAIL.admin, role: "admin" },
 			coordinator: { id: ID.coordinator, email: EMAIL.coordinator, role: "coordinator" },
 			campusLead: { id: ID.campusLead, email: EMAIL.campusLead, role: "institution" },
 			priya: { id: ID.priya, email: EMAIL.priya, role: "lead" },
 			meera: { id: ID.meera, email: EMAIL.meera, role: "lead" },
+			campusLeadB: { id: ID.campusLeadB, email: EMAIL.campusLeadB, role: "institution" },
+			asha: { id: ID.asha, email: EMAIL.asha, role: "lead" },
 		},
 		teams: {
 			priya: {
@@ -404,6 +511,12 @@ async function main(): Promise<void> {
 				status: "submitted",
 				leaderEmail: EMAIL.meera,
 				submissionFile: SUBMISSION_FILE,
+			},
+			asha: {
+				id: ID.ashaTeam,
+				name: "Team Asha",
+				status: "registered",
+				leaderEmail: EMAIL.asha,
 			},
 		},
 		members: {

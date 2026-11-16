@@ -257,7 +257,7 @@ function containsPattern(value: string): string {
  * `members` and `questionnaire_responses` reuse it against their joined
  * `teams` alias — their rules are the same predicate on the parent team.
  */
-function teamScope(user: ActingUser, p: ParamList["p"], alias = "t"): string {
+export function teamScope(user: ActingUser, p: ParamList["p"], alias = "t"): string {
 	if (user.role === "admin" || user.role === "coordinator") return "TRUE";
 	if (user.role === "institution") {
 		return user.institutionId ? `${alias}.institution_id = ${p(user.institutionId)}` : "FALSE";
@@ -266,7 +266,7 @@ function teamScope(user: ActingUser, p: ParamList["p"], alias = "t"): string {
 }
 
 /** §6.2 `institutions` list/view predicate: `role IN ('admin','coordinator') OR id = $inst`. */
-function institutionScope(user: ActingUser, p: ParamList["p"], alias = "i"): string {
+export function institutionScope(user: ActingUser, p: ParamList["p"], alias = "i"): string {
 	if (user.role === "admin" || user.role === "coordinator") return "TRUE";
 	return user.institutionId ? `${alias}.id = ${p(user.institutionId)}` : "FALSE";
 }
@@ -1265,7 +1265,7 @@ function toMemberRecord(row: MemberRow): MemberRecord {
 }
 
 /** §6.2 members create: admin ∨ (institution ∧ own inst) ∨ team leader. */
-function memberCreateScope(user: ActingUser, p: ParamList["p"], teamAlias = "t"): string {
+export function memberCreateScope(user: ActingUser, p: ParamList["p"], teamAlias = "t"): string {
 	if (user.role === "admin") return "TRUE";
 	if (user.role === "institution") {
 		return user.institutionId ? `${teamAlias}.institution_id = ${p(user.institutionId)}` : "FALSE";
@@ -1275,7 +1275,7 @@ function memberCreateScope(user: ActingUser, p: ParamList["p"], teamAlias = "t")
 }
 
 /** §6.2 members update/delete: admin ∨ team leader. */
-function memberWriteScope(user: ActingUser, p: ParamList["p"], teamAlias = "t"): string {
+export function memberWriteScope(user: ActingUser, p: ParamList["p"], teamAlias = "t"): string {
 	if (user.role === "admin") return "TRUE";
 	if (user.role === "lead") return `${teamAlias}.leader_user_id = ${p(user.id)}`;
 	return "FALSE";
@@ -1560,7 +1560,7 @@ function toQuestionnaireRecord(row: QuestionnaireRow): QuestionnaireResponseReco
 }
 
 /** §6.2 questionnaire list/view: admin ∨ coordinator ∨ (institution ∧ own inst) ∨ own response. */
-function questionnaireScope(user: ActingUser, p: ParamList["p"]): string {
+export function questionnaireScope(user: ActingUser, p: ParamList["p"]): string {
 	if (user.role === "admin" || user.role === "coordinator") return "TRUE";
 	if (user.role === "institution") {
 		return user.institutionId ? `t.institution_id = ${p(user.institutionId)}` : "FALSE";

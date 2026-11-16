@@ -7,7 +7,6 @@
  * `app/lib/db.server.ts`, which apply the §6.2 scope predicate in SQL.
  */
 import { type ActionResult, fail } from "./action.server";
-import { hashPassword } from "./auth.server";
 import {
 	type ActingUser,
 	institutions,
@@ -19,6 +18,7 @@ import {
 } from "./db.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
+import { hashPassword } from "./password.server";
 import { STATUS_LABELS } from "./team-status";
 import { canTransition } from "./transitions";
 import type { InstitutionRecord, Role, TeamStatus, TeamView, UserRecord } from "./types";

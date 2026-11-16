@@ -133,17 +133,18 @@ async function request(path, options = {}) {
 // ---------------------------------------------------------------------------
 
 const fixtures = await loadFixtures();
-const { teams, users, institution, questionnaire } = fixtures;
+const { teams, users, institution, institutionB, questionnaire } = fixtures;
 const PASSWORD = fixtures.password;
 
 console.log(`App:      ${APP}`);
 console.log(`Fixtures: ${FIXTURES_PATH}`);
 
-// Four logins — one under the 5/minute login limit, leaving a slot of margin.
+// Five logins — one under the 5/minute login limit, leaving a slot of margin.
 const priyaToken = await login(users.priya.email, PASSWORD);
 const adminToken = await login(users.admin.email, PASSWORD);
 const coordToken = await login(users.coordinator.email, PASSWORD);
 const campusToken = await login(users.campusLead.email, PASSWORD);
+const campusBToken = await login(users.campusLeadB.email, PASSWORD);
 
 // ── 1. Teams: lead reads her own team ─────────────────────────────────────
 console.log("\n=== 1. Teams: Priya (lead) reads her own team ===");
@@ -376,6 +377,34 @@ check(
 	`HTTP ${anonTeam.status} → ${anonLocation}`,
 );
 
+// ── 19. Cross-institution: campus lead B cannot read campus A's team ──────
+console.log("\n=== 19. Cross-institution: campus lead B cannot read campus A's team ===");
+const crossCampus = await request(`/teams/${teams.meera.id}`, { token: campusBToken });
+console.log("Campus lead B → Meera's team:", crossCampus.status);
+check(
+	crossCampus.status === 404,
+	"Campus lead B cannot read a team from another institution",
+	`HTTP ${crossCampus.status}`,
+);
+const crossCampusFile = await request(filePath, { token: campusBToken, accept: "*/*" });
+console.log("Campus lead B → Meera's file:", crossCampusFile.status);
+check(
+	crossCampusFile.status === 404,
+	"Campus lead B cannot download a file from another institution",
+	`HTTP ${crossCampusFile.status}`,
+);
+const crossCampusList = await request("/api/institutions", {
+	token: campusBToken,
+	accept: "application/json",
+});
+const crossCampusBody = JSON.parse(crossCampusList.text);
+check(
+	crossCampusBody.institutions?.length === 1 &&
+		crossCampusBody.institutions[0]?.id === institutionB.id,
+	"Campus lead B sees only her own institution",
+	`${crossCampusBody.institutions?.length} institution(s)`,
+);
+
 // ---------------------------------------------------------------------------
 // Dropped from the legacy REST suite
 // ---------------------------------------------------------------------------
@@ -393,11 +422,8 @@ check(
 // * `GET <legacy-base-url>/api/files/teams/<id>/<file>` — replaced by the app's
 //   own `/api/files/...` proxy (cases 8-10).
 //
-// Known gap: the fixture set has a single institution, so there is no
-// cross-institution team to probe — the campus lead legitimately sees both
-// teams. Cross-institution denial lives in the `teamScope` predicate in
-// `app/lib/db.server.ts`; add a second institution to the seed to assert it
-// end-to-end.
+// Cross-institution denial is asserted end-to-end by case 19, which uses the
+// second institution in the fixture set.
 
 // ---------------------------------------------------------------------------
 // Summary

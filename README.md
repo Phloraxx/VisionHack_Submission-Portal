@@ -1,6 +1,6 @@
 # VisionHack Submission Portal
 
-Hackathon submissions for a four-level invite chain: **admin → campus lead → team lead → submission**. Built for VisionHack 2026 and running at [portal.mulearn.org](https://portal.mulearn.org).
+Hackathon submissions for a four-level invite chain: **admin → campus lead → team lead → submission**. Built for VisionHack 2026 and running at [portal.phloraxx.us.to](https://portal.phloraxx.us.to).
 
 Campus leads invite their own team leads, team leads register their team and submit, and admins run the event from a single config screen without touching the database.
 
@@ -11,7 +11,7 @@ Campus leads invite their own team leads, team leads register their team and sub
 | `admin` | Everything: invite campus leads, shortlist, transition teams, export, open and close phases |
 | `coordinator` | Review and shortlist teams across institutions, filterable by district |
 | `institution` | Campus-scoped oversight of its own teams and shortlisting |
-| `lead` | Invite team leads, register teams, submit ideas, track status |
+| `lead` | Register their team, submit the questionnaire and the idea, track status |
 
 Every route loader and action checks the role server-side. The team detail route is shared and scoped by loader, not by hiding UI.
 
@@ -54,11 +54,11 @@ Apply `postgres/schema.sql` to a fresh database before the first run.
 | `DATABASE_URL` | PostgreSQL connection string |
 | `APP_JWT_SECRET` | HS256 signing key for session and password-reset tokens, at least 32 bytes |
 | `UPLOADS_DIR` | Root of the submission-file volume |
-| `APP_URL` | Public base URL, used to build absolute links in email |
-| `ALLOWED_ORIGINS` | Extra allowed `Origin` values beyond the localhost dev ports |
+| `APP_URL` | Public base URL, used to build absolute links in email. **Required in production** |
+| `ALLOWED_ORIGINS` | Comma-separated allowed `Origin` values. **Required in production** |
 | `RESEND_API_KEY` | Transactional email; skipped with a console warning when unset |
 | `SENTRY_DSN` | Optional error reporting |
-| `TRUST_PROXY_HEADERS` | Set when running behind a proxy that sets client IP headers |
+| `TRUST_PROXY_HEADERS` | **Required in production.** Set to `1` behind a trusted proxy so per-IP rate limiting can read the client address |
 
 ## Tests
 
@@ -79,7 +79,8 @@ The `Dockerfile` is a three-stage build (deps → build → runtime) producing a
 
 - Sessions are an httpOnly cookie with a one-hour lifetime; the role is read from the JWT claims and re-checked against the live user row on every request.
 - Every mutating action goes through a `secureAction` wrapper that validates the request origin, parses and validates the form against a Zod schema, and re-checks the session and role before the handler runs.
-- Login and password reset are rate-limited per client.
+- Login and password reset are rate-limited per account and, when the client address is known, per IP. `TRUST_PROXY_HEADERS=1` is required in production: without it the per-IP bucket is skipped rather than shared by every client.
+- A completed password reset invalidates every other session, because session tokens are bound to the current password hash.
 - Uploads are restricted to PDF and PowerPoint, capped at 10 MB, and validated server-side before they are written to the uploads volume.
 
 ## License

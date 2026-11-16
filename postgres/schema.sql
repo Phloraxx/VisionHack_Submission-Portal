@@ -8,7 +8,7 @@
 --   * scripts/setup-pb.ts        — field types, max lengths, relations, indexes
 --   * app/lib/types.ts           — the record shapes the app actually reads
 --   * app/lib/transitions.ts     — the status/role vocabulary used by CHECKs
---   * postgres/inventory.md      — the 80 call sites this schema must serve
+--   * postgres/inventory.md      — the table/layer map this schema serves
 --
 -- Idempotency contract
 -- --------------------
