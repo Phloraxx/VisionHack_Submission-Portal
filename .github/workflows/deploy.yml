@@ -55,6 +55,15 @@ jobs:
         run: |
           set -euo pipefail
           body=$(jq -n --arg ref "refs/heads/$EVENT_BRANCH" '{ref: $ref}')
-          curl --fail-with-body -X POST "$DOKPLOY_WEBHOOK" \
+          # Dokploy only reads the branch when a provider event header is
+          # present; without it the endpoint answers 301 "Branch Not Match",
+          # which --fail does not treat as an error (that is how this workflow
+          # reported green for months without ever deploying).
+          response=$(curl -sS -w '\n%{http_code}' -X POST "$DOKPLOY_WEBHOOK" \
             --header "Content-type: application/json" \
-            --data "$body"
+            --header "x-github-event: push" \
+            --data "$body")
+          http_code=$(printf '%s' "$response" | tail -n1)
+          response_body=$(printf '%s' "$response" | head -n -1)
+          echo "Dokploy: $response_body [$http_code]"
+          [ "$http_code" = "200" ]
