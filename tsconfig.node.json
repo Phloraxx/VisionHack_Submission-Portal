@@ -1,6 +1,6 @@
 {
 	"extends": "./tsconfig.json",
-	"include": ["vite.config.ts", "server.ts", "app/lib/env.server.ts"],
+	"include": ["vite.config.ts", "server.ts", "app/lib/env.server.ts", "app/lib/sentry.server.ts"],
 	"compilerOptions": {
 		"composite": true,
 		"strict": true,

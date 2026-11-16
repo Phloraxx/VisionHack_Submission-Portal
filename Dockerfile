@@ -1,7 +1,7 @@
 # =============================================================================
 # Stage 1: Install dependencies (cached via package.json + lockfile)
 # =============================================================================
-FROM node:22-alpine AS deps
+FROM node:22.18-alpine AS deps
 WORKDIR /app
 
 # Copy only the dependency manifests first — this layer is cached until
@@ -12,7 +12,7 @@ RUN npm ci && npm cache clean --force
 # =============================================================================
 # Stage 2: Build the application
 # =============================================================================
-FROM node:22-alpine AS build
+FROM node:22.18-alpine AS build
 WORKDIR /app
 
 # Copy cached node_modules from deps stage.
@@ -31,7 +31,7 @@ RUN npm prune --omit=dev
 # =============================================================================
 # Stage 3: Production runtime
 # =============================================================================
-FROM node:22-alpine AS runner
+FROM node:22.18-alpine AS runner
 WORKDIR /app
 
 # Use a non-root user for security.
@@ -44,10 +44,11 @@ COPY --from=build --chown=apprunner:nodejs /app/node_modules ./node_modules
 COPY --from=build --chown=apprunner:nodejs /app/server.ts ./server.ts
 COPY --from=build --chown=apprunner:nodejs /app/package.json ./package.json
 
-COPY --from=build --chown=apprunner:nodejs /app/tsconfig.json ./tsconfig.json
-# server.ts imports this at runtime under node type stripping; it has no
-# imports of its own, so the single source file is all the runner needs.
+# server.ts imports these at runtime under node type stripping, so the runner
+# needs the source files themselves. Node does not consult tsconfig.json, so
+# it is not copied.
 COPY --from=build --chown=apprunner:nodejs /app/app/lib/env.server.ts ./app/lib/env.server.ts
+COPY --from=build --chown=apprunner:nodejs /app/app/lib/sentry.server.ts ./app/lib/sentry.server.ts
 
 USER apprunner
 

@@ -1,15 +1,13 @@
-import * as Sentry from "@sentry/node";
-Sentry.init({
-	dsn: process.env.SENTRY_DSN,
-	environment: process.env.NODE_ENV ?? "development",
-	enabled: !!process.env.SENTRY_DSN,
-});
+// First import on purpose: ESM evaluates imports in declaration order, so this
+// initialises Sentry before any other module is loaded.
+import "./app/lib/sentry.server.ts";
 import fs from "node:fs";
 import http from "node:http";
 import type { Socket } from "node:net";
 import path from "node:path";
 import { createRequestListener } from "@react-router/node";
 import type { ServerBuild } from "react-router";
+import * as Sentry from "@sentry/node";
 import { getEnv } from "./app/lib/env.server.ts";
 
 /** MIME types for static assets served from build/client/. */
@@ -83,12 +81,27 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse):
 	const stat = await fs.promises.stat(realResolved).catch(() => null);
 	if (!stat?.isFile()) return false;
 
+	// `mtime` carries milliseconds while an HTTP date has seconds, so truncate
+	// before comparing: otherwise a file written mid-second never matches.
+	const lastModified = stat.mtime.toUTCString();
+	const cacheControl = url.pathname.startsWith("/assets/")
+		? "public, max-age=31536000, immutable"
+		: "no-cache";
+	const ifModifiedSince = req.headers["if-modified-since"];
+	if (
+		ifModifiedSince &&
+		Date.parse(ifModifiedSince) >= Math.floor(stat.mtime.getTime() / 1000) * 1000
+	) {
+		res.writeHead(304, { "Last-Modified": lastModified, "Cache-Control": cacheControl });
+		res.end();
+		return true;
+	}
+
 	res.writeHead(200, {
 		"Content-Type": MIME[ext],
 		"Content-Length": stat.size,
-		"Cache-Control": url.pathname.startsWith("/assets/")
-			? "public, max-age=31536000, immutable"
-			: "no-cache",
+		"Cache-Control": cacheControl,
+		"Last-Modified": lastModified,
 		"X-Content-Type-Options": "nosniff",
 	});
 	if (req.method === "GET") {
@@ -114,6 +127,19 @@ const server = http.createServer((req, res) => {
 		return;
 	}
 
+	// A chunked body declares no length, so the cap above cannot see it. Count
+	// the bytes as they arrive and drop the connection past the limit, before
+	// `formData()` buffers the whole thing in memory.
+	let received = 0;
+	req.on("data", (chunk: Buffer) => {
+		received += chunk.length;
+		if (received > MAX_BODY_BYTES) req.destroy();
+	});
+	// Attaching a `data` listener resumes the stream; pause it again so the
+	// bytes are still there for React Router to read. The listener keeps
+	// counting once the handler consumes the body.
+	req.pause();
+
 	serveStatic(req, res)
 		.then((served) => {
 			if (!served) rrHandler(req, res);
@@ -125,8 +151,9 @@ const server = http.createServer((req, res) => {
 		});
 });
 
-// Bound how long a slow or stalled client can hold a connection.
-server.requestTimeout = 30_000;
+// Bound how long a slow or stalled client can hold a connection. A 10 MiB
+// upload needs ~2.8 Mbit/s to finish inside 30 s, so the cap is 120 s.
+server.requestTimeout = 120_000;
 server.headersTimeout = 20_000;
 server.keepAliveTimeout = 65_000;
 
@@ -139,7 +166,10 @@ process.on("uncaughtException", (err) => {
 });
 process.on("unhandledRejection", (reason) => {
 	Sentry.captureException(reason);
-	console.error("[server] Unhandled rejection", reason);
+	console.error("[server] Unhandled rejection — exiting", reason);
+	// Node's default is to terminate; installing a handler must not downgrade
+	// that to "keep serving with undefined state".
+	process.exit(1);
 });
 
 // Validate the environment before accepting traffic: a missing DATABASE_URL or

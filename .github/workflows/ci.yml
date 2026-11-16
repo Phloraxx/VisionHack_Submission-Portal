@@ -76,7 +76,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U visionhack -d visionhack"
+          --health-cmd "pg_isready -U visionhack -d visionhack_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -122,7 +122,10 @@ jobs:
           set -euo pipefail
           # NODE_ENV is set here only: at job level it would make `npm ci`
           # skip devDependencies (husky's prepare hook then fails).
-          NODE_ENV=production npx tsx server.ts > /tmp/app.log 2>&1 &
+          # `node server.ts` — not tsx — is the Dockerfile CMD: Node's type
+          # stripping needs the explicit .ts extensions that tsx resolves for
+          # us, so this is the only gate that exercises the production boot.
+          NODE_ENV=production node server.ts > /tmp/app.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
