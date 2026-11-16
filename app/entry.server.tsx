@@ -1,9 +1,49 @@
+import { createRequire } from "node:module";
 import { renderToReadableStream } from "react-dom/server";
 import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 
 import * as Sentry from "@sentry/node";
 import { getEnv } from "./lib/env.server";
+
+/**
+ * React Router version this file's manifest/script injection was written
+ * against (audit finding F-10).
+ *
+ * RR7 7.17 omits the route-module and manifest scripts from `<Scripts />`
+ * when `isStatic` is false, so the injection below re-creates them by hand.
+ * If the framework is upgraded, re-check whether the workaround is still
+ * needed before bumping this constant.
+ */
+const PATCHED_ROUTER_VERSION = "7.17.";
+
+/** Installed React Router version, read once at boot. */
+function installedRouterVersion(): string {
+	try {
+		const require = createRequire(import.meta.url);
+		return String((require("react-router/package.json") as { version?: string }).version ?? "");
+	} catch {
+		return "";
+	}
+}
+
+const routerVersion = installedRouterVersion();
+if (routerVersion && !routerVersion.startsWith(PATCHED_ROUTER_VERSION)) {
+	console.warn(
+		`[entry.server] React Router ${routerVersion} is not the ${PATCHED_ROUTER_VERSION}x line this manifest injection was written for (F-10). Verify the workaround still applies.`,
+	);
+}
+
+/**
+ * Record a server-side route error.
+ *
+ * RR7 calls this for loader/action throws, which never reach `onError` below —
+ * without it a 500 is rendered and recorded nowhere (F-12/F-93).
+ */
+export function handleError(error: unknown, { request }: { request: Request }): void {
+	console.error("[route-error]", error, { url: request.url });
+	Sentry.captureException(error, { extra: { url: request.url } });
+}
 
 export default async function handleRequest(
 	request: Request,
@@ -74,26 +114,38 @@ export default async function handleRequest(
 	(async () => {
 		const reader = body.getReader();
 		const decoder = new TextDecoder();
-		let buffer = "";
+		let pending = "";
 		let injected = false;
 		while (true) {
 			const { done, value } = await reader.read();
-			if (done) {
-				if (!injected) buffer = buffer.replace(injectTarget, `${patch}$&`);
-				await writer.write(encoder.encode(addNonce(buffer)));
-				await writer.close();
-				break;
-			}
-			buffer += decoder.decode(value, { stream: true });
+			if (done) break;
+
+			pending += decoder.decode(value, { stream: true });
 			if (!injected) {
-				const idx = buffer.search(injectTarget);
+				const idx = pending.search(injectTarget);
 				if (idx !== -1) {
 					injected = true;
-					await writer.write(encoder.encode(addNonce(buffer.slice(0, idx)) + patch));
-					buffer = buffer.slice(idx);
+					pending = pending.slice(0, idx) + patch + pending.slice(idx);
 				}
 			}
+
+			// Write through immediately, holding back only the tail from the last
+			// `<` so a tag is never split across chunks (the nonce rewrite needs
+			// the whole tag to see whether it already has one).
+			const cut = pending.lastIndexOf("<");
+			const ready = cut === -1 ? pending : pending.slice(0, cut);
+			if (ready) {
+				pending = pending.slice(ready.length);
+				await writer.write(encoder.encode(addNonce(ready)));
+			}
 		}
+
+		// Flush the decoder: a multi-byte sequence split across the final chunk
+		// would otherwise be dropped.
+		pending += decoder.decode();
+		if (!injected) pending = pending.replace(injectTarget, `${patch}$&`);
+		if (pending) await writer.write(encoder.encode(addNonce(pending)));
+		await writer.close();
 	})().catch((err) => {
 		writer.abort(err);
 		console.error("[entry.server] Stream transform error:", err);

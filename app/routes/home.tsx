@@ -20,7 +20,3 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	}
 	throw redirect(target);
 }
-
-export default function Home() {
-	return null;
-}

@@ -17,7 +17,8 @@ export async function action({ request }: ActionFunctionArgs) {
 			headers: { "Content-Type": "application/json" },
 		});
 	}
-	validateOrigin(request, false);
+	// A state-changing POST must carry a matching Origin.
+	validateOrigin(request, true);
 
 	// Clear the auth cookie and redirect to login. Rate limiting is handled
 	// by the app-wide settings.

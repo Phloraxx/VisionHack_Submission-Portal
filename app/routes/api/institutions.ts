@@ -3,10 +3,6 @@ import { requireAuthJson } from "~/lib/auth.server";
 import { institutions } from "~/lib/db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	if (request.method !== "GET") {
-		return new Response("Method not allowed", { status: 405 });
-	}
-
 	const auth = await requireAuthJson(request);
 	if (auth instanceof Response) return auth;
 
@@ -49,17 +45,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		// The repository's §6.2 predicate already limits this to the actor's
 		// own institution, so a missing row means "no institution on file".
 		const institution = await institutions.getOne(user, user.institutionId);
-		if (!institution) {
-			// The old backend threw a 404 here; the catch below has always
-			// turned that into the 500 this endpoint returns.
-			throw new Error("Institution not found");
-		}
-
+		// A user with no institution on file is not an error — the endpoint
+		// answers with an empty list.
 		return Response.json(
 			{
-				institutions: [
-					{ id: institution.id, name: institution.name, district: institution.district },
-				],
+				institutions: institution
+					? [{ id: institution.id, name: institution.name, district: institution.district }]
+					: [],
 			},
 			{
 				headers: { "Cache-Control": "private, max-age=60" },

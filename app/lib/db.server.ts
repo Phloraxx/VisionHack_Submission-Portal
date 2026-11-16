@@ -748,11 +748,11 @@ export const teams: TeamsRepository = {
 		for (const row of result.rows) {
 			aggregate.byStatus[row.status] = (aggregate.byStatus[row.status] ?? 0) + row.count;
 			aggregate.total += row.count;
-			const bucket = (aggregate.byInstitution[row.institution_id] ??= {
-				total: 0,
-				registered: 0,
-				shortlisted: 0,
-			});
+			let bucket = aggregate.byInstitution[row.institution_id];
+			if (!bucket) {
+				bucket = { total: 0, registered: 0, shortlisted: 0 };
+				aggregate.byInstitution[row.institution_id] = bucket;
+			}
 			bucket.total += row.count;
 			if (row.status === "registered") bucket.registered += row.count;
 			if (row.status === "shortlisted") bucket.shortlisted += row.count;

@@ -93,6 +93,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	if (token && token !== originalToken) {
 		headers.append("Set-Cookie", setAuthCookie(token));
 	}
+	// Every page under this layout carries user data — never let a browser or
+	// intermediary cache it.
+	headers.set("Cache-Control", "no-store");
 
 	return data({ user }, { headers });
 }
@@ -149,6 +152,7 @@ export default function DashboardLayout() {
 	// Capture the element that opened the drawer so focus can come back
 	// to it when the user closes the drawer.
 	const openTriggerRef = useRef<HTMLElement | null>(null);
+	const sidebarRef = useRef<HTMLElement | null>(null);
 
 	useEffect(() => {
 		if (!sidebarOpen) return;
@@ -160,6 +164,23 @@ export default function DashboardLayout() {
 			if (e.key === "Escape") {
 				e.preventDefault();
 				setSidebarOpen(false);
+				return;
+			}
+			if (e.key !== "Tab") return;
+
+			// Keep Tab inside the open drawer.
+			const focusable = sidebarRef.current?.querySelectorAll<HTMLElement>(
+				'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+			);
+			if (!focusable || focusable.length === 0) return;
+			const first = focusable[0];
+			const last = focusable[focusable.length - 1];
+			if (e.shiftKey && document.activeElement === first) {
+				e.preventDefault();
+				last.focus();
+			} else if (!e.shiftKey && document.activeElement === last) {
+				e.preventDefault();
+				first.focus();
 			}
 		};
 		document.addEventListener("keydown", onKeyDown);
@@ -184,7 +205,9 @@ export default function DashboardLayout() {
 				<div
 					className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden vh-safe-top"
 					onClick={() => setSidebarOpen(false)}
-					onKeyDown={() => {}}
+					onKeyDown={(e) => {
+						if (e.key === "Escape") setSidebarOpen(false);
+					}}
 					aria-hidden="true"
 				/>
 			)}
@@ -202,6 +225,7 @@ export default function DashboardLayout() {
           SIDEBAR — dark chrome, event identity top, role badge, nav
           ------------------------------------------------------------- */}
 			<aside
+				ref={sidebarRef}
 				id="primary-sidebar"
 				aria-label="Primary"
 				className={cn(
@@ -384,8 +408,10 @@ export function HydrateFallback() {
 				</nav>
 			</aside>
 			<div className="flex flex-1 flex-col">
-				<main className="flex-1 p-8">
-					<Outlet />
+				<main className="flex-1 space-y-4 p-8">
+					<Skeleton className="h-8 w-64" />
+					<Skeleton className="h-4 w-full max-w-xl" />
+					<Skeleton className="h-40 w-full rounded-lg" />
 				</main>
 			</div>
 		</div>

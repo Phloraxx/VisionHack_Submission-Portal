@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** Institution code: uppercase letters and digits only. */
+export const CODE_PATTERN = /^[A-Z0-9]+$/i;
+
 export const createCampusLeadSchema = z.object({
 	institutionName: z
 		.string()
@@ -13,7 +16,7 @@ export const createCampusLeadSchema = z.object({
 		.string()
 		.min(1, "Code is required")
 		.max(12, "Code must be at most 12 characters")
-		.regex(/^[A-Z0-9]+$/i, "Code must contain only uppercase letters and digits"),
+		.regex(CODE_PATTERN, "Code must contain only uppercase letters and digits"),
 	leadName: z
 		.string()
 		.min(1, "Lead name is required")

@@ -10,7 +10,6 @@ import { type ActionResult, fail } from "./action.server";
 import { hashPassword } from "./auth.server";
 import {
 	type ActingUser,
-	db,
 	institutions,
 	members,
 	statusTransitions,
@@ -20,7 +19,6 @@ import {
 } from "./db.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
-import { sendPasswordResetEmail } from "./password-reset.server";
 import { STATUS_LABELS } from "./team-status";
 import { canTransition } from "./transitions";
 import type { InstitutionRecord, Role, TeamStatus, TeamView, UserRecord } from "./types";
@@ -218,17 +216,19 @@ export interface CreateCampusLeadArgs {
 }
 
 /**
- * Create an institution + its campus-lead user, then send the app's
- * password-reset email so the lead sets their own password. Idempotency is
- * the caller's responsibility (check for an existing code/email first).
+ * Create an institution + its campus-lead user.
  *
- * The three writes run in one transaction; the reset email is sent after the
- * commit so no pool client is held across an outbound HTTP call.
+ * Idempotency is the caller's responsibility (check for an existing
+ * code/email first). The three writes run in one transaction; the caller
+ * sends the set-password email after the commit, so no pool client is held
+ * across an outbound HTTP call.
+ *
+ * Returns the lead's email address.
  */
 export async function createCampusLead(
 	args: CreateCampusLeadArgs,
 	user: ActingUser,
-): Promise<void> {
+): Promise<string> {
 	const {
 		institutionName,
 		district,
@@ -267,9 +267,5 @@ export async function createCampusLead(
 		await institutions.update(user, institution.id, { campusLeadId: campusLead.id });
 	});
 
-	try {
-		await sendPasswordResetEmail(db, leadEmail);
-	} catch (err) {
-		console.error("[team] campus-lead reset email failed:", err);
-	}
+	return leadEmail;
 }

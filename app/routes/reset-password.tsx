@@ -15,7 +15,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { clearAuthCookie } from "~/lib/auth.server";
 import { db } from "~/lib/db.server";
-import { getClientIp } from "~/lib/ip.server";
+import { ipRateLimitKey } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { resetPassword, verifyPasswordResetToken } from "~/lib/password-reset.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
@@ -27,12 +27,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const token = new URL(request.url).searchParams.get("token") ?? "";
 	const verified = token ? await verifyPasswordResetToken(db, token) : null;
 
-	return data({
-		valid: verified !== null,
-		// Echoed into a hidden field so the action can re-verify. The token is
-		// already in the URL, so this exposes nothing new.
-		token: verified ? token : "",
-	});
+	return data(
+		{
+			valid: verified !== null,
+			// Echoed into a hidden field so the action can re-verify. The token is
+			// already in the URL, so this exposes nothing new.
+			token: verified ? token : "",
+		},
+		// The HTML carries a reset token — never let a cache keep it.
+		{ headers: { "Cache-Control": "no-store" } },
+	);
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -48,9 +52,9 @@ export async function action({ request }: ActionFunctionArgs) {
 	const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
 	// Rate limiting — same shape as the other auth surfaces.
-	const ip = getClientIp(request);
+	const ipKey = ipRateLimitKey("reset", request);
 	try {
-		checkRateLimit(`reset:ip:${ip}`, 10, 60_000);
+		if (ipKey) checkRateLimit(ipKey, 10, 60_000);
 	} catch {
 		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });
 	}

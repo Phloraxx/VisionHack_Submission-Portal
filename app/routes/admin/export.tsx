@@ -17,7 +17,6 @@ import { members, teams } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus, TeamView } from "~/lib/types";
-import { countByKey } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Loader
@@ -28,24 +27,18 @@ import { countByKey } from "~/lib/utils";
 // filter UI and member counts only — not full member rows.
 export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
 	const MAX_SAFE_LIST = 500;
-	const [teamsResult, membersResult] = await Promise.all([
-		teams.list(user, { perPage: MAX_SAFE_LIST, sort: "-created" }),
-		members.list(user, { perPage: MAX_SAFE_LIST }),
-	]);
+	const teamsResult = await teams.list(user, { perPage: MAX_SAFE_LIST, sort: "-created" });
 	const allTeams = teamsResult.items;
-	const allMembers = membersResult.items;
 	if (teamsResult.totalItems > MAX_SAFE_LIST) {
 		console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
-	if (membersResult.totalItems > MAX_SAFE_LIST) {
-		console.warn(`[members] More than ${MAX_SAFE_LIST} items — pagination needed`);
-	}
 
-	// Only count members whose team exists in the loaded set —
-	// avoids a total/filtered mismatch from orphaned member records.
-	const teamIds = new Set(allTeams.map((t) => t.id));
-	const memberCounts = countByKey(allMembers, (m) => m.teamId);
-	const totalMembers = allMembers.filter((m) => teamIds.has(m.teamId)).length;
+	// One `GROUP BY team_id` instead of loading every member row.
+	const memberCounts = await members.countByTeams(
+		user,
+		allTeams.map((t) => t.id),
+	);
+	const totalMembers = Object.values(memberCounts).reduce((sum, count) => sum + count, 0);
 
 	return {
 		user,

@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
-import { teams } from "~/lib/db.server";
+import { isUuid, teams } from "~/lib/db.server";
 import { getTeamSubmissionPath } from "~/lib/uploads.server";
 
 /** Content types for the extensions `submit-idea` accepts. */
@@ -25,10 +25,6 @@ function contentTypeFor(filename: string): string {
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-	if (request.method !== "GET") {
-		return new Response("Method not allowed", { status: 405 });
-	}
-
 	const auth = await requireAuthJson(request);
 	if (auth instanceof Response) return auth;
 	const { user } = auth;
@@ -50,7 +46,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	}
 	// Team ids are uuids. The repository guards the uuid cast too, so a
 	// malformed id reads as "not found" rather than a 500.
-	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) {
+	if (!isUuid(recordId)) {
 		return new Response("Not found", { status: 404 });
 	}
 
@@ -74,11 +70,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 		return new Response("Forbidden", { status: 403 });
 	}
 
-	const attached = (team.submissionFile ?? "")
-		.split(",")
-		.map((f: string) => f.trim())
-		.filter(Boolean);
-	if (!attached.includes(filename)) {
+	// `submission_file` holds exactly one filename.
+	if (team.submissionFile !== filename) {
 		return new Response("Not found", { status: 404 });
 	}
 
@@ -106,6 +99,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
 	headers.set("Content-Disposition", `attachment; filename="${safeFilename}"`);
 	headers.set("Content-Length", String(size));
+	headers.set("X-Content-Type-Options", "nosniff");
 	// Files are served only to authenticated users; cache privately for an hour.
 	headers.set("Cache-Control", "private, max-age=3600");
 

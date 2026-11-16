@@ -11,6 +11,21 @@ import type { Route } from "./+types/root";
 
 import stylesheet from "./app.css?url";
 
+/**
+ * Runs before first paint: applies the saved theme so the page never flashes
+ * the wrong one. `localStorage` throws in storage-blocked browsers, so the
+ * read is guarded and the media query is the fallback.
+ */
+const THEME_INIT_SCRIPT = `(() => {
+	try {
+		const saved = localStorage.getItem("vh-theme");
+		const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+		if ((saved || (prefersDark ? "dark" : "light")) === "dark") {
+			document.documentElement.classList.add("dark");
+		}
+	} catch {}
+})();`;
+
 export const links: Route.LinksFunction = () => [{ rel: "stylesheet", href: stylesheet }];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -22,7 +37,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<meta name="theme-color" content="#2a2620" media="(prefers-color-scheme: dark)" />
 				<Meta />
 				<Links />
-				<script src="/theme-init.js" />
+				{/* Applies the saved theme before first paint. Inline so it is not a
+				    render-blocking request; the nonce is stamped by entry.server. */}
+				<script
+					// biome-ignore lint/security/noDangerouslySetInnerHtml: static constant, no user input
+					dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+				/>
 			</head>
 			<body className="min-h-screen bg-background text-foreground antialiased">
 				{children}

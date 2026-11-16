@@ -7,18 +7,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { fail, ok, secureAction } from "~/lib/action.server";
-import { institutions, users, withTransaction } from "~/lib/db.server";
+import { db, institutions, users, withTransaction } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
-import { createCampusLeadSchema } from "~/lib/schemas/campus-leads";
+import { sendPasswordResetEmail } from "~/lib/password-reset.server";
+import { CODE_PATTERN, createCampusLeadSchema } from "~/lib/schemas/campus-leads";
 import { createCampusLead } from "~/lib/team.server";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Valid institution code: uppercase letters and digits only. */
-const CODE_PATTERN = /^[A-Z0-9]+$/i;
 
 /** Simple CSV line parser — handles quoted fields and RFC 4180 escaped quotes ("" inside quotes) */
 function parseCsvLine(rawLine: string): string[] {
@@ -115,6 +113,12 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 				);
 			});
 
+			// Sent after the commit — a rolled-back invite must not mail a
+			// dead link.
+			await sendPasswordResetEmail(db, leadEmail).catch((err) => {
+				console.error("[campus-leads] reset email failed:", err);
+			});
+
 			return ok({ type: "single", success: true, institutionName, leadName, leadEmail });
 		} catch (err) {
 			console.error("[campus-leads] create-single failed:", err);
@@ -164,6 +168,7 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 			});
 		}
 		const results: Array<{ row: number; name: string; status: string; error?: string }> = [];
+		const createdEmails: string[] = [];
 		let created = 0;
 
 		for (let i = 1; i < lines.length; i++) {
@@ -245,16 +250,27 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 				});
 
 				created++;
+				createdEmails.push(cleanLeadEmail);
 				results.push({ row: rowNum, name: cleanInst, status: "created" });
 			} catch (err) {
-				const message = err instanceof Error ? err.message : "Unknown error";
+				// Log the detail; the client gets a fixed string so a Postgres
+				// error cannot name constraints or values.
+				console.error("[campus-leads] bulk row failed:", err);
 				results.push({
 					row: rowNum,
 					name: cleanInst || "unknown",
 					status: "failed",
-					error: message,
+					error: "Could not create this row",
 				});
 			}
+		}
+
+		// Every invite is committed by now, so the set-password emails go out
+		// after the writes rather than inside them.
+		for (const email of createdEmails) {
+			await sendPasswordResetEmail(db, email).catch((err) => {
+				console.error("[campus-leads] reset email failed:", err);
+			});
 		}
 
 		return ok({ type: "bulk", success: true, created, total: results.length, results });
@@ -414,7 +430,7 @@ export default function AdminCampusLeads() {
 								</div>
 							)}
 
-							{errorMessage && (
+							{errorMessage && !bulkSuccess && (
 								<div
 									role="alert"
 									className="vh-shake rounded-md border border-danger/30 bg-danger/8 px-3 py-2.5 text-sm text-danger"
@@ -468,7 +484,7 @@ export default function AdminCampusLeads() {
 									)}
 								</div>
 							)}
-							{errorMessage && (
+							{errorMessage && !singleSuccess && (
 								<div
 									role="alert"
 									className="vh-shake rounded-md border border-danger/30 bg-danger/8 px-3 py-2.5 text-sm text-danger"
