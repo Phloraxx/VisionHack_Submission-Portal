@@ -5,11 +5,16 @@ import {
 	Scripts,
 	ScrollRestoration,
 	isRouteErrorResponse,
+	useRouteLoaderData,
 } from "react-router";
 import { Toaster } from "sonner";
 import type { Route } from "./+types/root";
 
-import stylesheet from "./app.css?url";
+import "./app.css";
+// ^ Side-effect import: registers the stylesheet with the route manifest so
+// SSR and the client resolve the same hashed asset. A `?url` import is
+// resolved separately by each build environment, which emitted two different
+// hashed CSS files in the Docker build and broke hydration (React #418).
 
 /**
  * Runs before first paint: applies the saved theme so the page never flashes
@@ -26,9 +31,18 @@ const THEME_INIT_SCRIPT = `(() => {
 	} catch {}
 })();`;
 
-export const links: Route.LinksFunction = () => [{ rel: "stylesheet", href: stylesheet }];
+/**
+ * Hands the per-request CSP nonce (minted in server.ts) to the inline theme
+ * script, <Scripts /> and <ScrollRestoration /> so they render the nonce on
+ * both server and client. entry.server builds the CSP header from the same
+ * value, and React 19 hydration requires identical attributes on both sides.
+ */
+export function loader({ context }: Route.LoaderArgs) {
+	return { nonce: context.nonce };
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
+	const nonce = useRouteLoaderData<typeof loader>("root")?.nonce ?? "";
 	return (
 		<html lang="en" suppressHydrationWarning>
 			<head>
@@ -38,8 +52,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<Meta />
 				<Links />
 				{/* Applies the saved theme before first paint. Inline so it is not a
-				    render-blocking request; the nonce is stamped by entry.server. */}
+				    render-blocking request; the nonce comes from the root loader and is
+				    identical on server and client, keeping hydration clean. */}
 				<script
+					nonce={nonce}
 					// biome-ignore lint/security/noDangerouslySetInnerHtml: static constant, no user input
 					dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
 				/>
@@ -57,8 +73,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 						},
 					}}
 				/>
-				<ScrollRestoration />
-				<Scripts />
+				<ScrollRestoration nonce={nonce} />
+				<Scripts nonce={nonce} />
 			</body>
 		</html>
 	);

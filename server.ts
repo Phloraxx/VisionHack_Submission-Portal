@@ -44,7 +44,10 @@ const getBuild = (): Promise<ServerBuild> => {
 const rrHandler = createRequestListener({
 	build: getBuild,
 	mode: process.env.NODE_ENV ?? "development",
-	getLoadContext: () => ({}),
+	// Minted once per request and shared with the root loader and
+	// entry.server so the CSP header and every rendered script tag use the
+	// same nonce.
+	getLoadContext: () => ({ nonce: crypto.randomUUID() }),
 });
 
 /**
