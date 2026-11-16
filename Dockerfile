@@ -50,6 +50,10 @@ COPY --from=build --chown=apprunner:nodejs /app/package.json ./package.json
 COPY --from=build --chown=apprunner:nodejs /app/app/lib/env.server.ts ./app/lib/env.server.ts
 COPY --from=build --chown=apprunner:nodejs /app/app/lib/sentry.server.ts ./app/lib/sentry.server.ts
 
+# The schema is applied at boot from `$PWD/sqlite/schema.sql`, so it has to be
+# in the image at the same relative path it has in the repo.
+COPY --from=build --chown=apprunner:nodejs /app/sqlite ./sqlite
+
 USER apprunner
 
 EXPOSE 3000

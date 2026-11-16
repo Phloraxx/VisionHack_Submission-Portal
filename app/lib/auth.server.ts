@@ -218,7 +218,7 @@ export interface AuthResult {
  * 2. If missing/malformed → **throws** `redirect("/login")`.
  * 3. Verifies the JWT signature and expiry locally. If the token is near
  *    expiry, mints a fresh one (no network round trip).
- * 4. Loads the user record once (`SELECT … WHERE id = $1`); missing → **throws**
+ * 4. Loads the user record once (`SELECT … WHERE id = ?`); missing → **throws**
  *    `redirect("/login")`.
  * 5. Returns the database handle, the user record, and the (possibly
  *    re-minted) token so callers can issue a new cookie if needed.

@@ -112,7 +112,10 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse):
 			.on("error", () => {
 				try {
 					res.destroy();
-				} catch {}
+				} catch {
+					// Best effort: the stream already failed, so a throw from
+					// destroying the socket has nowhere useful to go.
+				}
 			})
 			.pipe(res);
 	} else {
@@ -176,8 +179,8 @@ process.on("unhandledRejection", (reason) => {
 	process.exit(1);
 });
 
-// Validate the environment before accepting traffic: a missing DATABASE_URL or
-// a short APP_JWT_SECRET must fail the boot, not the first request.
+// Validate the environment before accepting traffic: a short APP_JWT_SECRET
+// must fail the boot, not the first request.
 const env = getEnv();
 if (env.NODE_ENV === "production" && !env.TRUST_PROXY_HEADERS) {
 	console.warn(

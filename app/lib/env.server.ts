@@ -14,8 +14,13 @@
 export const MIN_JWT_SECRET_BYTES = 32;
 
 export interface EnvConfig {
-	/** PostgreSQL connection string, e.g. `postgres://user:pass@host:5432/db?sslmode=disable`. */
-	DATABASE_URL: string;
+	/**
+	 * Path to the SQLite database file, e.g. `./data/portal.db`.
+	 *
+	 * `:memory:` opens a private in-memory database, which is what the unit
+	 * tests use. The parent directory is created on first connection.
+	 */
+	SQLITE_PATH: string;
 	/** HS256 signing key for session and password-reset tokens. At least 32 bytes. */
 	APP_JWT_SECRET: string;
 	/** Root of the submission-file volume. */
@@ -81,7 +86,7 @@ export function getEnv(): EnvConfig {
 	const rawPort = Number(process.env.PORT ?? 3000);
 
 	const config: EnvConfig = {
-		DATABASE_URL: requireEnv("DATABASE_URL"),
+		SQLITE_PATH: process.env.SQLITE_PATH || "./data/portal.db",
 		APP_JWT_SECRET: requireJwtSecret(),
 		UPLOADS_DIR: requireEnv("UPLOADS_DIR"),
 		ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,

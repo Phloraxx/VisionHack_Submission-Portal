@@ -16,7 +16,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const TEST_SECRET = "test-jwt-secret-0123456789abcdef0123456789abcdef";
-const ENV_KEYS = ["APP_JWT_SECRET", "DATABASE_URL", "UPLOADS_DIR"] as const;
+const ENV_KEYS = ["APP_JWT_SECRET", "SQLITE_PATH", "UPLOADS_DIR"] as const;
 const ORIGINAL_ENV = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 function restoreEnv(): void {
@@ -29,7 +29,7 @@ function restoreEnv(): void {
 
 beforeEach(() => {
 	process.env.APP_JWT_SECRET = TEST_SECRET;
-	process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgres://localhost:5432/test";
+	process.env.SQLITE_PATH = process.env.SQLITE_PATH ?? ":memory:";
 	process.env.UPLOADS_DIR = process.env.UPLOADS_DIR ?? "/tmp/visionhack-uploads";
 	resetEnvCache();
 });

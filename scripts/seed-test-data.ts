@@ -2,7 +2,7 @@
 /**
  * Deterministic fixtures for `tests/test-idor.mjs`.
  *
- * Purges the app tables in `$DATABASE_URL` and re-inserts one fixed fixture
+ * Purges the app tables in `$SQLITE_PATH` and re-inserts one fixed fixture
  * set: two institutions, an admin, a coordinator, two campus leads, three team
  * leads with one team each, their members, one questionnaire response, and one
  * submitted team whose submission file is written to the uploads volume. The
@@ -12,7 +12,7 @@
  *   npm run seed:test
  *
  * Environment:
- *   DATABASE_URL  – target database (required)
+ *   SQLITE_PATH   – target database (required; must look like a test target)
  *   UPLOADS_DIR   – volume root; the submitted team's file is written to
  *                   `$UPLOADS_DIR/teams/<team id>/submission.pdf` (required)
  *   FIXTURES_PATH – where the fixture map is written
@@ -38,9 +38,10 @@
  * can log in. The script refuses to run against production.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { Pool } from "pg";
+import Database from "better-sqlite3";
 import { hashPassword } from "../app/lib/password.server";
 
 // ---------------------------------------------------------------------------
@@ -250,13 +251,38 @@ function requireEnv(name: string): string {
 	return value;
 }
 
-/** `host:port/db` — enough to identify the target without leaking credentials. */
-function describeTarget(connectionString: string): string {
+/**
+ * Refuse to run anywhere that looks like production.
+ *
+ * The script deletes every row in six tables, so a stray `SQLITE_PATH` must
+ * fail loudly rather than wipe a live event. A path qualifies as a test target
+ * when it contains "test" or lives under the OS temp directory.
+ */
+function assertSafeTarget(sqlitePath: string): void {
+	if (process.env.NODE_ENV === "production") {
+		throw new Error("seed-test-data refuses to run with NODE_ENV=production");
+	}
+	if (sqlitePath === ":memory:") return;
+
+	const resolved = path.resolve(sqlitePath);
+	const inTempDir = resolved.startsWith(path.resolve(tmpdir()) + path.sep);
+	if (!inTempDir && !path.basename(resolved).includes("test")) {
+		throw new Error(
+			`seed-test-data refuses to run against "${resolved}": the filename must contain "test" or the file must live under ${tmpdir()}`,
+		);
+	}
+}
+
+/** Apply the schema so this script works against a brand-new database file. */
+async function applySchema(database: Database.Database): Promise<void> {
+	const schema = await readFile(path.join(process.cwd(), "sqlite", "schema.sql"), "utf8");
+	database.exec("BEGIN IMMEDIATE");
 	try {
-		const url = new URL(connectionString);
-		return `${url.hostname}:${url.port || "5432"}${url.pathname}`;
-	} catch {
-		return "(unparseable DATABASE_URL)";
+		database.exec(schema);
+		database.exec("COMMIT");
+	} catch (err) {
+		database.exec("ROLLBACK");
+		throw err;
 	}
 }
 
@@ -264,108 +290,88 @@ function describeTarget(connectionString: string): string {
 // Seed
 // ---------------------------------------------------------------------------
 
-/**
- * Refuse to run anywhere that looks like production.
- *
- * The script deletes every row in six tables, so a stray `DATABASE_URL` must
- * fail loudly rather than wipe a live event.
- */
-function assertSafeTarget(databaseUrl: string): void {
-	if (process.env.NODE_ENV === "production") {
-		throw new Error("seed-test-data refuses to run with NODE_ENV=production");
-	}
-	let databaseName: string;
-	try {
-		databaseName = new URL(databaseUrl).pathname.replace(/^\//, "");
-	} catch {
-		throw new Error("DATABASE_URL is not a valid connection string");
-	}
-	if (!databaseName.includes("test")) {
-		throw new Error(
-			`seed-test-data refuses to run against "${databaseName}": the database name must contain "test"`,
-		);
-	}
-}
-
 async function main(): Promise<void> {
-	const databaseUrl = requireEnv("DATABASE_URL");
-	assertSafeTarget(databaseUrl);
+	const sqlitePath = requireEnv("SQLITE_PATH");
+	assertSafeTarget(sqlitePath);
 	const uploadsDir = requireEnv("UPLOADS_DIR");
 	const fixturesPath =
 		process.env.FIXTURES_PATH || path.join("/tmp", "visionhack-test-fixtures.json");
 
-	console.error(`[seed] target ${describeTarget(databaseUrl)}`);
+	console.error(`[seed] target ${sqlitePath}`);
 	console.error("[seed] purging users, institutions, teams, members, questionnaire_responses");
 
 	// One hash for every account: they share a password, and argon2 is slow.
 	const passwordHash = await hashPassword(PASSWORD);
 
-	const pool = new Pool({ connectionString: databaseUrl, max: 1 });
-	const client = await pool.connect();
+	if (sqlitePath !== ":memory:") {
+		await mkdir(path.dirname(path.resolve(sqlitePath)), { recursive: true });
+	}
+	const database = new Database(sqlitePath);
+	database.pragma("journal_mode = WAL");
+	database.pragma("foreign_keys = ON");
+	database.pragma("busy_timeout = 5000");
+	await applySchema(database);
 
 	try {
-		await client.query("BEGIN");
+		database.exec("BEGIN IMMEDIATE");
 
-		// Purge — children first, then the rows they point at.
-		await client.query("DELETE FROM questionnaire_responses");
-		await client.query("DELETE FROM members");
-		await client.query("DELETE FROM status_transitions");
-		await client.query("DELETE FROM teams");
-		await client.query("DELETE FROM institutions");
-		await client.query("DELETE FROM users");
+		// Purge — children first, then the rows they point at. Whole literal
+		// statements, so no identifier is ever interpolated into SQL.
+		for (const statement of [
+			"DELETE FROM questionnaire_responses",
+			"DELETE FROM members",
+			"DELETE FROM status_transitions",
+			"DELETE FROM teams",
+			"DELETE FROM institutions",
+			"DELETE FROM users",
+		]) {
+			database.prepare(statement).run();
+		}
 
 		// Institution first, with no campus lead yet (the FK points at users).
-		await client.query(
+		const insertInstitution = database.prepare(
 			`INSERT INTO institutions (id, name, district, code, max_teams, status)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			[
-				ID.institution,
-				INSTITUTION.name,
-				INSTITUTION.district,
-				INSTITUTION.code,
-				INSTITUTION.maxTeams,
-				INSTITUTION.status,
-			],
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+		);
+		insertInstitution.run(
+			ID.institution,
+			INSTITUTION.name,
+			INSTITUTION.district,
+			INSTITUTION.code,
+			INSTITUTION.maxTeams,
+			INSTITUTION.status,
+		);
+		insertInstitution.run(
+			ID.institutionB,
+			INSTITUTION_B.name,
+			INSTITUTION_B.district,
+			INSTITUTION_B.code,
+			INSTITUTION_B.maxTeams,
+			INSTITUTION_B.status,
 		);
 
-		await client.query(
-			`INSERT INTO institutions (id, name, district, code, max_teams, status)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			[
-				ID.institutionB,
-				INSTITUTION_B.name,
-				INSTITUTION_B.district,
-				INSTITUTION_B.code,
-				INSTITUTION_B.maxTeams,
-				INSTITUTION_B.status,
-			],
+		const insertUser = database.prepare(
+			`INSERT INTO users (id, email, name, role, institution_id, password_hash, verified)
+			 VALUES (?, ?, ?, ?, ?, ?, 1)`,
 		);
-
 		for (const user of USERS) {
-			await client.query(
-				`INSERT INTO users (id, email, name, role, institution_id, password_hash, verified)
-				 VALUES ($1, $2, $3, $4, $5, $6, true)`,
-				[user.id, user.email, user.name, user.role, user.institutionId, passwordHash],
-			);
+			insertUser.run(user.id, user.email, user.name, user.role, user.institutionId, passwordHash);
 		}
 
 		// Back-link each institution to its campus lead.
-		await client.query("UPDATE institutions SET campus_lead_id = $2 WHERE id = $1", [
-			ID.institution,
-			ID.campusLead,
-		]);
-		await client.query("UPDATE institutions SET campus_lead_id = $2 WHERE id = $1", [
-			ID.institutionB,
-			ID.campusLeadB,
-		]);
+		const linkLead = database.prepare("UPDATE institutions SET campus_lead_id = ? WHERE id = ?");
+		linkLead.run(ID.campusLead, ID.institution);
+		linkLead.run(ID.campusLeadB, ID.institutionB);
 
 		// Priya's team: registered, questionnaire done, no submission yet.
-		await client.query(
-			`INSERT INTO teams (
-				id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
-				questionnaire_completed
-			 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			[
+		database
+			.prepare(
+				`INSERT INTO teams (
+					id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
+					questionnaire_completed
+				 ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+			)
+			.run(
 				ID.priyaTeam,
 				"Team Priya",
 				ID.institution,
@@ -373,17 +379,17 @@ async function main(): Promise<void> {
 				"TP-001",
 				"registered",
 				STATUS_CHANGED_AT,
-				true,
-			],
-		);
+			);
 
 		// Meera's team: submitted, with a submission file on the volume.
-		await client.query(
-			`INSERT INTO teams (
-				id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
-				questionnaire_completed, idea_title, idea_desc, idea_tech_stack, submission_file
-			 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-			[
+		database
+			.prepare(
+				`INSERT INTO teams (
+					id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
+					questionnaire_completed, idea_title, idea_desc, idea_tech_stack, submission_file
+				 ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+			)
+			.run(
 				ID.meeraTeam,
 				"Team Meera",
 				ID.institution,
@@ -391,21 +397,21 @@ async function main(): Promise<void> {
 				"TM-002",
 				"submitted",
 				STATUS_CHANGED_AT,
-				true,
 				"VisionHack Demo",
 				"A submission that exists so the file proxy has something to serve.",
-				"TypeScript, Postgres",
+				"TypeScript, SQLite",
 				SUBMISSION_FILE,
-			],
-		);
+			);
 
 		// Asha's team lives in the second institution — the cross-campus probe.
-		await client.query(
-			`INSERT INTO teams (
-				id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
-				questionnaire_completed
-			 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			[
+		database
+			.prepare(
+				`INSERT INTO teams (
+					id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
+					questionnaire_completed
+				 ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+			)
+			.run(
 				ID.ashaTeam,
 				"Team Asha",
 				ID.institutionB,
@@ -413,34 +419,34 @@ async function main(): Promise<void> {
 				"TA-003",
 				"registered",
 				STATUS_CHANGED_AT,
-				false,
-			],
-		);
+			);
 
+		const insertMember = database.prepare(
+			`INSERT INTO members (id, team_id, full_name, email, phone, gender, role)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		);
 		for (const member of MEMBERS) {
-			await client.query(
-				`INSERT INTO members (id, team_id, full_name, email, phone, gender, role)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-				[
-					member.id,
-					member.teamId,
-					member.fullName,
-					member.email,
-					member.phone,
-					member.gender,
-					member.role,
-				],
+			insertMember.run(
+				member.id,
+				member.teamId,
+				member.fullName,
+				member.email,
+				member.phone,
+				member.gender,
+				member.role,
 			);
 		}
 
 		// One questionnaire response, owned by Priya on her own team.
-		await client.query(
-			`INSERT INTO questionnaire_responses (
-				id, team_id, user_id, age, gender, education, college_name, district, skills,
-				interests, challenges, experience, motivation, team_experience, expectations,
-				additional_info
-			 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-			[
+		database
+			.prepare(
+				`INSERT INTO questionnaire_responses (
+					id, team_id, user_id, age, gender, education, college_name, district, skills,
+					interests, challenges, experience, motivation, team_experience, expectations,
+					additional_info
+				 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.run(
 				ID.questionnaire,
 				ID.priyaTeam,
 				ID.priya,
@@ -449,7 +455,7 @@ async function main(): Promise<void> {
 				"B.Tech",
 				INSTITUTION.name,
 				INSTITUTION.district,
-				"TypeScript, Postgres",
+				"TypeScript, SQLite",
 				"developer tooling",
 				"keeping the scope small",
 				"two hackathons",
@@ -457,16 +463,19 @@ async function main(): Promise<void> {
 				"yes",
 				QUESTIONNAIRE_MARKER,
 				"none",
-			],
-		);
+			);
 
-		await client.query("COMMIT");
+		database.exec("COMMIT");
 	} catch (err) {
-		await client.query("ROLLBACK").catch(() => {});
+		try {
+			database.exec("ROLLBACK");
+		} catch {
+			// The transaction may already be gone; the original error is the
+			// one worth surfacing.
+		}
 		throw err;
 	} finally {
-		client.release();
-		await pool.end();
+		database.close();
 	}
 
 	// The file lives outside the transaction: a rollback cannot unlink it, and
@@ -548,4 +557,7 @@ async function main(): Promise<void> {
 	console.log(json);
 }
 
-await main();
+main().catch((err) => {
+	console.error("[seed] failed:", err);
+	process.exitCode = 1;
+});
