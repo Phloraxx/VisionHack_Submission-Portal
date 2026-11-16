@@ -1,3 +1,4 @@
+import { unlink } from "node:fs/promises";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, CheckCircle2, FileText, Loader2, Upload } from "lucide-react";
 import { useState } from "react";
@@ -33,6 +34,7 @@ import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
 import { canSubmitIdea } from "~/lib/team-policy";
 import { getLeadTeam } from "~/lib/team.server";
 import type { TeamRecord, UserRecord } from "~/lib/types";
+import { getTeamSubmissionPath, saveTeamSubmission } from "~/lib/uploads.server";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -153,15 +155,25 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user,
 		// The magic-byte check above is the real defense.
 
 		// The row stores the sanitized filename; the bytes land in
-		// `$UPLOADS_DIR/teams/<id>/` (plan §4.2, Phase D).
+		// `$UPLOADS_DIR/teams/<id>/` (plan §4.2).
 		const safeName = file.name.replace(/[^\w.\-]/g, "_").slice(0, 255);
+		await saveTeamSubmission(team.id, safeName, Buffer.from(await file.arrayBuffer()));
+
 		const rejected = await applySubmission(user, team, {
 			submissionFile: safeName,
 			ideaTitle: ideaTitle.slice(0, 200),
 			ideaDesc: ideaDescription.slice(0, 5000),
 			ideaTechStack: techStack.slice(0, 500),
 		});
-		if (rejected) return rejected;
+		if (rejected) {
+			// Compensation: the row still points at the previous file, so drop
+			// the bytes we just wrote rather than leaving an orphan behind.
+			if (safeName !== team.submission_file) {
+				const written = getTeamSubmissionPath(team.id, safeName);
+				if (written) await unlink(written).catch(() => {});
+			}
+			return rejected;
+		}
 		return ok();
 	}
 

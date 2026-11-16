@@ -1,13 +1,28 @@
 /**
- * File download proxy — prevents exposing the internal PocketBase URL
- * to the browser and enforces ownership checks server-side.
+ * Submission-file download — streams a team's upload from `$UPLOADS_DIR`
+ * after the same ownership checks PocketBase's `viewRule` applied.
  *
  * GET /api/files/:collection/:recordId/:filename
  */
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
 import { teams } from "~/lib/db.server";
-import { getEnv } from "~/lib/env.server";
+import { getTeamSubmissionPath } from "~/lib/uploads.server";
+
+/** Content types for the extensions `submit-idea` accepts. */
+const CONTENT_TYPES: Record<string, string> = {
+	pdf: "application/pdf",
+	ppt: "application/vnd.ms-powerpoint",
+	pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+function contentTypeFor(filename: string): string {
+	const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+	return CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
 	if (request.method !== "GET") {
@@ -68,51 +83,35 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 		return new Response("Not found", { status: 404 });
 	}
 
-	const pbUrl = getEnv().POCKETBASE_URL.replace(/\/+$/, "");
-	const fileUrl = `${pbUrl}/api/files/${collection}/${recordId}/${encodeURIComponent(filename)}`;
-
-	// Fetch the file via PocketBase's protected-file flow: mint a
-	// short-lived file token from the requesting user's own auth client,
-	// then request the bytes with `?token=…`. PB evaluates the `teams`
-	// `viewRule` against the user's auth record when issuing the token,
-	// so this enforces ownership at the storage layer too — defense in
-	// depth on top of the `canRead` check above. No superuser credentials
-	// are involved.
-	//
-	// Phase D replaces this whole block with `$UPLOADS_DIR` reads
-	// (`app/lib/uploads.server.ts`); the token flow is the last PocketBase
-	// dependency in this route and is deliberately left in place here.
-	const fileToken = await auth.pb.files.getToken();
-
-	try {
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 30_000);
-		const response = await fetch(`${fileUrl}?token=${encodeURIComponent(fileToken)}`, {
-			signal: controller.signal,
-		});
-		clearTimeout(timeoutId);
-
-		if (!response.ok) {
-			return new Response("File not found", { status: 404 });
-		}
-
-		const headers = new Headers();
-		const contentType = response.headers.get("Content-Type");
-		if (contentType) headers.set("Content-Type", contentType);
-
-		const disposition = response.headers.get("Content-Disposition");
-		const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-		headers.set("Content-Disposition", disposition ?? `attachment; filename="${safeFilename}"`);
-
-		// Forward Content-Length so clients can show progress bars
-		const contentLength = response.headers.get("Content-Length");
-		if (contentLength) headers.set("Content-Length", contentLength);
-
-		// Files are served only to authenticated users; cache privately for an hour.
-		headers.set("Cache-Control", "private, max-age=3600");
-
-		return new Response(response.body, { status: 200, headers });
-	} catch {
-		return new Response("Failed to fetch file", { status: 502 });
+	// The row stores the filename only; the directory comes from the team id,
+	// so the client can never choose a path. `getTeamSubmissionPath` re-checks
+	// that the result stays inside `$UPLOADS_DIR/teams/<id>/`.
+	const filePath = getTeamSubmissionPath(team.id, filename);
+	if (!filePath) {
+		return new Response("Not found", { status: 404 });
 	}
+
+	let size: number;
+	try {
+		const stats = await stat(filePath);
+		if (!stats.isFile()) {
+			return new Response("Not found", { status: 404 });
+		}
+		size = stats.size;
+	} catch {
+		return new Response("Not found", { status: 404 });
+	}
+
+	const headers = new Headers();
+	headers.set("Content-Type", contentTypeFor(filename));
+	const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+	headers.set("Content-Disposition", `attachment; filename="${safeFilename}"`);
+	headers.set("Content-Length", String(size));
+	// Files are served only to authenticated users; cache privately for an hour.
+	headers.set("Cache-Control", "private, max-age=3600");
+
+	return new Response(Readable.toWeb(createReadStream(filePath)) as ReadableStream, {
+		status: 200,
+		headers,
+	});
 }
