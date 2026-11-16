@@ -51,7 +51,13 @@ import type {
 	UserRecord,
 } from "./types";
 
-/** Schema version this build expects. Bump when `sqlite/schema.sql` changes. */
+/**
+ * Schema version this build expects. 1 is the initial release.
+ *
+ * Bumping this re-applies `sqlite/schema.sql`, which is idempotent — but the
+ * file only creates missing objects. Changing an existing column (a type, a
+ * NOT NULL) still needs a real migration; a bump alone will not alter it.
+ */
 const SCHEMA_VERSION = 1;
 
 /** `:memory:` opens a private in-memory database — used by the unit tests. */

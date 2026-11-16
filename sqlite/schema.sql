@@ -66,7 +66,12 @@ CREATE TABLE IF NOT EXISTS institutions (
 	code           TEXT NOT NULL,
 	campus_lead_id TEXT REFERENCES users (id) ON DELETE SET NULL,
 	max_teams      INTEGER,
-	status         TEXT NOT NULL DEFAULT 'active',
+	-- Nullable, unlike postgres/schema.sql, because the live database drifted:
+	-- 11 of its 24 rows have a NULL status (the column there has no NOT NULL and
+	-- no default). The app only ever reads it through `row.status ?? ""`, so
+	-- preserving NULL keeps the rendered output identical; forcing a value here
+	-- would silently rewrite data during the migration.
+	status         TEXT DEFAULT 'active',
 	created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
 	updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
