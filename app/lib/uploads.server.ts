@@ -37,10 +37,18 @@ function teamDir(teamId: string): string | null {
 }
 
 /**
- * Write a team's submission file and drop the superseded one.
+ * Write a team's submission file.
  *
- * The directory holds exactly one submission per team, so any other file in
- * it is the previous upload and is removed once the new bytes have landed.
+ * The bytes land in a temp name first and are renamed into place, so a crash
+ * mid-write leaves the previous file intact rather than truncated. The
+ * superseded file is deliberately *not* removed here: the caller unlinks it
+ * with `pruneTeamSubmissions` once the row naming the new file has committed.
+ *
+ * Invariant: the file named by `teams.submission_file` exists on disk at every
+ * point outside a successful commit. Removing the old file before the row
+ * moves would leave the row pointing at nothing if the update lost its
+ * optimistic lock.
+ *
  * Returns the stored filename.
  */
 export async function saveTeamSubmission(
@@ -53,23 +61,29 @@ export async function saveTeamSubmission(
 	if (!isSafeFilename(filename)) throw new Error(`Invalid upload filename: ${filename}`);
 
 	await mkdir(dir, { recursive: true });
-	// Atomic-ish write (plan 4.2 step 5): bytes land in a temp name first, so
-	// a crash mid-upload leaves the previous file intact, never truncated.
-	// Leftover temp files are swept by the stale-file loop below.
 	const tmp = path.join(dir, `.tmp-${randomUUID()}`);
 	await writeFile(tmp, bytes);
 	await rename(tmp, path.join(dir, filename));
 
-	// Best effort: a stale file left behind is harmless, a failed upload is not.
-	// `.tmp-*` names belong to concurrent uploads and are left alone.
+	return filename;
+}
+
+/**
+ * Drop every submission file in the team directory except `keep`.
+ *
+ * Call this only after the row naming `keep` has committed. Best-effort: a
+ * stale file left behind is harmless, a failed request is not. `.tmp-*` names
+ * belong to concurrent uploads and are left alone.
+ */
+export async function pruneTeamSubmissions(teamId: string, keep: string): Promise<void> {
+	const dir = teamDir(teamId);
+	if (!dir) return;
 	const existing = await readdir(dir).catch(() => [] as string[]);
 	for (const name of existing) {
-		if (name !== filename && !name.startsWith(".tmp-")) {
+		if (name !== keep && !name.startsWith(".tmp-")) {
 			await unlink(path.join(dir, name)).catch(() => {});
 		}
 	}
-
-	return filename;
 }
 
 /**
