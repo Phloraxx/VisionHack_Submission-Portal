@@ -114,24 +114,27 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
 	if (ambient) return fn(ambient);
 
 	const client = await getPool().connect();
-	let failed = false;
+	let broken = false;
 	try {
 		await client.query("BEGIN");
 		const result = await transactionStorage.run(client, () => fn(client));
 		await client.query("COMMIT");
 		return result;
 	} catch (err) {
-		failed = true;
 		try {
 			await client.query("ROLLBACK");
 		} catch (rollbackErr) {
+			// The connection is in an unknown state — destroy it instead of
+			// returning it to the pool.
+			broken = true;
 			console.error("[db] Rollback failed", rollbackErr);
 		}
 		throw err;
 	} finally {
-		// Passing the error destroys the connection instead of returning a
-		// possibly-broken one to the pool.
-		client.release(failed ? new Error("transaction failed") : undefined);
+		// A successful ROLLBACK leaves the connection clean, so a control-flow
+		// abort (a validation error used to end the transaction) must not
+		// destroy a pooled connection.
+		client.release(broken ? new Error("transaction rollback failed") : undefined);
 	}
 }
 
@@ -322,7 +325,12 @@ export interface UserCreateInput {
 export interface UsersRepository {
 	/** Look up by email (case-insensitive) including the password hash. */
 	findByEmail(email: string): Promise<UserAuthRow | null>;
-	/** Load the live record used by `resolveAuth` — no password hash. */
+	/**
+	 * Load the live record used by `resolveAuth` — no password hash.
+	 *
+	 * The only repository read with no scope predicate: `id` must come from a
+	 * verified token or a server-side relation, never from a request parameter.
+	 */
 	findById(id: string): Promise<UserRecord | null>;
 	/** `findById` plus the password hash, for the session fingerprint check. */
 	findSessionUser(id: string): Promise<UserAuthRow | null>;
@@ -1501,6 +1509,25 @@ export const members: MembersRepository = {
 		return result.rows.length > 0;
 	},
 };
+
+/**
+ * Every member row matching `options`, fetched page by page.
+ *
+ * `members.list` caps a page at `MAX_PER_PAGE`, so a caller that needs the
+ * whole set — a CSV export, a dashboard roster — must page or silently lose
+ * rows past the cap.
+ */
+export async function listAllMembers(
+	user: ActingUser,
+	options: Omit<MemberListOptions, "page" | "perPage"> = {},
+): Promise<MemberRecord[]> {
+	const items: MemberRecord[] = [];
+	for (let page = 1; ; page++) {
+		const result = await members.list(user, { ...options, page, perPage: MAX_PER_PAGE });
+		items.push(...result.items);
+		if (result.items.length === 0 || items.length >= result.totalItems) return items;
+	}
+}
 
 // ---------------------------------------------------------------------------
 // questionnaire_responses repository

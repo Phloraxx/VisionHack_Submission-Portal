@@ -26,17 +26,13 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { useActionToast } from "~/hooks/use-action-toast";
 import { type ActionResult, fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
-import { institutions, members, teams, users, withTransaction } from "~/lib/db.server";
+import { institutions, listAllMembers, teams, users, withTransaction } from "~/lib/db.server";
 import { getStr, isEmail } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
 import { sendPasswordResetEmail } from "~/lib/password-reset.server";
 import { hashPassword } from "~/lib/password.server";
 import { shortlistSchema } from "~/lib/schemas/institution";
-import {
-	getInstitutionForUser,
-	sendStatusChangeEmail,
-	transitionTeamStatus,
-} from "~/lib/team.server";
+import { getInstitutionForUser, notifyStatusChange, transitionTeamStatus } from "~/lib/team.server";
 import type { InstitutionRecord, MemberRecord, TeamStatus } from "~/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -87,11 +83,12 @@ export const loader = secureLoader({ roles: ["institution"] }, async ({ user }) 
 		console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
 
-	// Members: single query via the institution relation traversal (avoids
-	// building an OR chain of up to 500 team IDs).
+	// Members: one relation traversal (avoids building an OR chain of up to 500
+	// team IDs), paged so an institution past the list cap still sees complete
+	// rosters.
 	const allMembers =
 		institutionTeams.length > 0
-			? (await members.list(user, { institutionId: institution.id, perPage: MAX_SAFE_LIST })).items
+			? await listAllMembers(user, { institutionId: institution.id })
 			: [];
 
 	const membersByTeam: Record<string, MemberRecord[]> = {};
@@ -278,20 +275,17 @@ export const action = secureAction(
 					actorUserId: user.id,
 				});
 				if (!result.ok) return result.response;
-				// Best-effort email notification to the lead
-				try {
-					const team = await teams.getOne(user, teamId);
-					const lead = team?.expand?.leaderUserId;
-					if (team && lead?.email) {
-						await sendStatusChangeEmail({
-							to: lead.email,
-							leadName: lead.name || "Team Lead",
-							teamName: team.name,
-							status: to,
-						});
-					}
-				} catch {
-					// Email failure is non-blocking
+				// Best-effort notification: fired, not awaited, so a slow Resend
+				// call cannot hold the action response.
+				const team = await teams.getOne(user, teamId);
+				const lead = team?.expand?.leaderUserId;
+				if (team && lead?.email) {
+					notifyStatusChange({
+						to: lead.email,
+						leadName: lead.name || "Team Lead",
+						teamName: team.name,
+						status: to,
+					});
 				}
 				return ok();
 			}

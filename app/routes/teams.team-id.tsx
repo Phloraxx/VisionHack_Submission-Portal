@@ -14,7 +14,7 @@ import { getValidTransitions } from "~/lib/team-status";
 import {
 	getInstitutionForUser,
 	getLeadTeam,
-	sendStatusChangeEmail,
+	notifyStatusChange,
 	transitionTeamStatus,
 } from "~/lib/team.server";
 import type {
@@ -168,10 +168,11 @@ export const action = secureAction(
 			});
 			if (!result.ok) return result.response;
 
-			// Send notification email best-effort.
+			// Best-effort notification: fired, not awaited, so a slow Resend
+			// call cannot hold the action response.
 			if (team?.expand?.leaderUserId) {
 				const lead = team.expand.leaderUserId;
-				await sendStatusChangeEmail({
+				notifyStatusChange({
 					to: lead.email,
 					leadName: lead.name || "Team Lead",
 					teamName: team.name,

@@ -5,7 +5,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
 import { TEAM_STATUSES } from "~/lib/constants";
-import { members, teams } from "~/lib/db.server";
+import { listAllMembers, teams } from "~/lib/db.server";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { MemberRecord, TeamStatus, TeamView } from "~/lib/types";
 import { escapeCsv } from "~/lib/utils";
@@ -44,12 +44,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
 
-	// Fetch only the members of the teams we're exporting.
+	// Fetch only the members of the teams we're exporting. Paged: 500 teams can
+	// hold 3,000 member rows, and a single capped page would export a CSV that
+	// looks complete while missing most of the rosters.
 	const teamIds = filtered.map((t) => t.id);
-	const memberRows =
-		teamIds.length > 0
-			? (await members.list(auth.user, { teamIds, perPage: MAX_SAFE_LIST })).items
-			: [];
+	const memberRows = teamIds.length > 0 ? await listAllMembers(auth.user, { teamIds }) : [];
 
 	const membersByTeam: Record<string, MemberRecord[]> = {};
 	for (const m of memberRows) {

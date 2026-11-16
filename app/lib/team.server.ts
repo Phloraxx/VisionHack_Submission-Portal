@@ -132,12 +132,15 @@ export async function transitionTeamStatus({
 			{ expectedStatus: team.status },
 		);
 		if (!row) return false;
-		await statusTransitions.create(actor, {
+		const transition = await statusTransitions.create(actor, {
 			teamId,
 			fromStatus: team.status,
 			toStatus: to,
 			at: new Date().toISOString(),
 		});
+		// A null return is a scope miss. Throwing rolls the status change back,
+		// so a transition never commits without its audit row.
+		if (!transition) throw new Error("Status transition audit row was not written");
 		return true;
 	});
 
@@ -200,6 +203,20 @@ export async function sendStatusChangeEmail(args: SendStatusChangeEmailArgs): Pr
 	} catch (err) {
 		console.error("[email] Failed to send status change notification:", err);
 	}
+}
+
+/**
+ * Fire-and-forget status-change notification.
+ *
+ * An action must not wait on Resend: `sendEmail` carries a 10 s timeout, so
+ * awaiting it holds the response for as long as the API takes. Failures are
+ * logged, never surfaced — and the `.catch` is load-bearing, because an
+ * unhandled rejection now terminates the process.
+ */
+export function notifyStatusChange(args: SendStatusChangeEmailArgs): void {
+	void sendStatusChangeEmail(args).catch((err) => {
+		console.error("[email] Status change notification failed:", err);
+	});
 }
 
 // ---------------------------------------------------------------------------

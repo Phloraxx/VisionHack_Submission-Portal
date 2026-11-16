@@ -266,9 +266,10 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 		}
 
 		// Every invite is committed by now, so the set-password emails go out
-		// after the writes rather than inside them.
+		// after the writes rather than inside them. Fired, not awaited: 100 rows
+		// against the 10 s Resend timeout would hold the request for ~17 minutes.
 		for (const email of createdEmails) {
-			await sendPasswordResetEmail(db, email).catch((err) => {
+			void sendPasswordResetEmail(db, email).catch((err) => {
 				console.error("[campus-leads] reset email failed:", err);
 			});
 		}

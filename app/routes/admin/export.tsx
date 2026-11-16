@@ -43,6 +43,9 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
 	return {
 		user,
 		teams: allTeams,
+		// The page only renders the first `MAX_SAFE_LIST` teams, so the headline
+		// count comes from the query's own total rather than `teams.length`.
+		totalTeams: teamsResult.totalItems,
 		memberCounts,
 		totalMembers,
 	};
@@ -53,8 +56,9 @@ export function meta() {
 }
 
 export default function AdminExport() {
-	const { teams, memberCounts, totalMembers } = useLoaderData() as {
+	const { teams, totalTeams, memberCounts, totalMembers } = useLoaderData() as {
 		teams: TeamView[];
+		totalTeams: number;
 		memberCounts: Record<string, number>;
 		totalMembers: number;
 	};
@@ -87,7 +91,7 @@ export default function AdminExport() {
 
 			{/* Stats */}
 			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-cards">
-				<MetricCard label="Total teams" value={teams.length} icon={Download} />
+				<MetricCard label="Total teams" value={totalTeams} icon={Download} />
 				<MetricCard label="Filtered teams" value={filteredTeams.length} tone="info" />
 				<MetricCard label="Total members" value={totalMembers} />
 				<MetricCard label="Filtered members" value={filteredMemberCount} tone="info" />

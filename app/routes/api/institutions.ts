@@ -11,11 +11,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	try {
 		// Admin/coordinator: full list with institution codes
 		if (user.role === "admin" || user.role === "coordinator") {
+			const INSTITUTION_SCAN_CAP = 1000;
 			const result = await institutions.list(user, {
 				page: 1,
-				perPage: 1000,
+				perPage: INSTITUTION_SCAN_CAP,
 				sort: "name",
 			});
+			if (result.totalItems > INSTITUTION_SCAN_CAP) {
+				console.warn(
+					`[/api/institutions] more than ${INSTITUTION_SCAN_CAP} institutions — the list is truncated`,
+				);
+			}
 
 			return Response.json(
 				{
