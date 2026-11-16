@@ -45,6 +45,9 @@ COPY --from=build --chown=apprunner:nodejs /app/server.ts ./server.ts
 COPY --from=build --chown=apprunner:nodejs /app/package.json ./package.json
 
 COPY --from=build --chown=apprunner:nodejs /app/tsconfig.json ./tsconfig.json
+# server.ts imports this at runtime under node type stripping; it has no
+# imports of its own, so the single source file is all the runner needs.
+COPY --from=build --chown=apprunner:nodejs /app/app/lib/env.server.ts ./app/lib/env.server.ts
 
 USER apprunner
 
