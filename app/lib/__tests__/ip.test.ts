@@ -11,6 +11,7 @@ function request(headers: Record<string, string> = {}): Request {
 describe("getClientIp", () => {
 	beforeEach(() => {
 		resetEnvCache();
+		// biome-ignore lint/performance/noDelete: test-only env cleanup
 		delete process.env.TRUST_PROXY_HEADERS;
 	});
 
@@ -43,6 +44,7 @@ describe("getClientIp", () => {
 describe("ipRateLimitKey", () => {
 	beforeEach(() => {
 		resetEnvCache();
+		// biome-ignore lint/performance/noDelete: test-only env cleanup
 		delete process.env.TRUST_PROXY_HEADERS;
 	});
 
