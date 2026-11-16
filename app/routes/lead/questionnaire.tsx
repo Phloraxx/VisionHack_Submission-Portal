@@ -51,6 +51,7 @@ interface QuestionnaireData {
 	team_experience?: string;
 	expectations?: string;
 	additional_info?: string;
+	year_of_graduation?: string;
 }
 
 interface LoaderData {
@@ -108,6 +109,7 @@ function toQuestionnaireData(record: QuestionnaireResponseRecord): Questionnaire
 		team_experience: text("teamExperience"),
 		expectations: text("expectations"),
 		additional_info: text("additionalInfo"),
+		year_of_graduation: text("yearOfGraduation"),
 	};
 }
 
@@ -246,6 +248,7 @@ export default function LeadQuestionnaire() {
 			team_experience: questionnaire?.team_experience ?? "",
 			expectations: questionnaire?.expectations ?? "",
 			additional_info: questionnaire?.additional_info ?? "",
+			year_of_graduation: questionnaire?.year_of_graduation ?? "",
 		},
 	});
 
