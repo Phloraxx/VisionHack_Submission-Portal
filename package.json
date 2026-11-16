@@ -13,6 +13,7 @@
 		"start:prod": "NODE_ENV=production node server.ts",
 		"seed:test": "tsx scripts/seed-test-data.ts",
 		"test": "vitest run",
+		"test:integration": "tsx tests/integration-db.mjs",
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
 		"lint": "biome check .",

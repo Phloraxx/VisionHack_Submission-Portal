@@ -38,6 +38,12 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # The unit tests mock db.server, so they validate none of the SQL. This
+      # runs every repository method against a real SQLite file in a temp dir
+      # (schema applied from sqlite/schema.sql; no service container needed).
+      - name: Integration (SQLite data layer)
+        run: npm run test:integration
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
