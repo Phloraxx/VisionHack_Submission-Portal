@@ -127,22 +127,23 @@ const server = http.createServer((req, res) => {
 		return;
 	}
 
-	// A chunked body declares no length, so the cap above cannot see it. Count
-	// the bytes as they arrive and drop the connection past the limit, before
-	// `formData()` buffers the whole thing in memory.
-	let received = 0;
-	req.on("data", (chunk: Buffer) => {
-		received += chunk.length;
-		if (received > MAX_BODY_BYTES) req.destroy();
-	});
-	// Attaching a `data` listener resumes the stream; pause it again so the
-	// bytes are still there for React Router to read. The listener keeps
-	// counting once the handler consumes the body.
-	req.pause();
-
 	serveStatic(req, res)
 		.then((served) => {
-			if (!served) rrHandler(req, res);
+			if (served) return;
+			rrHandler(req, res);
+
+			// A chunked body declares no length, so the cap above cannot see it.
+			// Count the bytes as React Router reads them and drop the connection
+			// past the limit, before `formData()` buffers the whole thing.
+			//
+			// Attached *after* the handler on purpose: a `data` listener resumes
+			// the stream, so attaching first would emit the body before the
+			// handler's own listener exists and lose it.
+			let received = 0;
+			req.on("data", (chunk: Buffer) => {
+				received += chunk.length;
+				if (received > MAX_BODY_BYTES) req.destroy();
+			});
 		})
 		.catch((err) => {
 			console.error("[server] Static handler failed", err);
