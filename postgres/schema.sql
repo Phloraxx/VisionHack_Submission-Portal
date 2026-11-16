@@ -312,6 +312,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_institutions_code ON institutions (code);
 -- institution index backs the institution-scoped user reads (USERS_RULES in
 -- setup-pb.ts filtered on institutionId).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (email);
+-- Login queries match WHERE email = lower($1); enforce case-insensitive uniqueness
+-- so two registrations differing only in case cannot both exist (audit N-10).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (lower(email));
 CREATE INDEX IF NOT EXISTS idx_users_institution ON users (institution_id);
 
 -- teams: setup-pb.ts -> idx_teams_institution, idx_teams_leader, idx_teams_status
