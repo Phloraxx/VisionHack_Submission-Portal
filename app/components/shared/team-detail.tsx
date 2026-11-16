@@ -113,36 +113,36 @@ export default function TeamDetail({
 							<div className="space-y-3">
 								<div>
 									<p className="text-sm font-medium text-muted-foreground mb-1">Idea Title</p>
-									{team.idea_title ? (
-										<p className="text-sm whitespace-pre-wrap">{team.idea_title}</p>
+									{team.ideaTitle ? (
+										<p className="text-sm whitespace-pre-wrap">{team.ideaTitle}</p>
 									) : (
 										<p className="text-sm text-muted-foreground italic">Not provided.</p>
 									)}
 								</div>
 								<div>
 									<p className="text-sm font-medium text-muted-foreground mb-1">Idea Description</p>
-									{team.idea_desc ? (
-										<p className="text-sm whitespace-pre-wrap">{team.idea_desc}</p>
+									{team.ideaDesc ? (
+										<p className="text-sm whitespace-pre-wrap">{team.ideaDesc}</p>
 									) : (
 										<p className="text-sm text-muted-foreground italic">Not provided.</p>
 									)}
 								</div>
 								<div>
 									<p className="text-sm font-medium text-muted-foreground mb-1">Tech Stack</p>
-									{team.idea_tech_stack ? (
-										<p className="text-sm whitespace-pre-wrap">{team.idea_tech_stack}</p>
+									{team.ideaTechStack ? (
+										<p className="text-sm whitespace-pre-wrap">{team.ideaTechStack}</p>
 									) : (
 										<p className="text-sm text-muted-foreground italic">Not provided.</p>
 									)}
 								</div>
 							</div>
 
-							{team.submission_file && (
+							{team.submissionFile && (
 								<div>
 									<p className="text-sm font-medium text-muted-foreground mb-1">Submission File</p>
 									<Button variant="outline" size="sm" asChild>
 										<a
-											href={`/api/files/teams/${encodeURIComponent(team.id)}/${encodeURIComponent(team.submission_file)}`}
+											href={`/api/files/teams/${encodeURIComponent(team.id)}/${encodeURIComponent(team.submissionFile)}`}
 											target="_blank"
 											rel="noopener noreferrer"
 										>

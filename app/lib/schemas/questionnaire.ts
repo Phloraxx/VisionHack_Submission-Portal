@@ -29,7 +29,10 @@ export const questionnaireSchema = z.object({
 		.string()
 		.max(2000, "Additional info must be at most 2000 characters")
 		.optional(),
-	year_of_graduation: z.string().optional(),
+	year_of_graduation: z
+		.string()
+		.max(16, "Year of graduation must be at most 16 characters")
+		.optional(),
 });
 
 export type QuestionnaireInput = z.infer<typeof questionnaireSchema>;

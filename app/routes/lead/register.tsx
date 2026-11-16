@@ -2,14 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, Loader2, Save, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import {
-	Form,
-	isRouteErrorResponse,
-	useActionData,
-	useLoaderData,
-	useNavigation,
-	useRouteError,
-} from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { ReviewSummary } from "~/components/shared/review-summary";
 import {
@@ -104,7 +97,7 @@ class RegistrationError extends Error {
 
 export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Team and config are independent — fetch in parallel.
-	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(user.id), getConfig()]);
+	const [team, flags] = await Promise.all([getLeadTeam(user), getConfig()]);
 
 	const memberRows: MemberRecord[] = team
 		? (await members.list(user, { teamId: team.id, perPage: MAX_SAFE_LIST })).items
@@ -185,8 +178,9 @@ async function resolveTeam(user: UserRecord, teamName: string): Promise<Resolved
 	}
 
 	// SEC-9: capacity check — the institution's maxTeams against its current
-	// team count.
-	const institution = await institutions.getOne(user, user.institutionId);
+	// team count. The row lock serialises concurrent registrations, so two
+	// leads cannot both pass the check and exceed the cap.
+	const institution = await institutions.lockForUpdate(user, user.institutionId);
 	if (!institution) throw new Error("Institution not found");
 	const currentTeamCount = await teams.countByInstitution(user, user.institutionId);
 	if (institution.maxTeams > 0 && currentTeamCount >= institution.maxTeams) {
@@ -245,12 +239,7 @@ async function replaceRoster(
 	team: ResolvedTeam,
 	roster: RosterInput,
 ): Promise<void> {
-	if (team.existing) {
-		const previous = await members.list(user, { teamId: team.id, perPage: MAX_SAFE_LIST });
-		for (const member of previous.items) {
-			await members.delete(user, member.id);
-		}
-	}
+	if (team.existing) await members.deleteByTeam(user, team.id);
 
 	const leadEmailLower = user.email.toLowerCase();
 	const payloads: MemberCreateInput[] = [
@@ -265,8 +254,8 @@ async function replaceRoster(
 		...roster.names
 			.map((rawName, i) => ({
 				teamId: team.id,
-				fullName: rawName.trim().slice(0, 100),
-				email: (roster.emails[i] ?? "").trim().toLowerCase().slice(0, 200),
+				fullName: rawName.trim().slice(0, 200),
+				email: (roster.emails[i] ?? "").trim().toLowerCase().slice(0, 320),
 				phone: (roster.phones[i] ?? "").trim().slice(0, 20),
 				gender: roster.genders[i] ?? "",
 				role: (roster.roles[i] ?? "").trim().slice(0, 100),
@@ -274,16 +263,13 @@ async function replaceRoster(
 			.filter((m) => m.email !== leadEmailLower),
 	];
 
-	for (const payload of payloads) {
-		// A rejected row — a duplicate email in the roster, or a scope failure
-		// — aborts the registration with the member-specific 500 the route has
-		// always returned.
-		const created = await members.create(user, payload).catch(() => null);
-		if (!created) {
-			throw new RegistrationError(
-				fail({ error: "Failed to save team members. Please try again.", status: 500 }),
-			);
-		}
+	// One statement for the whole roster. A rejected row (duplicate email, or
+	// a scope failure) throws and rolls the registration back.
+	const written = await members.createMany(user, team.id, payloads);
+	if (written !== payloads.length) {
+		throw new RegistrationError(
+			fail({ error: "Failed to save team members. Please try again.", status: 500 }),
+		);
 	}
 }
 
@@ -376,7 +362,7 @@ export default function LeadRegister() {
 		true, // clearOnUnmount — PII should not persist after closing
 	);
 
-	const leadMember = members.find((m) => m.email === user.email);
+	const leadMember = members.find((m) => m.email.toLowerCase() === user.email.toLowerCase());
 	// Filter out the lead from members list
 	const otherMembers = members.filter((m) => m.email.toLowerCase() !== user.email.toLowerCase());
 
@@ -410,24 +396,27 @@ export default function LeadRegister() {
 	const steps = resolveActiveStep(getStatusStepStates(team?.status ?? null), "/lead/register");
 	const [showReview, setShowReview] = useState(false);
 
-	const watchedForm = watch();
-
-	// Save on every field change
+	// Save on every field change. `watch(callback)` subscribes once instead of
+	// returning a fresh object each render, so the debounce is not re-armed on
+	// every keystroke.
 	useEffect(() => {
-		save({
-			teamName: watchedForm.teamName ?? "",
-			leadPhone: watchedForm.leadPhone ?? "",
-			leadGender: watchedForm.leadGender ?? "",
-			leadRole: watchedForm.leadRole ?? "",
-			members: ((watchedForm.memberName ?? []) as string[]).map((_, i) => ({
-				fullName: (watchedForm.memberName ?? [])[i] ?? "",
-				email: (watchedForm.memberEmail ?? [])[i] ?? "",
-				phone: (watchedForm.memberPhone ?? [])[i] ?? "",
-				gender: (watchedForm.memberGender ?? [])[i] ?? "",
-				role: (watchedForm.memberRole ?? [])[i] ?? "",
-			})),
+		const subscription = watch((values) => {
+			save({
+				teamName: values.teamName ?? "",
+				leadPhone: values.leadPhone ?? "",
+				leadGender: values.leadGender ?? "",
+				leadRole: values.leadRole ?? "",
+				members: (values.memberName ?? []).map((_, i) => ({
+					fullName: values.memberName?.[i] ?? "",
+					email: values.memberEmail?.[i] ?? "",
+					phone: values.memberPhone?.[i] ?? "",
+					gender: values.memberGender?.[i] ?? "",
+					role: values.memberRole?.[i] ?? "",
+				})),
+			});
 		});
-	}, [watchedForm, save]);
+		return () => subscription.unsubscribe();
+	}, [watch, save]);
 
 	// Clear autosave on successful submit.
 	useEffect(() => {
@@ -876,27 +865,4 @@ export default function LeadRegister() {
 	);
 }
 
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-	if (isRouteErrorResponse(error)) {
-		message = `Error ${error.status} — ${error.statusText || "Access denied"}`;
-	} else if (error instanceof Error) {
-		message = error.message;
-	}
-	return (
-		<div className="flex min-h-[50vh] items-center justify-center p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
-				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
-				<button
-					type="button"
-					onClick={() => window.location.reload()}
-					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";

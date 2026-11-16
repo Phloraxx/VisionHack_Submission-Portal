@@ -38,17 +38,9 @@ export const action = secureAction(
 		}
 
 		// Config writes are admin-only, which the repository enforces in SQL.
-		// `get` skips `schema_version` and `_`-prefixed keys, so a bookkeeping
-		// row can never be toggled through this route.
-		const target = await config.get(user, key);
-		if (!target) {
-			return fail({ error: "Configuration key not found" });
-		}
-
-		// Server-authoritative toggle: read the current value from the DB and flip it.
-		// This eliminates the TOCTOU race where two admins clicking simultaneously
-		// would both trust a stale client-side value.
-		const updated = await config.upsert(user, key, !target.value);
+		// `toggle` flips the stored value in a single statement, so two admins
+		// clicking at the same time cannot both write the same value.
+		const updated = await config.toggle(user, key);
 		if (!updated) {
 			return fail({ error: "Configuration key not found" });
 		}
@@ -83,7 +75,7 @@ export default function AdminConfig() {
 	}, [actionData]);
 
 	const handleToggle = (key: string) => {
-		submit({ key, value: String(!configMap[key]) }, { method: "post" });
+		submit({ key }, { method: "post" });
 	};
 
 	const submitting = (key: string) =>

@@ -1,12 +1,12 @@
+import { createHash } from "node:crypto";
 import { hash as hashArgon2, verify as verifyArgon2 } from "@node-rs/argon2";
 import { compare as compareBcrypt } from "bcryptjs";
 import { redirect } from "react-router";
 import { type Db, db, users } from "./db.server";
-import { isExpiringSoon, signJwt, verifyJwt } from "./jwt.server";
+import { SESSION_TTL_SECONDS, isExpiringSoon, signJwt, verifyJwt } from "./jwt.server";
 import type { Role, UserRecord } from "./types";
 
 const COOKIE_NAME = "__Host-pb_jwt";
-const COOKIE_MAX_AGE = 3600; // 1 hour — matches SESSION_TTL_SECONDS in jwt.server.ts
 
 // ---------------------------------------------------------------------------
 // Per-request auth cache
@@ -72,7 +72,7 @@ export function setAuthCookie(token: string): string {
 		"Secure",
 		"SameSite=Strict",
 		"Path=/",
-		`Max-Age=${COOKIE_MAX_AGE}`,
+		`Max-Age=${SESSION_TTL_SECONDS}`,
 	].join("; ");
 }
 
@@ -131,15 +131,36 @@ export async function verifyPassword(passwordHash: string, password: string): Pr
 	}
 }
 
-/** The claims written into a session token (plan §3.3). */
-function sessionClaims(user: UserRecord): Record<string, unknown> {
+/**
+ * A throwaway argon2id hash, minted once per process.
+ *
+ * `login()` verifies against it when the email is unknown so that a missing
+ * account costs the same wall-clock time as a wrong password — otherwise the
+ * response time tells an attacker which addresses are registered.
+ */
+let dummyHashPromise: Promise<string> | null = null;
+function dummyPasswordHash(): Promise<string> {
+	dummyHashPromise ??= hashPassword(crypto.randomUUID());
+	return dummyHashPromise;
+}
+
+/** The claims written into a session token. */
+function sessionClaims(user: UserRecord, passwordHash: string): Record<string, unknown> {
 	return {
 		id: user.id,
 		role: user.role,
 		institutionId: user.institutionId,
 		email: user.email,
 		name: user.name,
+		// Binds the session to the current password hash: a completed reset
+		// rewrites the hash, which invalidates every other session.
+		pwf: passwordFingerprint(passwordHash),
 	};
+}
+
+/** Short, non-reversible binding between a token and the current password hash. */
+export function passwordFingerprint(passwordHash: string): string {
+	return createHash("sha256").update(passwordHash).digest("hex").slice(0, 16);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,16 +181,23 @@ export async function login(
 	password: string,
 ): Promise<{ token: string; record: UserRecord }> {
 	const row = await users.findByEmail(email);
-	if (!row) throw new Error("Invalid email or password");
+	if (!row) {
+		// Same work as a wrong password, so the timing does not reveal whether
+		// the address exists.
+		await verifyPassword(await dummyPasswordHash(), password);
+		throw new Error("Invalid email or password");
+	}
 
 	const valid = await verifyPassword(row.passwordHash, password);
 	if (!valid) throw new Error("Invalid email or password");
 
 	// Upgrade a migrated bcrypt hash on first successful login. Best-effort:
 	// a failed UPDATE must not fail an otherwise valid login.
+	let passwordHash = row.passwordHash;
 	if (isBcryptHash(row.passwordHash)) {
 		try {
-			await users.updatePasswordHash(row.id, await hashPassword(password));
+			passwordHash = await hashPassword(password);
+			await users.updatePasswordHash(row.id, passwordHash);
 		} catch (err) {
 			console.error("[auth] bcrypt → argon2id rehash failed", err);
 		}
@@ -187,7 +215,7 @@ export async function login(
 		updated: row.updated,
 	};
 
-	return { token: signJwt(sessionClaims(record)), record };
+	return { token: signJwt(sessionClaims(record, passwordHash)), record };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,8 +242,8 @@ export interface AuthResult {
  * 2. If missing/malformed → **throws** `redirect("/login")`.
  * 3. Verifies the JWT signature and expiry locally. If the token is near
  *    expiry, mints a fresh one (no network round trip).
- * 4. Loads the user record once (`SELECT … WHERE id = $1`); missing →
- *    **throws** `redirect("/login")`.
+ * 4. Loads the user record once (`SELECT … WHERE id = $1`); missing → **throws**
+ *    `redirect("/login")`.
  * 5. Returns the database handle, the user record, and the (possibly
  *    re-minted) token so callers can issue a new cookie if needed.
  *
@@ -228,7 +256,7 @@ export interface AuthResult {
  *
  * ```ts
  * // In a layout loader:
- * export async function loader({ request }: LoaderArgs) {
+ * export async function loader({ request }: LoaderFunctionArgs) {
  *   const { db, user, token } = await requireAuth(request);
  *   // Update cookie if token was rotated
  *   const headers = new Headers();
@@ -275,12 +303,28 @@ async function resolveAuth(request: Request): Promise<AuthResult> {
 	// Password-reset tokens share the signing key but are not sessions.
 	if (payload.purpose) throw redirect("/login");
 
-	const user = await users.findById(payload.id);
-	if (!user) throw redirect("/login");
+	const row = await users.findSessionUser(payload.id);
+	if (!row) throw redirect("/login");
+
+	// A completed password reset rewrites the hash, so the fingerprint in the
+	// token stops matching and every other session is invalidated.
+	if (payload.pwf !== passwordFingerprint(row.passwordHash)) throw redirect("/login");
+
+	const user: UserRecord = {
+		id: row.id,
+		email: row.email,
+		name: row.name,
+		role: row.role,
+		institutionId: row.institutionId,
+		created: row.created,
+		updated: row.updated,
+	};
 
 	// Near expiry: re-mint locally and hand the new token back so
 	// secureAction/secureLoader propagate the Set-Cookie they already do.
-	const nextToken = isExpiringSoon(payload) ? signJwt(sessionClaims(user)) : token;
+	const nextToken = isExpiringSoon(payload)
+		? signJwt(sessionClaims(user, row.passwordHash))
+		: token;
 
 	return { db, user, token: nextToken };
 }
@@ -296,14 +340,17 @@ export async function requireAuthJson(request: Request): Promise<AuthResult | Re
 		// Reuse the same local-validation + per-request dedupe as requireAuth.
 		return await requireAuth(request);
 	} catch (err) {
-		// requireAuth throws a redirect Response for unauthenticated requests;
-		// resource routes want a 401 JSON body instead. Only convert redirects
-		// — other Responses (e.g. 403 from requireRole) should propagate.
+		// requireAuth throws a redirect to /login for unauthenticated requests;
+		// resource routes want a 401 JSON body instead. Only that redirect is
+		// converted — any other Response propagates untouched.
 		if (err instanceof Response && err.status >= 300 && err.status < 400) {
-			return new Response(JSON.stringify({ error: "Unauthorized" }), {
-				status: 401,
-				headers: { "Content-Type": "application/json" },
-			});
+			const location = err.headers.get("Location");
+			if (!location || new URL(location, request.url).pathname === "/login") {
+				return new Response(JSON.stringify({ error: "Unauthorized" }), {
+					status: 401,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
 		}
 		throw err;
 	}
@@ -319,7 +366,7 @@ export async function requireAuthJson(request: Request): Promise<AuthResult | Re
  *
  * ```ts
  * // In a child loader:
- * export async function loader({ request }: LoaderArgs) {
+ * export async function loader({ request }: LoaderFunctionArgs) {
  *   const { db, user, token } = await requireRole(request, ["admin", "coordinator"]);
  *   return { user };
  * }

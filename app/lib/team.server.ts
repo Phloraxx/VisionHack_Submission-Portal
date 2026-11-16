@@ -16,68 +16,51 @@ import {
 	statusTransitions,
 	teams,
 	users,
+	withTransaction,
 } from "./db.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
 import { sendPasswordResetEmail } from "./password-reset.server";
 import { STATUS_LABELS } from "./team-status";
 import { canTransition } from "./transitions";
-import type { InstitutionRecord, Role, TeamStatus, TeamView } from "./types";
+import type { InstitutionRecord, Role, TeamStatus, TeamView, UserRecord } from "./types";
 import { escapeHtml } from "./utils";
 
-/**
- * The acting user for the admin-only helpers below.
- *
- * `createCampusLead` is only reachable from `admin/campus-leads.tsx`, whose
- * action is `secureAction({ roles: ["admin"] })`. Callers that have the real
- * user in hand should pass it as the third argument.
- */
-const ADMIN_ACTOR: ActingUser = { id: "", role: "admin", institutionId: "" };
+/** Default team capacity per institution. */
+export const DEFAULT_MAX_TEAMS = 5;
 
 // ---------------------------------------------------------------------------
 // Lookups
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch the single team led by `userId`, or null when none exists.
+ * Fetch the single team led by `user`, or null when none exists.
  *
  * The lookup is scoped to that lead (`leader_user_id = $userId`), so it can
- * only ever return a team the user leads.
+ * only ever return a team the user leads. The role is asserted here rather
+ * than minted from a bare id, so a caller cannot widen the scope by passing
+ * someone else's id.
  */
-export async function getLeadTeam<T = TeamView>(
-	userId: string,
-	options?: { fields?: string; expand?: string },
-): Promise<T | null> {
-	void options;
-	const team = await teams.findByLeader({ id: userId, role: "lead", institutionId: "" }, userId);
-	return team as unknown as T | null;
+export async function getLeadTeam(user: UserRecord): Promise<TeamView | null> {
+	if (user.role !== "lead") return null;
+	return teams.findByLeader(user, user.id);
 }
 
 /**
- * Resolve the institution owned by `userId` (its campus lead), or null.
+ * Resolve the institution owned by `user` (its campus lead), or null.
  */
-export async function getInstitutionForUser(
-	userId: string,
-	options?: { fields?: string; expand?: string },
-): Promise<InstitutionRecord | null> {
-	void options;
-	return institutions.findByCampusLeadId(
-		{ id: userId, role: "institution", institutionId: "" },
-		userId,
-	);
+export async function getInstitutionForUser(user: UserRecord): Promise<InstitutionRecord | null> {
+	if (user.role !== "institution") return null;
+	return institutions.findByCampusLeadId(user, user.id);
 }
 
 /**
  * Count members for a set of team ids in a single query.
- * Returns a `{ [teamId]: count }` map.
- *
- * `user` is optional only because the current call sites do not pass it yet;
- * the ids they send come from their own scoped team read. Pass the acting user
- * to have the §6.2 predicate applied here as well.
+ * Returns a `{ [teamId]: count }` map, scoped to the acting user.
  */
 export async function getMemberCountsForTeams(
+	user: ActingUser,
 	teamIds: string[],
-	user?: ActingUser,
 ): Promise<Record<string, number>> {
 	if (teamIds.length === 0) return {};
 	return members.countByTeams(user, teamIds);
@@ -110,8 +93,8 @@ export type TransitionResult = { ok: true } | { ok: false; response: ActionResul
  *  1. fetch the team, scoped to the actor (404 on miss — same as "not yours")
  *  2. optional institution IDOR check
  *  3. role-gated `canTransition` check
- *  4. optimistic-lock update with `status_changed_at`
- *  5. best-effort audit insert
+ *  4. optimistic-lock update with `status_changed_at`, plus the audit row, in
+ *     one transaction — a transition never commits without its audit entry
  */
 export async function transitionTeamStatus({
 	teamId,
@@ -141,14 +124,25 @@ export async function transitionTeamStatus({
 		};
 	}
 
-	// Optimistic lock: `UPDATE … WHERE id = $1 AND status = $expected`. Zero
-	// rows means someone else moved the team first (plan §6.1).
-	const updated = await teams.update(
-		actor,
-		teamId,
-		{ status: to, statusChangedAt: new Date().toISOString() },
-		{ expectedStatus: team.status },
-	);
+	const updated = await withTransaction(async () => {
+		// Optimistic lock: `UPDATE … WHERE id = $1 AND status = $expected`. Zero
+		// rows means someone else moved the team first (plan §6.1).
+		const row = await teams.update(
+			actor,
+			teamId,
+			{ status: to, statusChangedAt: new Date().toISOString() },
+			{ expectedStatus: team.status },
+		);
+		if (!row) return false;
+		await statusTransitions.create(actor, {
+			teamId,
+			fromStatus: team.status,
+			toStatus: to,
+			at: new Date().toISOString(),
+		});
+		return true;
+	});
+
 	if (!updated) {
 		return {
 			ok: false,
@@ -157,18 +151,6 @@ export async function transitionTeamStatus({
 				status: 409,
 			}),
 		};
-	}
-
-	// Best-effort audit log — failures are logged but don't fail the transition.
-	try {
-		await statusTransitions.create(actor, {
-			teamId,
-			fromStatus: team.status,
-			toStatus: to,
-			at: new Date().toISOString(),
-		});
-	} catch (err) {
-		console.error("[audit] Failed to log status transition:", err);
 	}
 
 	return { ok: true };
@@ -235,23 +217,18 @@ export interface CreateCampusLeadArgs {
 	maxTeams?: number;
 }
 
-export interface CreateCampusLeadResult {
-	ok: boolean;
-	error?: string;
-}
-
 /**
  * Create an institution + its campus-lead user, then send the app's
  * password-reset email so the lead sets their own password. Idempotency is
  * the caller's responsibility (check for an existing code/email first).
  *
- * `user` defaults to an admin actor because the only caller is the admin-only
- * campus-leads action; pass the real user to make the scope explicit.
+ * The three writes run in one transaction; the reset email is sent after the
+ * commit so no pool client is held across an outbound HTTP call.
  */
 export async function createCampusLead(
 	args: CreateCampusLeadArgs,
-	user: ActingUser = ADMIN_ACTOR,
-): Promise<CreateCampusLeadResult> {
+	user: ActingUser,
+): Promise<void> {
 	const {
 		institutionName,
 		district,
@@ -262,14 +239,11 @@ export async function createCampusLead(
 	} = args;
 
 	// The lead never learns this password — the reset email is how they get in.
-	const tempPassword = crypto.randomUUID();
-	const passwordHash = await hashPassword(tempPassword);
+	const passwordHash = await hashPassword(crypto.randomUUID());
 
-	let createdInstitutionId: string | null = null;
-	let createdUserId: string | null = null;
-	try {
-		// Step 1: Create institution first (campusLeadId nullable).
-		// This eliminates the window where a user exists with no institutionId.
+	await withTransaction(async () => {
+		// Step 1: Create institution first (campusLeadId nullable), so there is
+		// no window where a user exists with no institutionId.
 		const institution = await institutions.create(user, {
 			name: institutionName,
 			district,
@@ -278,7 +252,6 @@ export async function createCampusLead(
 			status: "active",
 		});
 		if (!institution) throw new Error("Institution could not be created");
-		createdInstitutionId = institution.id;
 
 		// Step 2: Create user with institutionId set from the start.
 		const campusLead = await users.create(user, {
@@ -289,29 +262,14 @@ export async function createCampusLead(
 			passwordHash,
 		});
 		if (!campusLead) throw new Error("Campus lead could not be created");
-		createdUserId = campusLead.id;
 
 		// Step 3: Back-link institution to the campus lead user.
 		await institutions.update(user, institution.id, { campusLeadId: campusLead.id });
-	} catch (err) {
-		// Best-effort rollback of any partially-created records.
-		if (createdUserId) {
-			await users.delete(user, createdUserId).catch(() => {});
-		}
-		if (createdInstitutionId) {
-			await institutions.delete(user, createdInstitutionId).catch(() => {});
-		}
-		throw err;
-	}
+	});
 
 	try {
 		await sendPasswordResetEmail(db, leadEmail);
 	} catch (err) {
 		console.error("[team] campus-lead reset email failed:", err);
 	}
-
-	return { ok: true };
 }
-
-/** Default team capacity per institution. */
-export const DEFAULT_MAX_TEAMS = 5;

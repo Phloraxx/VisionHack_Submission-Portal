@@ -1,11 +1,6 @@
-export type TeamStatus =
-	| "invited"
-	| "registered"
-	| "shortlisted"
-	| "submitted"
-	| "selected"
-	| "rejected"
-	| "withdrawn";
+import type { TEAM_STATUSES } from "./constants";
+
+export type TeamStatus = (typeof TEAM_STATUSES)[number];
 
 export type Role = "admin" | "coordinator" | "institution" | "lead";
 
@@ -26,16 +21,12 @@ export interface TeamRecord {
 	leaderUserId: string;
 	teamCode?: string;
 	status: TeamStatus;
-	membersCount?: number;
-	institutionName?: string;
-	teamLeadName?: string;
-	teamLeadEmail?: string;
-	idea_title?: string;
-	idea_desc?: string;
-	idea_tech_stack?: string;
-	submission_file?: string;
-	questionnaire_completed?: boolean;
-	status_changed_at?: string;
+	ideaTitle?: string;
+	ideaDesc?: string;
+	ideaTechStack?: string;
+	submissionFile?: string;
+	questionnaireCompleted?: boolean;
+	statusChangedAt?: string;
 	created: string;
 	updated: string;
 }

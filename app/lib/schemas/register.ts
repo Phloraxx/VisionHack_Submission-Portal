@@ -20,7 +20,7 @@ export const registerSchema = z
 				z
 					.string()
 					.min(1, "Member name is required")
-					.max(100, "Member name must be at most 100 characters"),
+					.max(200, "Member name must be at most 200 characters"),
 			)
 			.min(1)
 			.max(5),
@@ -28,10 +28,10 @@ export const registerSchema = z
 			z
 				.string()
 				.email("Invalid member email")
-				.max(200, "Member email must be at most 200 characters"),
+				.max(320, "Member email must be at most 320 characters"),
 		),
 		memberPhone: z.array(z.string().max(20, "Member phone must be at most 20 characters")),
-		memberGender: z.array(z.string()),
+		memberGender: z.array(z.string().max(32, "Member gender must be at most 32 characters")),
 		memberRole: z.array(z.string().max(100, "Member role must be at most 100 characters")),
 	})
 	.refine(

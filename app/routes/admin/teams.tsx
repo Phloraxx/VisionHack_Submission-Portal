@@ -1,6 +1,6 @@
 export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";
 import { Users } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 import { MetricCard } from "~/components/shared/metric-card";
@@ -21,45 +21,26 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, request 
 	const status = url.searchParams.get("status") ?? "";
 
 	// Server-side filter. The repository's `q` option is a `contains` match
-	// on `name` and `team_code`; substring match across expanded relations is not
-	// expressible in SQL without a join, so lead name/email and institution
-	// name are still post-filtered in JS below. The page is bounded to
-	// PAGE_SIZE, so the post-filter is cheap.
+	// on the team name/code plus the joined lead and institution names.
 	const statusFilter =
 		status && status !== "all" && TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
 			? (status as TeamStatus)
 			: undefined;
 
-	// Page slice + a fields-only scan for per-status counts. We cap the
-	// count scan at 500 rows; for 500+ teams, the metric cards become
-	// approximate. (A future migration can add server-side aggregations
-	// if the event grows past this size.)
-	const COUNT_SCAN_CAP = 500;
+	const filter = {
+		q: search ? search.slice(0, 100) : undefined,
+		status: statusFilter,
+	};
 
-	const [pageResult, countScan] = await Promise.all([
-		teamsRepo.list(user, {
-			page,
-			perPage: PAGE_SIZE,
-			sort: "-created",
-			q: search ? search.slice(0, 100) : undefined,
-			status: statusFilter,
-		}),
-		teamsRepo.list(user, {
-			page: 1,
-			perPage: COUNT_SCAN_CAP,
-			q: search ? search.slice(0, 100) : undefined,
-			status: statusFilter,
-		}),
+	// Page slice + one GROUP BY for the per-status counters.
+	const [pageResult, totals] = await Promise.all([
+		teamsRepo.list(user, { page, perPage: PAGE_SIZE, sort: "-created", ...filter }),
+		teamsRepo.aggregate(user, filter),
 	]);
 
 	// Member counts for THIS PAGE only — full counts are too expensive.
 	const teamIds = pageResult.items.map((t) => t.id);
-	const memberCounts = await getMemberCountsForTeams(teamIds, user);
-
-	const statusCounts: Partial<Record<TeamStatus, number>> = {};
-	for (const t of countScan.items) {
-		statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1;
-	}
+	const memberCounts = await getMemberCountsForTeams(user, teamIds);
 
 	return {
 		user,
@@ -69,9 +50,7 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, request 
 		perPage: pageResult.perPage,
 		totalItems: pageResult.totalItems,
 		totalPages: pageResult.totalPages,
-		statusCounts,
-		scannedCount: Math.min(countScan.totalItems, COUNT_SCAN_CAP),
-		scannedCap: COUNT_SCAN_CAP,
+		statusCounts: totals.byStatus,
 	};
 });
 
@@ -80,16 +59,7 @@ export function meta() {
 }
 
 export default function AdminTeams() {
-	const {
-		teams,
-		memberCounts,
-		page,
-		totalItems,
-		totalPages,
-		statusCounts,
-		scannedCount,
-		scannedCap,
-	} = useLoaderData() as {
+	const { teams, memberCounts, page, totalItems, totalPages, statusCounts } = useLoaderData() as {
 		teams: TeamView[];
 		memberCounts: Record<string, number>;
 		page: number;
@@ -97,8 +67,6 @@ export default function AdminTeams() {
 		totalItems: number;
 		totalPages: number;
 		statusCounts: Partial<Record<TeamStatus, number>>;
-		scannedCount: number;
-		scannedCap: number;
 	};
 
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -110,6 +78,13 @@ export default function AdminTeams() {
 
 	const [searchInput, setSearchInput] = useState(searchQuery);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Drop a pending debounce when the route unmounts.
+	useEffect(() => {
+		return () => {
+			if (debounceRef.current) clearTimeout(debounceRef.current);
+		};
+	}, []);
+
 	const updateQuery = (next: string) => {
 		setSearchInput(next);
 		if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -135,39 +110,12 @@ export default function AdminTeams() {
 		setSearchParams(params);
 	};
 
-	// Post-filter for the lead name/email and institution name on the
-	// CURRENT page only. PB's filter doesn't support substring match on
-	// expanded relations, so the loader pre-filters name/teamCode
-	// server-side and we do the rest here. With PAGE_SIZE = 50 the
-	// post-filter is bounded.
-	const visibleTeams = useMemo(() => {
-		if (!searchQuery) return teams;
-		const q = searchQuery.toLowerCase();
-		return teams.filter((t: TeamView) => {
-			const lead = t.expand?.leaderUserId;
-			const inst = t.expand?.institutionId;
-			return (
-				t.name.toLowerCase().includes(q) ||
-				(t.teamCode || "").toLowerCase().includes(q) ||
-				(lead?.name || "").toLowerCase().includes(q) ||
-				(lead?.email || "").toLowerCase().includes(q) ||
-				(inst?.name || "").toLowerCase().includes(q)
-			);
-		});
-	}, [teams, searchQuery]);
-
-	const isApprox = scannedCount < totalItems;
-
 	return (
 		<div className="space-y-8">
 			<PanelHeader
 				eyebrow="Pipeline"
 				title="All teams"
-				description={
-					isApprox
-						? `Showing page ${page} of ${totalPages} — ${totalItems} total teams (per-status counts scanned ${scannedCount}/${scannedCap})`
-						: `Page ${page} of ${totalPages} — ${totalItems} total teams`
-				}
+				description={`Page ${page} of ${totalPages} — ${totalItems} total teams`}
 			/>
 
 			{/* Compact stats */}
@@ -179,7 +127,7 @@ export default function AdminTeams() {
 			</div>
 
 			<FilterableTeamList
-				teams={visibleTeams as TeamView[]}
+				teams={teams}
 				memberCounts={memberCounts}
 				statusCounts={statusCounts}
 				totalPages={totalPages}
@@ -200,16 +148,9 @@ export default function AdminTeams() {
 								&middot; {team.expand.leaderUserId.name}
 							</span>
 						)}
-						<span className="text-muted-foreground/70">
-							&middot; {new Date(team.created).toLocaleDateString()}
-						</span>
+						<span className="text-muted-foreground/70">&middot; {team.created.slice(0, 10)}</span>
 					</span>
 				)}
-				filteredHint={
-					searchQuery && visibleTeams.length < teams.length
-						? `Showing ${visibleTeams.length} of ${teams.length} teams on this page (search filter applied to lead / institution names).`
-						: undefined
-				}
 				emptyMessage={
 					searchQuery || statusFilter !== "all"
 						? "No teams match your filters"

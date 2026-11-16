@@ -74,7 +74,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 		return new Response("Forbidden", { status: 403 });
 	}
 
-	const attached = (team.submission_file ?? "")
+	const attached = (team.submissionFile ?? "")
 		.split(",")
 		.map((f: string) => f.trim())
 		.filter(Boolean);

@@ -1,7 +1,6 @@
 /**
  * Password reset without a token table.
  *
- * Replaces `pb.collection("users").requestPasswordReset(email)` (plan §3.6).
  * A reset token is an HS256 JWT signed with `APP_JWT_SECRET`:
  *
  * ```json
@@ -10,11 +9,11 @@
  *
  * `pwf` is `sha256(password_hash).slice(0, 16)`. Because completing a reset
  * rewrites `password_hash`, the fingerprint stops matching and the token is
- * single-use by construction — no token table, no cleanup job.
+ * single-use by construction — no token table, no cleanup job. Session tokens
+ * carry the same claim, so a reset also invalidates every other session.
  */
 
-import { createHash } from "node:crypto";
-import { hashPassword } from "./auth.server";
+import { hashPassword, passwordFingerprint } from "./auth.server";
 import type { Db } from "./db.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
@@ -23,11 +22,6 @@ import { escapeHtml } from "./utils";
 
 /** Reset links expire in 30 minutes, as the UI copy promises. */
 export const RESET_TOKEN_TTL_SECONDS = 30 * 60;
-
-/** Short, non-reversible binding between a reset token and the current hash. */
-export function passwordFingerprint(passwordHash: string): string {
-	return createHash("sha256").update(passwordHash).digest("hex").slice(0, 16);
-}
 
 /**
  * Email a reset link to `email` when that address belongs to a user.
@@ -83,12 +77,13 @@ export async function sendPasswordResetEmail(database: Db, email: string): Promi
  * Validate a reset token: signature, `purpose`, `exp` (inside `verifyJwt`)
  * and the `pwf` binding against the user's current hash.
  *
- * Returns the user id, or `null` when the token is unusable.
+ * Returns the user id and the hash the token was minted against, or `null`
+ * when the token is unusable.
  */
 export async function verifyPasswordResetToken(
 	database: Db,
 	token: string,
-): Promise<{ userId: string } | null> {
+): Promise<{ userId: string; passwordHash: string } | null> {
 	const payload = verifyJwt(token);
 	if (!payload || payload.purpose !== "pwreset") return null;
 	if (typeof payload.sub !== "string" || !payload.sub) return null;
@@ -98,11 +93,14 @@ export async function verifyPasswordResetToken(
 	if (!currentHash) return null;
 	if (passwordFingerprint(currentHash) !== payload.pwf) return null;
 
-	return { userId: payload.sub };
+	return { userId: payload.sub, passwordHash: currentHash };
 }
 
 /**
  * Complete a reset: verify the token, then write an argon2id hash.
+ *
+ * The write is conditional on the hash the token was minted against, so two
+ * concurrent requests with the same token cannot both succeed.
  *
  * Returns `false` when the token is invalid, expired or already used.
  */
@@ -114,6 +112,10 @@ export async function resetPassword(
 	const verified = await verifyPasswordResetToken(database, token);
 	if (!verified) return false;
 
-	await database.users.updatePasswordHash(verified.userId, await hashPassword(newPassword));
-	return true;
+	const newHash = await hashPassword(newPassword);
+	return database.users.updatePasswordHashIfUnchanged(
+		verified.userId,
+		verified.passwordHash,
+		newHash,
+	);
 }

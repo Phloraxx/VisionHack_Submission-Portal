@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS institutions (
 	code           varchar(12)  NOT NULL,
 	campus_lead_id uuid,
 	max_teams      integer,
-	status         varchar(16),
+	status         varchar(16) NOT NULL DEFAULT 'active',
 	created_at     timestamptz NOT NULL DEFAULT now(),
 	updated_at     timestamptz NOT NULL DEFAULT now()
 );
@@ -193,8 +193,8 @@ CREATE TABLE IF NOT EXISTS members (
 	full_name  varchar(200) NOT NULL,
 	email      varchar(320) NOT NULL,
 	phone      varchar(20),
-	gender     text,
-	role       text,
+	gender     varchar(32),
+	role       varchar(100),
 	created_at timestamptz NOT NULL DEFAULT now(),
 	updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS questionnaire_responses (
 	team_experience varchar(2000),
 	expectations    varchar(2000),
 	additional_info varchar(2000),
+	year_of_graduation varchar(16),
 	created_at      timestamptz NOT NULL DEFAULT now(),
 	updated_at      timestamptz NOT NULL DEFAULT now()
 );

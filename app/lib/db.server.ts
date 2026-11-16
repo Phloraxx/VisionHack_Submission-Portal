@@ -114,12 +114,14 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
 	if (ambient) return fn(ambient);
 
 	const client = await getPool().connect();
+	let failed = false;
 	try {
 		await client.query("BEGIN");
 		const result = await transactionStorage.run(client, () => fn(client));
 		await client.query("COMMIT");
 		return result;
 	} catch (err) {
+		failed = true;
 		try {
 			await client.query("ROLLBACK");
 		} catch (rollbackErr) {
@@ -127,7 +129,9 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
 		}
 		throw err;
 	} finally {
-		client.release();
+		// Passing the error destroys the connection instead of returning a
+		// possibly-broken one to the pool.
+		client.release(failed ? new Error("transaction failed") : undefined);
 	}
 }
 
@@ -136,22 +140,8 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
 // ---------------------------------------------------------------------------
 
 /** `institution_id` → `institutionId`. */
-export function toCamelCase(key: string): string {
+function toCamelCase(key: string): string {
 	return key.replace(/_([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
-}
-
-/** Map one row's column names to camelCase, leaving values untouched. */
-export function mapRow<T>(row: QueryResultRow): T {
-	const mapped: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(row)) {
-		mapped[toCamelCase(key)] = value;
-	}
-	return mapped as T;
-}
-
-/** Map a result set's column names to camelCase. */
-export function mapRows<T>(rows: QueryResultRow[]): T[] {
-	return rows.map((row) => mapRow<T>(row));
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +165,11 @@ export interface ListResult<T> {
 	items: T[];
 }
 
+/** The "no rows" result — returned when a filter value cannot match anything. */
+function emptyList<T>(): ListResult<T> {
+	return { page: 1, perPage: 0, totalItems: 0, totalPages: 0, items: [] };
+}
+
 /** `$n` placeholder factory — keeps the SQL text and the parameter array in sync. */
 interface ParamList {
 	params: unknown[];
@@ -195,8 +190,13 @@ function paramList(): ParamList {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Guard a uuid cast: a malformed id must read as "no such row", not a 500. */
-function isUuid(value: string): boolean {
+export function isUuid(value: string): boolean {
 	return UUID_RE.test(value);
+}
+
+/** Postgres `foreign_key_violation` — a delete blocked by a referencing row. */
+function isForeignKeyViolation(err: unknown): boolean {
+	return typeof err === "object" && err !== null && (err as { code?: string }).code === "23503";
 }
 
 /** `timestamptz` → ISO string; unset → `""`. */
@@ -216,9 +216,13 @@ function normalizePaging(
 	page: number | undefined,
 	perPage: number | undefined,
 ): { page: number; perPage: number; offset: number } {
-	const safePage = page && page > 0 ? Math.floor(page) : 1;
+	// `Number("Infinity")` survives Math.floor and would reach SQL as an
+	// offset, so both bounds are checked for finiteness.
+	const safePage = page && Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 	const safePerPage =
-		perPage && perPage > 0 ? Math.min(Math.floor(perPage), MAX_PER_PAGE) : DEFAULT_PER_PAGE;
+		perPage && Number.isFinite(perPage) && perPage > 0
+			? Math.min(Math.floor(perPage), MAX_PER_PAGE)
+			: DEFAULT_PER_PAGE;
 	return { page: safePage, perPage: safePerPage, offset: (safePage - 1) * safePerPage };
 }
 
@@ -234,7 +238,10 @@ function orderByClause(
 	const raw = (sort ?? fallback).trim();
 	const descending = raw.startsWith("-");
 	const key = descending ? raw.slice(1) : raw;
-	const column = columns[key] ?? columns[fallback.replace(/^-/, "")];
+	// Always resolve to a real column: an unknown key falls back to the
+	// caller's default, then to the first whitelisted column.
+	const column =
+		columns[key] ?? columns[fallback.replace(/^-/, "")] ?? Object.values(columns)[0] ?? "1";
 	return `${column} ${descending ? "DESC" : "ASC"}`;
 }
 
@@ -317,12 +324,23 @@ export interface UsersRepository {
 	findByEmail(email: string): Promise<UserAuthRow | null>;
 	/** Load the live record used by `resolveAuth` — no password hash. */
 	findById(id: string): Promise<UserRecord | null>;
+	/** `findById` plus the password hash, for the session fingerprint check. */
+	findSessionUser(id: string): Promise<UserAuthRow | null>;
 	/** Count the users the actor may list (§6.2 users list predicate). */
 	count(user: ActingUser): Promise<number>;
 	/** Current hash, for the password-reset fingerprint check. */
 	findPasswordHashById(id: string): Promise<string | null>;
 	/** Write a new hash (bcrypt → argon2id upgrade, or a completed reset). */
 	updatePasswordHash(id: string, passwordHash: string): Promise<void>;
+	/**
+	 * Write a new hash only when the stored one still matches `expectedHash`.
+	 * Returns false when another request already consumed the reset token.
+	 */
+	updatePasswordHashIfUnchanged(
+		id: string,
+		expectedHash: string,
+		passwordHash: string,
+	): Promise<boolean>;
 	/**
 	 * Create a user. §6.2: admin, or an institution inviting a `lead` into its
 	 * own institution. Returns null when the acting user may not.
@@ -355,15 +373,25 @@ export const users: UsersRepository = {
 		return row ? toUserRecord(row) : null;
 	},
 
+	async findSessionUser(id: string): Promise<UserAuthRow | null> {
+		if (!isUuid(id)) return null;
+		const result = await query<UserDbRow>(
+			`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE id = $1 LIMIT 1`,
+			[id],
+		);
+		const row = result.rows[0];
+		return row ? { ...toUserRecord(row), passwordHash: row.password_hash } : null;
+	},
+
 	async count(user: ActingUser): Promise<number> {
 		const { params, p } = paramList();
 		const actorId = p(user.id);
 		const actorRole = p(user.role);
 		const actorInstitution = p(user.institutionId);
-		// §6.2 users list/view: self ∨ admin ∨ coordinator ∨ lead ∨ own inst.
+		// §6.2 users list/view: self ∨ admin ∨ coordinator ∨ own institution.
 		const scope = [
 			`id = NULLIF(${actorId}, '')::uuid`,
-			`${actorRole}::text IN ('admin', 'coordinator', 'lead')`,
+			`${actorRole}::text IN ('admin', 'coordinator')`,
 			`institution_id = NULLIF(${actorInstitution}, '')::uuid`,
 		].join(" OR ");
 		const result = await query<{ count: number }>(
@@ -385,6 +413,19 @@ export const users: UsersRepository = {
 	async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
 		if (!isUuid(id)) return;
 		await query("UPDATE users SET password_hash = $2 WHERE id = $1", [id, passwordHash]);
+	},
+
+	async updatePasswordHashIfUnchanged(
+		id: string,
+		expectedHash: string,
+		passwordHash: string,
+	): Promise<boolean> {
+		if (!isUuid(id)) return false;
+		const result = await query(
+			"UPDATE users SET password_hash = $3 WHERE id = $1 AND password_hash = $2 RETURNING id",
+			[id, expectedHash, passwordHash],
+		);
+		return result.rows.length > 0;
 	},
 
 	async create(user: ActingUser, input: UserCreateInput): Promise<UserRecord | null> {
@@ -419,11 +460,18 @@ export const users: UsersRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const actorRole = p(user.role);
-		const result = await query(
-			`DELETE FROM users WHERE id = ${idParam} AND ${actorRole}::text = 'admin' RETURNING id`,
-			params,
-		);
-		return result.rows.length > 0;
+		try {
+			const result = await query(
+				`DELETE FROM users WHERE id = ${idParam} AND ${actorRole}::text = 'admin' RETURNING id`,
+				params,
+			);
+			return result.rows.length > 0;
+		} catch (err) {
+			// A user still leading a team cannot be deleted — report "not
+			// deleted" instead of surfacing the FK error as a 500.
+			if (isForeignKeyViolation(err)) return false;
+			throw err;
+		}
 	},
 };
 
@@ -439,12 +487,12 @@ interface TeamRow extends QueryResultRow {
 	leader_user_id: string;
 	team_code: string | null;
 	status: TeamStatus;
-	status_changed_at: Date | null;
-	questionnaire_completed: boolean;
-	idea_title: string | null;
-	idea_desc: string | null;
-	idea_tech_stack: string | null;
-	submission_file: string | null;
+	statusChangedAt: Date | null;
+	questionnaireCompleted: boolean;
+	ideaTitle: string | null;
+	ideaDesc: string | null;
+	ideaTechStack: string | null;
+	submissionFile: string | null;
 	created_at: Date;
 	updated_at: Date;
 	inst_id: string | null;
@@ -458,8 +506,8 @@ interface TeamRow extends QueryResultRow {
 
 const TEAM_SELECT = `
 	t.id, t.name, t.institution_id, t.leader_user_id, t.team_code, t.status,
-	t.status_changed_at, t.questionnaire_completed, t.idea_title, t.idea_desc,
-	t.idea_tech_stack, t.submission_file, t.created_at, t.updated_at,
+	t.statusChangedAt, t.questionnaireCompleted, t.ideaTitle, t.ideaDesc,
+	t.ideaTechStack, t.submissionFile, t.created_at, t.updated_at,
 	i.id AS inst_id, i.name AS inst_name, i.district AS inst_district, i.code AS inst_code,
 	u.id AS lead_id, u.name AS lead_name, u.email AS lead_email`;
 
@@ -491,12 +539,12 @@ function toTeamView(row: TeamRow): TeamView {
 		leaderUserId: row.leader_user_id,
 		teamCode: row.team_code ?? "",
 		status: row.status,
-		status_changed_at: toIso(row.status_changed_at),
-		questionnaire_completed: row.questionnaire_completed,
-		idea_title: row.idea_title ?? "",
-		idea_desc: row.idea_desc ?? "",
-		idea_tech_stack: row.idea_tech_stack ?? "",
-		submission_file: row.submission_file ?? "",
+		statusChangedAt: toIso(row.statusChangedAt),
+		questionnaireCompleted: row.questionnaireCompleted,
+		ideaTitle: row.ideaTitle ?? "",
+		ideaDesc: row.ideaDesc ?? "",
+		ideaTechStack: row.ideaTechStack ?? "",
+		submissionFile: row.submissionFile ?? "",
 		created: row.created_at.toISOString(),
 		updated: row.updated_at.toISOString(),
 	};
@@ -569,9 +617,24 @@ export interface TeamUpdateInput {
 	submissionFile?: string;
 }
 
+/** Per-status and per-institution totals for the dashboard cards. */
+export interface TeamAggregate {
+	byStatus: Partial<Record<TeamStatus, number>>;
+	byInstitution: Record<string, { total: number; registered: number; shortlisted: number }>;
+	total: number;
+	institutions: number;
+}
+
 export interface TeamsRepository {
 	/** Scoped list with pagination + `totalItems`, `expand` populated. */
 	list(user: ActingUser, options?: TeamListOptions): Promise<ListResult<TeamView>>;
+	/**
+	 * One `GROUP BY status, institution_id` for the dashboard counters.
+	 *
+	 * Replaces the per-status count queries and the "fetch 500/1000 rows and
+	 * bucket them in JS" scans.
+	 */
+	aggregate(user: ActingUser, options?: TeamListOptions): Promise<TeamAggregate>;
 	/** Scoped single read — null on miss *and* on out-of-scope (§6.2). */
 	getOne(user: ActingUser, id: string): Promise<TeamView | null>;
 	/** The team led by `leaderUserId`, scoped to that lead. */
@@ -600,25 +663,46 @@ export interface TeamsRepository {
 	delete(user: ActingUser, id: string): Promise<boolean>;
 }
 
+/**
+ * Build the `teams` WHERE clause shared by `list` and `aggregate`.
+ * Returns null when a filter value cannot match anything.
+ */
+function teamWhere(user: ActingUser, options: TeamListOptions, p: ParamList["p"]): string[] | null {
+	const where: string[] = [teamScope(user, p)];
+
+	const requested = toArray(options.institutionId);
+	const institutionIds = requested.filter(isUuid);
+	// Every id was malformed — read as "no match" rather than letting the
+	// ::uuid[] cast raise 22P02.
+	if (requested.length > 0 && institutionIds.length === 0) return null;
+	if (institutionIds.length > 0) {
+		where.push(`t.institution_id = ANY(${p(institutionIds)}::uuid[])`);
+	}
+
+	const statuses = toArray(options.status);
+	if (statuses.length > 0) {
+		where.push(`t.status = ANY(${p(statuses)}::text[])`);
+	}
+
+	if (options.q) {
+		const pattern = p(containsPattern(options.q));
+		// Search covers the team, its lead and its institution — the joins are
+		// already in TEAM_FROM, so this costs nothing extra.
+		where.push(
+			`(t.name ILIKE ${pattern} ESCAPE '\\' OR t.team_code ILIKE ${pattern} ESCAPE '\\'
+				OR u.name ILIKE ${pattern} ESCAPE '\\' OR u.email ILIKE ${pattern} ESCAPE '\\'
+				OR i.name ILIKE ${pattern} ESCAPE '\\')`,
+		);
+	}
+
+	return where;
+}
+
 export const teams: TeamsRepository = {
 	async list(user: ActingUser, options: TeamListOptions = {}): Promise<ListResult<TeamView>> {
 		const { params, p } = paramList();
-		const where: string[] = [teamScope(user, p)];
-
-		const institutionIds = toArray(options.institutionId);
-		if (institutionIds.length > 0) {
-			where.push(`t.institution_id = ANY(${p(institutionIds)}::uuid[])`);
-		}
-		const statuses = toArray(options.status);
-		if (statuses.length > 0) {
-			where.push(`t.status = ANY(${p(statuses)}::text[])`);
-		}
-		if (options.q) {
-			const pattern = p(containsPattern(options.q));
-			where.push(
-				`(t.name ILIKE ${pattern} ESCAPE '\\' OR t.team_code ILIKE ${pattern} ESCAPE '\\')`,
-			);
-		}
+		const where = teamWhere(user, options, p);
+		if (!where) return emptyList();
 
 		const whereSql = where.join(" AND ");
 		const { page, perPage, offset } = normalizePaging(options.page, options.perPage);
@@ -645,6 +729,36 @@ export const teams: TeamsRepository = {
 			totalPages: Math.ceil(totalItems / perPage),
 			items: rows.rows.map(toTeamView),
 		};
+	},
+
+	async aggregate(user: ActingUser, options: TeamListOptions = {}): Promise<TeamAggregate> {
+		const { params, p } = paramList();
+		const where = teamWhere(user, options, p);
+		const empty: TeamAggregate = { byStatus: {}, byInstitution: {}, total: 0, institutions: 0 };
+		if (!where) return empty;
+
+		const result = await query<{ status: TeamStatus; institution_id: string; count: number }>(
+			`SELECT t.status, t.institution_id, count(*)::int AS count ${TEAM_FROM}
+			 WHERE ${where.join(" AND ")}
+			 GROUP BY t.status, t.institution_id`,
+			params,
+		);
+
+		const aggregate: TeamAggregate = { byStatus: {}, byInstitution: {}, total: 0, institutions: 0 };
+		for (const row of result.rows) {
+			aggregate.byStatus[row.status] = (aggregate.byStatus[row.status] ?? 0) + row.count;
+			aggregate.total += row.count;
+			const bucket = (aggregate.byInstitution[row.institution_id] ??= {
+				total: 0,
+				registered: 0,
+				shortlisted: 0,
+			});
+			bucket.total += row.count;
+			if (row.status === "registered") bucket.registered += row.count;
+			if (row.status === "shortlisted") bucket.shortlisted += row.count;
+		}
+		aggregate.institutions = Object.keys(aggregate.byInstitution).length;
+		return aggregate;
 	},
 
 	async getOne(user: ActingUser, id: string): Promise<TeamView | null> {
@@ -910,6 +1024,12 @@ export interface InstitutionsRepository {
 	 * admin route used before the port.
 	 */
 	findByCode(user: ActingUser, code: string): Promise<InstitutionView | null>;
+	/**
+	 * Lock the institution row for the rest of the transaction and return its
+	 * capacity. Serialises the SEC-9 capacity check against concurrent
+	 * registrations, which a plain read under READ COMMITTED does not.
+	 */
+	lockForUpdate(user: ActingUser, id: string): Promise<{ maxTeams: number } | null>;
 	create(user: ActingUser, input: InstitutionCreateInput): Promise<InstitutionView | null>;
 	update(
 		user: ActingUser,
@@ -1011,6 +1131,19 @@ export const institutions: InstitutionsRepository = {
 		return row ? toInstitutionView(row) : null;
 	},
 
+	async lockForUpdate(user: ActingUser, id: string): Promise<{ maxTeams: number } | null> {
+		if (!isUuid(id)) return null;
+		const { params, p } = paramList();
+		const idParam = p(id);
+		const scope = institutionScope(user, p);
+		const result = await query<{ max_teams: number | null }>(
+			`SELECT i.max_teams FROM institutions i WHERE i.id = ${idParam} AND ${scope} FOR UPDATE`,
+			params,
+		);
+		const row = result.rows[0];
+		return row ? { maxTeams: row.max_teams ?? 0 } : null;
+	},
+
 	async create(user: ActingUser, input: InstitutionCreateInput): Promise<InstitutionView | null> {
 		const { params, p } = paramList();
 		const name = p(input.name);
@@ -1071,11 +1204,18 @@ export const institutions: InstitutionsRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const actorRole = p(user.role);
-		const result = await query(
-			`DELETE FROM institutions WHERE id = ${idParam} AND ${actorRole}::text = 'admin' RETURNING id`,
-			params,
-		);
-		return result.rows.length > 0;
+		try {
+			const result = await query(
+				`DELETE FROM institutions WHERE id = ${idParam} AND ${actorRole}::text = 'admin' RETURNING id`,
+				params,
+			);
+			return result.rows.length > 0;
+		} catch (err) {
+			// An institution that still owns teams cannot be deleted — report
+			// "not deleted" instead of surfacing the FK error as a 500.
+			if (isForeignKeyViolation(err)) return false;
+			throw err;
+		}
 	},
 };
 
@@ -1172,8 +1312,12 @@ export interface MembersRepository {
 	/** Scoped list — joins `teams` and applies the §6.2 predicate there. */
 	list(user: ActingUser, options?: MemberListOptions): Promise<ListResult<MemberRecord>>;
 	/** Member counts per team, for the dashboard cards. */
-	countByTeams(user: ActingUser | undefined, teamIds: string[]): Promise<Record<string, number>>;
+	countByTeams(user: ActingUser, teamIds: string[]): Promise<Record<string, number>>;
 	create(user: ActingUser, input: MemberCreateInput): Promise<MemberRecord | null>;
+	/** Insert a whole roster in one statement. Returns the number of rows written. */
+	createMany(user: ActingUser, teamId: string, rows: MemberCreateInput[]): Promise<number>;
+	/** Drop every member of a team in one statement. Returns the number removed. */
+	deleteByTeam(user: ActingUser, teamId: string): Promise<number>;
 	update(user: ActingUser, id: string, patch: MemberUpdateInput): Promise<MemberRecord | null>;
 	delete(user: ActingUser, id: string): Promise<boolean>;
 }
@@ -1183,11 +1327,18 @@ export const members: MembersRepository = {
 		const { params, p } = paramList();
 		const where: string[] = [teamScope(user, p)];
 
-		if (options.teamId) where.push(`m.team_id = ${p(options.teamId)}`);
-		if (options.teamIds && options.teamIds.length > 0) {
-			where.push(`m.team_id = ANY(${p(options.teamIds)}::uuid[])`);
+		// Ids arrive from query params, so a malformed one must read as "no
+		// match" rather than reaching the ::uuid cast.
+		if (options.teamId) {
+			if (!isUuid(options.teamId)) return emptyList();
+			where.push(`m.team_id = ${p(options.teamId)}`);
 		}
-		if (options.institutionId) where.push(`t.institution_id = ${p(options.institutionId)}`);
+		const teamIds = (options.teamIds ?? []).filter(isUuid);
+		if (teamIds.length > 0) where.push(`m.team_id = ANY(${p(teamIds)}::uuid[])`);
+		if (options.institutionId) {
+			if (!isUuid(options.institutionId)) return emptyList();
+			where.push(`t.institution_id = ${p(options.institutionId)}`);
+		}
 
 		const whereSql = where.join(" AND ");
 		const { page, perPage, offset } = normalizePaging(options.page, options.perPage);
@@ -1216,20 +1367,15 @@ export const members: MembersRepository = {
 		};
 	},
 
-	async countByTeams(
-		user: ActingUser | undefined,
-		teamIds: string[],
-	): Promise<Record<string, number>> {
-		if (teamIds.length === 0) return {};
+	async countByTeams(user: ActingUser, teamIds: string[]): Promise<Record<string, number>> {
+		const ids = teamIds.filter(isUuid);
+		if (ids.length === 0) return {};
 		const { params, p } = paramList();
-		const idsParam = p(teamIds);
-		// `user` is optional only for `getMemberCountsForTeams`, whose callers
-		// pass ids from their own scoped read; the route pass should pass the
-		// acting user so the §6.2 predicate applies here too.
-		const scope = user ? ` AND (${teamScope(user, p)})` : "";
+		const idsParam = p(ids);
+		const scope = teamScope(user, p);
 		const result = await query<{ team_id: string; count: number }>(
 			`SELECT m.team_id, count(*)::int AS count ${MEMBER_FROM}
-			 WHERE m.team_id = ANY(${idsParam}::uuid[])${scope}
+			 WHERE m.team_id = ANY(${idsParam}::uuid[]) AND (${scope})
 			 GROUP BY m.team_id`,
 			params,
 		);
@@ -1260,6 +1406,45 @@ export const members: MembersRepository = {
 		);
 		const row = result.rows[0];
 		return row ? toMemberRecord(row) : null;
+	},
+
+	async createMany(user: ActingUser, teamId: string, rows: MemberCreateInput[]): Promise<number> {
+		if (!isUuid(teamId) || rows.length === 0) return 0;
+		const { params, p } = paramList();
+		const teamIdParam = p(teamId);
+		const fullNames = p(rows.map((row) => row.fullName));
+		const emails = p(rows.map((row) => row.email.toLowerCase()));
+		const phones = p(rows.map((row) => row.phone ?? ""));
+		const genders = p(rows.map((row) => row.gender ?? ""));
+		const roles = p(rows.map((row) => row.role ?? ""));
+		const scope = memberCreateScope(user, p);
+		const result = await query(
+			`INSERT INTO members (team_id, full_name, email, phone, gender, role)
+			 SELECT t.id, v.full_name, v.email, NULLIF(v.phone, ''), NULLIF(v.gender, ''),
+				NULLIF(v.role, '')
+			 FROM teams t,
+				unnest(${fullNames}::text[], ${emails}::text[], ${phones}::text[],
+					${genders}::text[], ${roles}::text[])
+					AS v(full_name, email, phone, gender, role)
+			 WHERE t.id = ${teamIdParam}::uuid AND (${scope})
+			 RETURNING id`,
+			params,
+		);
+		return result.rows.length;
+	},
+
+	async deleteByTeam(user: ActingUser, teamId: string): Promise<number> {
+		if (!isUuid(teamId)) return 0;
+		const { params, p } = paramList();
+		const teamIdParam = p(teamId);
+		const scope = memberWriteScope(user, p);
+		const result = await query(
+			`DELETE FROM members m USING teams t
+			 WHERE m.team_id = ${teamIdParam}::uuid AND t.id = m.team_id AND (${scope})
+			 RETURNING m.id`,
+			params,
+		);
+		return result.rows.length;
 	},
 
 	async update(
@@ -1338,6 +1523,7 @@ interface QuestionnaireRow extends QueryResultRow {
 	team_experience: string | null;
 	expectations: string | null;
 	additional_info: string | null;
+	year_of_graduation: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -1345,7 +1531,7 @@ interface QuestionnaireRow extends QueryResultRow {
 const QUESTIONNAIRE_SELECT = `
 	q.id, q.team_id, q.user_id, q.age, q.gender, q.education, q.college_name, q.district,
 	q.skills, q.interests, q.challenges, q.experience, q.motivation, q.team_experience,
-	q.expectations, q.additional_info, q.created_at, q.updated_at`;
+	q.expectations, q.additional_info, q.year_of_graduation, q.created_at, q.updated_at`;
 
 const QUESTIONNAIRE_FROM = `
 	FROM questionnaire_responses q
@@ -1359,15 +1545,15 @@ const QUESTIONNAIRE_FROM = `
  * unset text → `""` / unset number → `0`, matching the old backend's defaults.
  */
 function toQuestionnaireRecord(row: QuestionnaireRow): QuestionnaireResponseRecord {
-	const mapped = mapRow<Record<string, unknown>>(row);
 	const record: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(mapped)) {
+	for (const [key, value] of Object.entries(row)) {
+		const name = toCamelCase(key);
 		if (value instanceof Date) {
-			record[key] = value.toISOString();
-		} else if (key === "age") {
-			record[key] = value ?? 0;
+			record[name] = value.toISOString();
+		} else if (name === "age") {
+			record[name] = value ?? 0;
 		} else {
-			record[key] = value ?? "";
+			record[name] = value ?? "";
 		}
 	}
 	return record as QuestionnaireResponseRecord;
@@ -1392,14 +1578,6 @@ function questionnaireWriteScope(user: ActingUser, p: ParamList["p"]): string {
 	return "FALSE";
 }
 
-export interface QuestionnaireListOptions {
-	teamId?: string;
-	userId?: string;
-	page?: number;
-	perPage?: number;
-	sort?: string;
-}
-
 export interface QuestionnaireResponseInput {
 	teamId: string;
 	userId: string;
@@ -1416,6 +1594,7 @@ export interface QuestionnaireResponseInput {
 	teamExperience?: string;
 	expectations?: string;
 	additionalInfo?: string;
+	yearOfGraduation?: string;
 }
 
 export type QuestionnaireResponseUpdate = Partial<
@@ -1425,11 +1604,18 @@ export type QuestionnaireResponseUpdate = Partial<
 export interface QuestionnaireResponsesRepository {
 	/** The single response for a team (`getFirstListItem` by team). */
 	getByTeam(user: ActingUser, teamId: string): Promise<QuestionnaireResponseRecord | null>;
-	list(
-		user: ActingUser,
-		options?: QuestionnaireListOptions,
-	): Promise<ListResult<QuestionnaireResponseRecord>>;
 	create(
+		user: ActingUser,
+		input: QuestionnaireResponseInput,
+	): Promise<QuestionnaireResponseRecord | null>;
+	/**
+	 * Insert the team's response or overwrite its answers.
+	 *
+	 * `ON CONFLICT (team_id) DO UPDATE` makes two concurrent first
+	 * submissions collapse into one row instead of one of them hitting the
+	 * unique index.
+	 */
+	upsert(
 		user: ActingUser,
 		input: QuestionnaireResponseInput,
 	): Promise<QuestionnaireResponseRecord | null>;
@@ -1457,6 +1643,7 @@ const QUESTIONNAIRE_FIELDS: Array<[keyof QuestionnaireResponseUpdate, string]> =
 	["teamExperience", "team_experience"],
 	["expectations", "expectations"],
 	["additionalInfo", "additional_info"],
+	["yearOfGraduation", "year_of_graduation"],
 ];
 
 export const questionnaireResponses: QuestionnaireResponsesRepository = {
@@ -1468,48 +1655,12 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 		const result = await query<QuestionnaireRow>(
 			`SELECT ${QUESTIONNAIRE_SELECT} ${QUESTIONNAIRE_FROM}
 			 WHERE q.team_id = ${teamParam} AND (${scope})
+			 ORDER BY q.created_at DESC
 			 LIMIT 1`,
 			params,
 		);
 		const row = result.rows[0];
 		return row ? toQuestionnaireRecord(row) : null;
-	},
-
-	async list(
-		user: ActingUser,
-		options: QuestionnaireListOptions = {},
-	): Promise<ListResult<QuestionnaireResponseRecord>> {
-		const { params, p } = paramList();
-		const where: string[] = [questionnaireScope(user, p)];
-
-		if (options.teamId) where.push(`q.team_id = ${p(options.teamId)}`);
-		if (options.userId) where.push(`q.user_id = ${p(options.userId)}`);
-
-		const whereSql = where.join(" AND ");
-		const { page, perPage, offset } = normalizePaging(options.page, options.perPage);
-
-		const countResult = await query<{ count: number }>(
-			`SELECT count(*)::int AS count ${QUESTIONNAIRE_FROM} WHERE ${whereSql}`,
-			params,
-		);
-		const totalItems = countResult.rows[0]?.count ?? 0;
-
-		const limitParam = `$${params.length + 1}`;
-		const offsetParam = `$${params.length + 2}`;
-		const rows = await query<QuestionnaireRow>(
-			`SELECT ${QUESTIONNAIRE_SELECT} ${QUESTIONNAIRE_FROM} WHERE ${whereSql}
-			 ORDER BY ${orderByClause(options.sort, { created: "q.created_at" }, "-created")}
-			 LIMIT ${limitParam} OFFSET ${offsetParam}`,
-			[...params, perPage, offset],
-		);
-
-		return {
-			page,
-			perPage,
-			totalItems,
-			totalPages: Math.ceil(totalItems / perPage),
-			items: rows.rows.map(toQuestionnaireRecord),
-		};
 	},
 
 	async create(
@@ -1545,6 +1696,45 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 			 FROM teams t
 			 WHERE t.id = ${teamId}::uuid AND (${scope})
 			 RETURNING id, team_id, user_id, ${columns}, created_at, updated_at`,
+			params,
+		);
+		const row = result.rows[0];
+		return row ? toQuestionnaireRecord(row) : null;
+	},
+
+	async upsert(
+		user: ActingUser,
+		input: QuestionnaireResponseInput,
+	): Promise<QuestionnaireResponseRecord | null> {
+		if (!isUuid(input.teamId) || !isUuid(input.userId)) return null;
+
+		const { params, p } = paramList();
+		const teamId = p(input.teamId);
+		const userId = p(input.userId);
+		const values = QUESTIONNAIRE_FIELDS.map(([key]) => {
+			const value = input[key];
+			if (key === "age") return `${p(value ?? 0)}::double precision`;
+			return `NULLIF(${p(typeof value === "string" ? value : "")}, '')`;
+		});
+
+		const actorRole = p(user.role);
+		const actorInstitution = p(user.institutionId);
+		const actorId = p(user.id);
+		const scope = [
+			`${actorRole}::text = 'admin'`,
+			`(${actorRole}::text = 'institution' AND NULLIF(${actorInstitution}, '')::uuid = t.institution_id)`,
+			`(${actorRole}::text = 'lead' AND t.leader_user_id = ${actorId}::uuid AND ${userId}::uuid = ${actorId}::uuid)`,
+		].join(" OR ");
+
+		const columns = QUESTIONNAIRE_FIELDS.map(([, column]) => column);
+		const assignments = columns.map((column) => `${column} = EXCLUDED.${column}`).join(", ");
+		const result = await query<QuestionnaireRow>(
+			`INSERT INTO questionnaire_responses (team_id, user_id, ${columns.join(", ")})
+			 SELECT t.id, ${userId}::uuid, ${values.join(", ")}
+			 FROM teams t
+			 WHERE t.id = ${teamId}::uuid AND (${scope})
+			 ON CONFLICT (team_id) DO UPDATE SET ${assignments}
+			 RETURNING id, team_id, user_id, ${columns.join(", ")}, created_at, updated_at`,
 			params,
 		);
 		const row = result.rows[0];
@@ -1657,13 +1847,6 @@ function toStatusTransitionRecord(row: StatusTransitionRow): StatusTransitionRec
 	};
 }
 
-export interface StatusTransitionListOptions {
-	teamId?: string;
-	page?: number;
-	perPage?: number;
-	sort?: string;
-}
-
 export interface StatusTransitionCreateInput {
 	teamId: string;
 	fromStatus: string;
@@ -1673,11 +1856,6 @@ export interface StatusTransitionCreateInput {
 }
 
 export interface StatusTransitionsRepository {
-	/** Scoped list (admin only, §6.2). */
-	list(
-		user: ActingUser,
-		options?: StatusTransitionListOptions,
-	): Promise<ListResult<StatusTransitionRecord>>;
 	/**
 	 * Append an audit row.
 	 *
@@ -1691,41 +1869,6 @@ export interface StatusTransitionsRepository {
 }
 
 export const statusTransitions: StatusTransitionsRepository = {
-	async list(
-		user: ActingUser,
-		options: StatusTransitionListOptions = {},
-	): Promise<ListResult<StatusTransitionRecord>> {
-		const { params, p } = paramList();
-		const where: string[] = [`${p(user.role)}::text = 'admin'`];
-		if (options.teamId) where.push(`s.team_id = ${p(options.teamId)}`);
-
-		const whereSql = where.join(" AND ");
-		const { page, perPage, offset } = normalizePaging(options.page, options.perPage);
-
-		const countResult = await query<{ count: number }>(
-			`SELECT count(*)::int AS count FROM status_transitions s WHERE ${whereSql}`,
-			params,
-		);
-		const totalItems = countResult.rows[0]?.count ?? 0;
-
-		const limitParam = `$${params.length + 1}`;
-		const offsetParam = `$${params.length + 2}`;
-		const rows = await query<StatusTransitionRow>(
-			`SELECT ${STATUS_TRANSITION_SELECT} FROM status_transitions s WHERE ${whereSql}
-			 ORDER BY ${orderByClause(options.sort, { at: "s.at", created: "s.created_at" }, "-at")}
-			 LIMIT ${limitParam} OFFSET ${offsetParam}`,
-			[...params, perPage, offset],
-		);
-
-		return {
-			page,
-			perPage,
-			totalItems,
-			totalPages: Math.ceil(totalItems / perPage),
-			items: rows.rows.map(toStatusTransitionRecord),
-		};
-	},
-
 	async create(
 		user: ActingUser,
 		input: StatusTransitionCreateInput,
@@ -1739,10 +1882,15 @@ export const statusTransitions: StatusTransitionsRepository = {
 		const role = p(user.role);
 		const at = p(input.at ?? new Date().toISOString());
 
+		// §6.2: an audit row may only be appended for a team the actor can
+		// already see, so a forged team id cannot create one.
+		const scope = teamScope(user, p);
 		const result = await query<StatusTransitionRow>(
 			`INSERT INTO status_transitions (team_id, actor_user_id, from_status, to_status, role, at)
-			 VALUES (${teamId}::uuid, ${actorUserId}::uuid, ${fromStatus}, ${toStatus}, ${role},
-				${at}::timestamptz)
+			 SELECT t.id, ${actorUserId}::uuid, ${fromStatus}, ${toStatus}, ${role},
+				${at}::timestamptz
+			 FROM teams t
+			 WHERE t.id = ${teamId}::uuid AND (${scope})
 			 RETURNING ${STATUS_TRANSITION_SELECT}`,
 			params,
 		);
@@ -1785,7 +1933,7 @@ function isFlagKey(key: string): boolean {
 
 export interface ConfigRepository {
 	/** One flag by key. Null for a missing key or a bookkeeping key. */
-	get(user: ActingUser, key: string): Promise<ConfigRecord | null>;
+	get(key: string): Promise<ConfigRecord | null>;
 	/**
 	 * Insert or update one flag.
 	 *
@@ -1794,13 +1942,19 @@ export interface ConfigRepository {
 	 * Admin only (§6.2 config write rule) — null when the actor may not.
 	 */
 	upsert(user: ActingUser, key: string, value: boolean): Promise<ConfigRecord | null>;
+	/**
+	 * Flip one flag in a single statement.
+	 *
+	 * `SET value = NOT value` is atomic, so two concurrent toggles cannot both
+	 * read the same starting value and write the same result.
+	 */
+	toggle(user: ActingUser, key: string): Promise<ConfigRecord | null>;
 }
 
 export const config: ConfigRepository = {
-	async get(user: ActingUser, key: string): Promise<ConfigRecord | null> {
+	async get(key: string): Promise<ConfigRecord | null> {
 		// §6.2 config list/view is public — the login page reads it
-		// unauthenticated — so the actor is not part of the predicate.
-		void user;
+		// unauthenticated — so there is no actor to scope by.
 		if (!isFlagKey(key)) return null;
 		const result = await query<ConfigRow>(
 			`SELECT ${CONFIG_SELECT} FROM config WHERE key = $1 LIMIT 1`,
@@ -1821,6 +1975,21 @@ export const config: ConfigRepository = {
 			 SELECT ${keyParam}, ${valueParam}::boolean
 			 WHERE ${actorRole}::text = 'admin'
 			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+			 RETURNING ${CONFIG_SELECT}`,
+			params,
+		);
+		const row = result.rows[0];
+		return row ? toConfigRecord(row) : null;
+	},
+
+	async toggle(user: ActingUser, key: string): Promise<ConfigRecord | null> {
+		if (!isFlagKey(key)) return null;
+		const { params, p } = paramList();
+		const keyParam = p(key);
+		const actorRole = p(user.role);
+		const result = await query<ConfigRow>(
+			`UPDATE config SET value = NOT value
+			 WHERE key = ${keyParam} AND ${actorRole}::text = 'admin'
 			 RETURNING ${CONFIG_SELECT}`,
 			params,
 		);

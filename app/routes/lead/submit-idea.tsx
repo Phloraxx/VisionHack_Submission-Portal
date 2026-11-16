@@ -1,16 +1,8 @@
-import { unlink } from "node:fs/promises";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, CheckCircle2, FileText, Loader2, Upload } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import {
-	Form,
-	isRouteErrorResponse,
-	useActionData,
-	useLoaderData,
-	useNavigation,
-	useRouteError,
-} from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { ReviewSummary } from "~/components/shared/review-summary";
 import {
@@ -34,7 +26,7 @@ import { submitIdeaSchema } from "~/lib/schemas/submit-idea";
 import { canSubmitIdea } from "~/lib/team-policy";
 import { getLeadTeam } from "~/lib/team.server";
 import type { TeamRecord, UserRecord } from "~/lib/types";
-import { getTeamSubmissionPath, saveTeamSubmission } from "~/lib/uploads.server";
+import { deleteTeamSubmission, saveTeamSubmission } from "~/lib/uploads.server";
 import { extractFieldErrors } from "~/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +51,7 @@ interface ActionData {
 
 export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Team and config are independent — fetch in parallel.
-	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(user.id), getConfig()]);
+	const [team, flags] = await Promise.all([getLeadTeam(user), getConfig()]);
 
 	return {
 		user,
@@ -112,7 +104,8 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user 
 		return fail({ error: "Submissions are currently closed", status: 403 });
 	}
 
-	const file = formData.get("file") as File | null;
+	const fileField = formData.get("file");
+	const file = fileField instanceof File ? fileField : null;
 
 	const parsed = submitIdeaSchema.safeParse({
 		ideaTitle: formData.get("ideaTitle"),
@@ -129,9 +122,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user 
 	const { ideaTitle, ideaDescription, techStack } = parsed.data;
 
 	// Find team
-	const team = await getLeadTeam<TeamRecord>(user.id, {
-		fields: "id,status,submission_file",
-	});
+	const team = await getLeadTeam(user);
 	if (!team) return fail({ error: "Team not found", status: 404 });
 
 	// Validate status transition
@@ -168,9 +159,8 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user 
 		if (rejected) {
 			// Compensation: the row still points at the previous file, so drop
 			// the bytes we just wrote rather than leaving an orphan behind.
-			if (safeName !== team.submission_file) {
-				const written = getTeamSubmissionPath(team.id, safeName);
-				if (written) await unlink(written).catch(() => {});
+			if (safeName !== team.submissionFile) {
+				await deleteTeamSubmission(team.id, safeName);
 			}
 			return rejected;
 		}
@@ -178,7 +168,7 @@ export const action = secureAction({ roles: ["lead"] }, async ({ formData, user 
 	}
 
 	// No new file — re-submit text only if the file already exists
-	if (team.submission_file) {
+	if (team.submissionFile) {
 		const rejected = await applySubmission(user, team, {
 			ideaTitle: ideaTitle.slice(0, 200),
 			ideaDesc: ideaDescription.slice(0, 5000),
@@ -213,9 +203,9 @@ export default function LeadSubmitIdea() {
 	} = useForm({
 		resolver: zodResolver(submitIdeaSchema),
 		defaultValues: {
-			ideaTitle: team?.idea_title ?? "",
-			ideaDescription: team?.idea_desc ?? "",
-			techStack: team?.idea_tech_stack ?? "",
+			ideaTitle: team?.ideaTitle ?? "",
+			ideaDescription: team?.ideaDesc ?? "",
+			techStack: team?.ideaTechStack ?? "",
 		},
 	});
 	const navigation = useNavigation();
@@ -224,10 +214,9 @@ export default function LeadSubmitIdea() {
 	const [fileError, setFileError] = useState<string | null>(null);
 	const [showReview, setShowReview] = useState(false);
 
-	const existingSubmission = !!team?.idea_title;
+	const existingSubmission = !!team?.ideaTitle;
 	const isShortlisted = team?.status === "shortlisted";
-	const isAlreadySubmitted =
-		team?.status === "submitted" || team?.status === "selected" || team?.status === "rejected";
+	const isAlreadySubmitted = team?.status === "submitted" || team?.status === "selected";
 
 	const steps = resolveActiveStep(getStatusStepStates(team?.status ?? null), "/lead/submit-idea");
 
@@ -296,9 +285,9 @@ export default function LeadSubmitIdea() {
 								? "Congratulations — your idea has been selected!"
 								: "Your idea has been submitted successfully!"}
 						</p>
-						{team.idea_title && (
+						{team.ideaTitle && (
 							<p className="text-sm text-muted-foreground">
-								<span className="font-medium text-foreground">Title:</span> {team.idea_title}
+								<span className="font-medium text-foreground">Title:</span> {team.ideaTitle}
 							</p>
 						)}
 					</CardContent>
@@ -448,7 +437,7 @@ export default function LeadSubmitIdea() {
 										<p className="text-sm font-medium text-foreground">
 											{selectedFile
 												? selectedFile.name
-												: team?.submission_file
+												: team?.submissionFile
 													? "Current file: Click to replace"
 													: "Click to upload or drag and drop"}
 										</p>
@@ -463,7 +452,7 @@ export default function LeadSubmitIdea() {
 									</p>
 								)}
 								{actionData?.fieldErrors?.file && (
-									<p id="file-error" className="text-sm text-destructive" role="alert">
+									<p id="file-server-error" className="text-sm text-destructive" role="alert">
 										{actionData.fieldErrors.file}
 									</p>
 								)}
@@ -491,7 +480,7 @@ export default function LeadSubmitIdea() {
 								</div>
 								<div>
 									<p className="font-medium text-muted-foreground">File</p>
-									<p>{selectedFile?.name ?? team?.submission_file ?? "(no file selected)"}</p>
+									<p>{selectedFile?.name ?? team?.submissionFile ?? "(no file selected)"}</p>
 								</div>
 							</ReviewSummary>
 
@@ -517,27 +506,4 @@ export default function LeadSubmitIdea() {
 	);
 }
 
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-	if (isRouteErrorResponse(error)) {
-		message = `Error ${error.status} — ${error.statusText || "Access denied"}`;
-	} else if (error instanceof Error) {
-		message = error.message;
-	}
-	return (
-		<div className="flex min-h-[50vh] items-center justify-center p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
-				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
-				<button
-					type="button"
-					onClick={() => window.location.reload()}
-					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";

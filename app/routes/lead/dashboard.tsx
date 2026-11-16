@@ -40,14 +40,7 @@ import type { TeamStatus, TeamView } from "~/lib/types";
 
 export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Team + config are independent — fetch in parallel.
-	const [team, config] = await Promise.all([
-		getLeadTeam<TeamView>(user.id, {
-			expand: "institutionId",
-			fields:
-				"id,name,status,institutionId,leaderUserId,teamCode,idea_title,questionnaire_completed,status_changed_at,created,updated,expand.institutionId.name,expand.institutionId.district",
-		}),
-		getConfig(),
-	]);
+	const [team, config] = await Promise.all([getLeadTeam(user), getConfig()]);
 
 	let institutionName = "";
 	let campusLeadName = "";
@@ -81,7 +74,7 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Denormalized: the questionnaire action sets `questionnaire_completed`
 	// on the team, so we don't need a join here. Falls back to false
 	// for legacy teams that predate the field.
-	const questionnaireCompleted = team?.questionnaire_completed ?? false;
+	const questionnaireCompleted = team?.questionnaireCompleted ?? false;
 
 	return {
 		user,
@@ -100,7 +93,7 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 
 export const action = secureAction({ roles: ["lead"] }, async ({ user, intent }) => {
 	if (intent === "withdraw") {
-		const team = await getLeadTeam(user.id, { fields: "id,status" });
+		const team = await getLeadTeam(user);
 		if (!team) return fail({ error: "Team not found", status: 404 });
 
 		const result = await transitionTeamStatus({

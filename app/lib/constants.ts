@@ -1,21 +1,12 @@
-export const INTENTS = {
-	WITHDRAW: "withdraw",
-	SHORTLIST: "shortlist",
-	UNSHORTLIST: "unshortlist",
-	TRANSITION: "transition",
-	INVITE_LEAD: "invite-lead",
-	CREATE_SINGLE: "create-single",
-	BULK_CREATE: "bulk-create",
-} as const;
-
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
-export const ALLOWED_MIME_TYPES = [
-	"application/pdf",
-	"application/vnd.ms-powerpoint",
-	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-] as const;
 
-/** All valid team statuses (sorted by progression). */
+/**
+ * All valid team statuses, in progression order.
+ *
+ * This is the single source of truth: the `TeamStatus` union in `types.ts`,
+ * the `status` CHECK constraint in `postgres/schema.sql` and every UI list
+ * derive from it.
+ */
 export const TEAM_STATUSES = [
 	"invited",
 	"registered",

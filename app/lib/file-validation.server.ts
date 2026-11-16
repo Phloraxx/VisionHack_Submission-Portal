@@ -21,6 +21,16 @@ const MAGIC_BYTES: Record<string, number[][]> = {
 const ZIP_HEADER = [0x50, 0x4b, 0x03, 0x04]; // PK\x03\x04 — ZIP local file header
 const CONTENT_TYPES_ENTRY = "[Content_Types].xml";
 
+/**
+ * Cap on the inflated size of a ZIP entry.
+ *
+ * `compSize` is bounded by the 10 MB upload cap, but the *uncompressed* size
+ * is not: a deflate stream of zeros expands until the process runs out of
+ * memory. A legitimate `[Content_Types].xml` is a few KB, so 4 MiB is
+ * generous; anything larger is treated as invalid content.
+ */
+const MAX_INFLATED_BYTES = 4 << 20;
+
 function matchesSignature(bytes: Uint8Array, sig: number[]): boolean {
 	return sig.every((b, i) => bytes[i] === b);
 }
@@ -71,9 +81,11 @@ function extractContentTypesXml(bytes: Uint8Array): string | null {
 		if (name === CONTENT_TYPES_ENTRY) {
 			const entry = bytes.subarray(dataStart, dataEnd);
 			try {
-				const raw = method === 0 ? entry : inflateRawSync(entry);
+				const raw =
+					method === 0 ? entry : inflateRawSync(entry, { maxOutputLength: MAX_INFLATED_BYTES });
 				return new TextDecoder().decode(raw);
 			} catch {
+				// Malformed archive or a decompression bomb — both are invalid.
 				return null;
 			}
 		}

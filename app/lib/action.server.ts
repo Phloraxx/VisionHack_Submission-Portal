@@ -2,9 +2,10 @@ import * as Sentry from "@sentry/node";
 import { data } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import type { ZodSchema } from "zod";
-import { getAuthFromCookie, requireRole, setAuthCookie } from "./auth.server";
+import { type AuthResult, getAuthFromCookie, requireRole, setAuthCookie } from "./auth.server";
 import type { Db } from "./db.server";
 import { validateOrigin } from "./origin.server";
+import { withCookie } from "./response.server";
 import type { Role, UserRecord } from "./types";
 import { extractFieldErrors } from "./utils";
 
@@ -57,31 +58,43 @@ export function fail(args: {
 }
 
 /**
- * If the auth token rotated (e.g. after a refresh), add a Set-Cookie header
- * to propagate the new token to the client. Otherwise return the result as-is.
+ * Run the handler, turning an unexpected throw into a logged 500.
+ *
+ * A thrown `Response` (redirect, 403) is re-thrown untouched — those are
+ * control flow, not failures.
  */
-function withTokenCookie(
-	result: unknown,
-	token: string,
+async function runHandler(
+	handler: Handler,
+	ctx: ActionContext,
+	auth: AuthResult,
 	originalToken: string | null,
-): ActionResult {
-	if (token === originalToken) return result as ActionResult;
-	const cookie = setAuthCookie(token);
-
-	if (result instanceof Response) {
-		result.headers.append("Set-Cookie", cookie);
-		return result;
+): Promise<ActionResult> {
+	try {
+		const cookie = auth.token === originalToken ? null : setAuthCookie(auth.token);
+		return withCookie(await handler(ctx), cookie);
+	} catch (err) {
+		if (err instanceof Response) throw err;
+		const context = {
+			route: new URL(ctx.request.url).pathname,
+			userId: auth.user.id,
+			role: auth.user.role,
+			intent: ctx.intent,
+		};
+		// Always log: with SENTRY_DSN unset, Sentry is a no-op and a
+		// production-only console.error would record nothing at all.
+		console.error("[secureAction]", err, context);
+		Sentry.captureException(err, { extra: context });
+		return fail({ error: "Something went wrong. Please try again.", status: 500 });
 	}
-
-	return data(result, { headers: new Headers([["Set-Cookie", cookie]]) });
 }
 
 /**
  * Wrap a route action with the security checks every action MUST run.
  *
  *  1. **Origin check** — Origin header validated against allow-list; 403 on mismatch.
- *  2. **Form parse** — reads the body as FormData; 400 on parse failure.
- *  3. **Auth** — caller must be one of `roles`; otherwise 403.
+ *  2. **Auth** — caller must be one of `roles`; otherwise 403. Runs before the
+ *     body is read, so an unauthenticated client cannot force a multipart parse.
+ *  3. **Form parse** — reads the body as FormData; 400 on parse failure.
  *  4. **Intent dispatch** — the `intent` form field is exposed to the
  *     handler so multi-intent actions can `switch` on it.
  *
@@ -116,26 +129,11 @@ export function secureAction(
 			return fail({ error: "Invalid request origin", status: 403 });
 		}
 
-		// 2. Form parse
-		let formData: FormData;
-		try {
-			formData = await request.formData();
-		} catch {
-			return fail({ error: "Invalid form data", status: 400 });
-		}
-
-		// 4. Auth + role — catch redirects and return JSON instead
-		// 4a. Save original token for rotation detection
+		// 2. Auth + role — catch redirects and return JSON instead
 		const originalToken = getAuthFromCookie(request);
-
-		let db: Db;
-		let user: UserRecord;
-		let token: string;
+		let auth: AuthResult;
 		try {
-			const auth = await requireRole(request, options.roles);
-			db = auth.db;
-			user = auth.user;
-			token = auth.token;
+			auth = await requireRole(request, options.roles);
 		} catch (err) {
 			if (err instanceof Response) {
 				// 403 = wrong role; unauthenticated users get a 302 redirect to
@@ -148,7 +146,15 @@ export function secureAction(
 			throw err;
 		}
 
-		// 5. Schema validation
+		// 3. Form parse
+		let formData: FormData;
+		try {
+			formData = await request.formData();
+		} catch {
+			return fail({ error: "Invalid form data", status: 400 });
+		}
+
+		// 4. Schema validation
 		// Pre-extract declared File fields so they don't get mangled by
 		// Object.fromEntries (which converts Files to "[object File]" strings).
 		const extractedFiles: Record<string, File> = {};
@@ -161,6 +167,7 @@ export function secureAction(
 			}
 		}
 
+		let validated: unknown;
 		if (options.schema) {
 			// Build a plain-object snapshot of FormData, omitting extracted file
 			// fields so they don't pollute the zod parse.
@@ -175,73 +182,21 @@ export function secureAction(
 					status: 400,
 				});
 			}
-			const ctx = {
-				request,
-				user,
-				db,
-				formData,
-				intent: String(formData.get("intent") ?? "").toLowerCase(),
-				params: params as Record<string, string>,
-				validated: parsed.data,
-				fileFields: Object.keys(extractedFiles).length > 0 ? extractedFiles : undefined,
-			} satisfies ActionContext;
-
-			try {
-				return withTokenCookie(await handler(ctx), token, originalToken);
-			} catch (err) {
-				if (err instanceof Response) throw err;
-				if (process.env.NODE_ENV !== "production") {
-					console.error("[secureAction]", err, {
-						route: new URL(request.url).pathname,
-						userId: user.id,
-						role: user.role,
-						intent: ctx.intent,
-					});
-				}
-				Sentry.captureException(err, {
-					extra: {
-						route: new URL(request.url).pathname,
-						userId: user.id,
-						role: user.role,
-						intent: ctx.intent,
-					},
-				});
-				return fail({ error: "Something went wrong. Please try again.", status: 500 });
-			}
+			validated = parsed.data;
 		}
 
-		// 6. No-schema handler dispatch
+		// 5. Handler dispatch
 		const ctx = {
 			request,
-			user,
-			db,
+			user: auth.user,
+			db: auth.db,
 			formData,
 			intent: String(formData.get("intent") ?? "").toLowerCase(),
 			params: params as Record<string, string>,
+			validated,
 			fileFields: Object.keys(extractedFiles).length > 0 ? extractedFiles : undefined,
 		} satisfies ActionContext;
 
-		try {
-			return withTokenCookie(await handler(ctx), token, originalToken);
-		} catch (err) {
-			if (err instanceof Response) throw err;
-			if (process.env.NODE_ENV !== "production") {
-				console.error("[secureAction]", err, {
-					route: new URL(request.url).pathname,
-					userId: user.id,
-					role: user.role,
-					intent: ctx.intent,
-				});
-			}
-			Sentry.captureException(err, {
-				extra: {
-					route: new URL(request.url).pathname,
-					userId: user.id,
-					role: user.role,
-					intent: ctx.intent,
-				},
-			});
-			return fail({ error: "Something went wrong. Please try again.", status: 500 });
-		}
+		return runHandler(handler, ctx, auth, originalToken);
 	};
 }

@@ -27,11 +27,11 @@ describe("validateOrigin", () => {
 		expect(() => validateOrigin(request)).not.toThrow();
 	});
 
-	it("accepts production domain", () => {
+	it("rejects an unconfigured production domain (ALLOWED_ORIGINS is mandatory)", () => {
 		const request = new Request("https://visionhack.mulearn.org/some-path", {
 			headers: { Origin: "https://visionhack.mulearn.org" },
 		});
-		expect(() => validateOrigin(request)).not.toThrow();
+		expect(() => validateOrigin(request)).toThrow();
 	});
 
 	// -----------------------------------------------------------------------

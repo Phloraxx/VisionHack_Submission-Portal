@@ -7,7 +7,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { db } from "~/lib/db.server";
-import { getClientIp } from "~/lib/ip.server";
+import { ipRateLimitKey } from "~/lib/ip.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { sendPasswordResetEmail } from "~/lib/password-reset.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
@@ -29,10 +29,11 @@ export async function action({ request }: ActionFunctionArgs) {
 	}
 	const email = parsed.data.email.toLowerCase();
 
-	// Rate limiting
-	const ip = getClientIp(request);
+	// Rate limiting. The per-IP bucket only binds when the proxy headers gave
+	// us a real address — see `ipRateLimitKey`.
+	const ipKey = ipRateLimitKey("forgot", request);
 	try {
-		checkRateLimit(`forgot:ip:${ip}`, 10, 60_000); // 10/min per IP
+		if (ipKey) checkRateLimit(ipKey, 10, 60_000); // 10/min per IP
 		checkRateLimit(`forgot:email:${email}`, 3, 60_000); // 3/min per account
 	} catch {
 		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });

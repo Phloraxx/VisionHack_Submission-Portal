@@ -4,10 +4,11 @@ import { getEnv } from "./env.server";
 // Allowed origins
 // ---------------------------------------------------------------------------
 
-const DEFAULT_ALLOWED_ORIGINS: string[] = [
-	"http://localhost:5173",
-	"https://visionhack.mulearn.org",
-];
+/**
+ * Dev-server origins. Production must set `ALLOWED_ORIGINS` — `getEnv()`
+ * refuses to boot without it, so there is no production default to get wrong.
+ */
+const DEV_ORIGINS: string[] = ["http://localhost:5173"];
 
 function getAllowedOrigins(): string[] {
 	const envOrigins = getEnv().ALLOWED_ORIGINS;
@@ -17,7 +18,7 @@ function getAllowedOrigins(): string[] {
 			.map((o: string) => o.trim())
 			.filter(Boolean);
 	}
-	return DEFAULT_ALLOWED_ORIGINS;
+	return DEV_ORIGINS;
 }
 
 // ---------------------------------------------------------------------------
@@ -36,10 +37,9 @@ function getAllowedOrigins(): string[] {
  * layout (login, forgot-password) so they are not bypassed by attackers
  * omitting the Origin header.
  *
- * In development mode (NODE_ENV === 'development'), allows only the known Vite
- * dev-server ports (5173, 5174, 5175) on localhost and 127.0.0.1.
- * In production, reads `ALLOWED_ORIGINS` from the environment (comma-separated).
- * Falls back to the default set (`localhost:5173`, the production domain).
+ * In development mode, allows only the known Vite dev-server ports (5173,
+ * 5174, 5175) on localhost and 127.0.0.1. In production, reads
+ * `ALLOWED_ORIGINS` from the environment (comma-separated, mandatory).
  *
  * - **Missing Origin:** throws a 403 when `requireOrigin` is true; allowed
  *   when false (SameSite=Strict is the primary defense).
@@ -60,7 +60,7 @@ export function validateOrigin(request: Request, requireOrigin = false): void {
 	}
 
 	// In development, allow only the known Vite dev-server ports
-	if (process.env.NODE_ENV === "development") {
+	if (getEnv().NODE_ENV === "development") {
 		const devPorts = [5173, 5174, 5175];
 		const isAllowedDevOrigin = devPorts.some(
 			(port) => origin === `http://localhost:${port}` || origin === `http://127.0.0.1:${port}`,

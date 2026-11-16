@@ -1,10 +1,7 @@
 import { z } from "zod";
 
+/** Shared by the shortlist and unshortlist intents — the payload is identical. */
 export const shortlistSchema = z.object({
-	teamId: z.string().min(1, "Team ID is required"),
-});
-
-export const unshortlistSchema = z.object({
 	teamId: z.string().min(1, "Team ID is required"),
 });
 
@@ -16,5 +13,4 @@ export const transitionTeamSchema = z.object({
 });
 
 export type ShortlistInput = z.infer<typeof shortlistSchema>;
-export type UnshortlistInput = z.infer<typeof unshortlistSchema>;
 export type TransitionTeamInput = z.infer<typeof transitionTeamSchema>;

@@ -17,7 +17,6 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, Outlet, data, useLoaderData, useLocation, useNavigation } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { EventMark } from "~/components/shared/event-mark";
 import { PageTransition } from "~/components/shared/page-transition";
 import { Skeleton } from "~/components/ui/skeleton";
 import { getAuthFromCookie, requireAuth, setAuthCookie } from "~/lib/auth.server";

@@ -1,0 +1,19 @@
+# Build context exclusions — keeps secrets, VCS history and local state out of
+# the image layers.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.github
+node_modules
+build
+.react-router
+uploads
+test-results
+playwright-report
+*.log
+*.tsbuildinfo
+migration-output
+docs
+references

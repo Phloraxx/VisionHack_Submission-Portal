@@ -9,7 +9,6 @@ import {
 	useNavigation,
 } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { EventMark } from "~/components/shared/event-mark";
 import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -17,7 +16,7 @@ import { Label } from "~/components/ui/label";
 import { getAuthFromCookie, login, setAuthCookie } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
 import { users } from "~/lib/db.server";
-import { getClientIp } from "~/lib/ip.server";
+import { ipRateLimitKey } from "~/lib/ip.server";
 import { verifyJwt } from "~/lib/jwt.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
@@ -75,10 +74,11 @@ export async function action({ request }: ActionFunctionArgs) {
 	const email = parsed.data.email.toLowerCase();
 	const password = parsed.data.password;
 
-	// App-level rate limiting
-	const ip = getClientIp(request);
+	// App-level rate limiting. The per-IP bucket only binds when the proxy
+	// headers gave us a real address — see `ipRateLimitKey`.
+	const ipKey = ipRateLimitKey("login", request);
 	try {
-		checkRateLimit(`login:ip:${ip}`, 5, 60_000);
+		if (ipKey) checkRateLimit(ipKey, 5, 60_000);
 		checkRateLimit(`login:email:${email}`, 5, 60_000);
 	} catch {
 		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });

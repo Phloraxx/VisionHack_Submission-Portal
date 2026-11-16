@@ -14,15 +14,7 @@ import {
 	X,
 } from "lucide-react";
 import { useContext, useState } from "react";
-import {
-	Form,
-	Link,
-	isRouteErrorResponse,
-	useActionData,
-	useLoaderData,
-	useNavigation,
-	useRouteError,
-} from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { StatusBadge } from "~/components/shared/status-badge";
@@ -35,11 +27,11 @@ import { useActionToast } from "~/hooks/use-action-toast";
 import { type ActionResult, fail, ok, secureAction } from "~/lib/action.server";
 import { hashPassword } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
-import { members, teams, users, withTransaction } from "~/lib/db.server";
+import { institutions, members, teams, users, withTransaction } from "~/lib/db.server";
 import { getStr, isEmail } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
 import { sendPasswordResetEmail } from "~/lib/password-reset.server";
-import { shortlistSchema, unshortlistSchema } from "~/lib/schemas/institution";
+import { shortlistSchema } from "~/lib/schemas/institution";
 import {
 	getInstitutionForUser,
 	sendStatusChangeEmail,
@@ -74,7 +66,7 @@ interface TeamWithExpand {
 
 export const loader = secureLoader({ roles: ["institution"] }, async ({ user }) => {
 	// Resolve this institution via the user's id (no full scan).
-	const institution = await getInstitutionForUser(user.id);
+	const institution = await getInstitutionForUser(user);
 	if (!institution) {
 		throw new Response("Institution not found for this user", { status: 404 });
 	}
@@ -139,12 +131,12 @@ class InviteError extends Error {
 export const action = secureAction(
 	{ roles: ["institution"] },
 	async ({ formData, user, db, intent }) => {
-		const institution = await getInstitutionForUser(user.id);
+		const institution = await getInstitutionForUser(user);
 		if (!institution) return fail({ error: "Institution not found", status: 404 });
 
 		switch (intent) {
 			case "invite-lead": {
-				const name = getStr(formData, "name");
+				const name = getStr(formData, "name", { max: 255 });
 				const email = getStr(formData, "email", { lower: true });
 
 				if (!name || !email) {
@@ -154,17 +146,7 @@ export const action = secureAction(
 					return fail({ error: "Enter a valid email address" });
 				}
 
-				// Capacity check + existing-user lookup are independent — parallel.
-				const [teamCount, existingUser] = await Promise.all([
-					teams.countByInstitution(user, institution.id),
-					users.findByEmail(email),
-				]);
-
-				if (institution.maxTeams > 0 && teamCount >= institution.maxTeams) {
-					return fail({
-						error: `This institution has reached its maximum of ${institution.maxTeams} teams.`,
-					});
-				}
+				const existingUser = await users.findByEmail(email);
 
 				let createdLeadAccount = false;
 
@@ -172,6 +154,20 @@ export const action = secureAction(
 				// on either side must not leave the other behind.
 				try {
 					await withTransaction(async () => {
+						// The row lock serialises the capacity check against
+						// concurrent invites, which a plain read does not.
+						const locked = await institutions.lockForUpdate(user, institution.id);
+						if (!locked)
+							throw new InviteError(fail({ error: "Institution not found", status: 404 }));
+						const teamCount = await teams.countByInstitution(user, institution.id);
+						if (locked.maxTeams > 0 && teamCount >= locked.maxTeams) {
+							throw new InviteError(
+								fail({
+									error: `This institution has reached its maximum of ${locked.maxTeams} teams.`,
+								}),
+							);
+						}
+
 						let leadUserId: string;
 
 						if (existingUser) {
@@ -179,6 +175,12 @@ export const action = secureAction(
 							if (existingUser.role !== "lead") {
 								throw new InviteError(
 									fail({ error: "This email is associated with a non-lead account" }),
+								);
+							}
+							// A lead from another campus must not be pulled into this one.
+							if (existingUser.institutionId !== institution.id) {
+								throw new InviteError(
+									fail({ error: "This email belongs to a lead at another institution" }),
 								);
 							}
 							leadUserId = existingUser.id;
@@ -247,8 +249,7 @@ export const action = secureAction(
 			}
 			case "shortlist":
 			case "unshortlist": {
-				const schema = intent === "shortlist" ? shortlistSchema : unshortlistSchema;
-				const parsed = schema.safeParse({
+				const parsed = shortlistSchema.safeParse({
 					teamId: formData.get("teamId"),
 				});
 
@@ -282,7 +283,7 @@ export const action = secureAction(
 					const team = await teams.getOne(user, teamId);
 					const lead = team?.expand?.leaderUserId;
 					if (team && lead?.email) {
-						void sendStatusChangeEmail({
+						await sendStatusChangeEmail({
 							to: lead.email,
 							leadName: lead.name || "Team Lead",
 							teamName: team.name,
@@ -644,7 +645,7 @@ export default function InstitutionDashboard() {
 															type="submit"
 															size="sm"
 															variant="outline"
-															className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
+															className="w-full border-warning/40 text-warning hover:bg-warning/10"
 															disabled={isSubmitting || !nominationOpen}
 														>
 															<X className="mr-2 h-4 w-4" />
@@ -710,32 +711,4 @@ export default function InstitutionDashboard() {
 	);
 }
 
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-
-	if (isRouteErrorResponse(error)) {
-		message =
-			error.data && typeof error.data === "string"
-				? error.data
-				: `${error.status} ${error.statusText}`;
-	} else if (error instanceof Error) {
-		message = error.message;
-	}
-
-	return (
-		<div className="flex min-h-[50vh] items-center justify-center p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
-				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
-				<button
-					type="button"
-					onClick={() => window.location.reload()}
-					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";

@@ -5,13 +5,12 @@
  * `dotenv.config()` has been called at server boot. There is no need for
  * an explicit `initEnv()` call; `getEnv()` reads directly from process.env.
  *
- * Backward-compatible no-op exports of `initEnv` and `resetEnv` were removed.
- * Call `getEnv()` directly.
+ * `getEnv()` is called once from `server.ts` before `listen`, so a missing or
+ * invalid variable fails the process at boot rather than inside the first
+ * request.
  */
-// initEnv and resetEnv were previously exported as no-ops for backward compatibility.
-// They have been removed. Call getEnv() directly.
 
-/** Minimum length of `APP_JWT_SECRET`, in bytes (docs/PG_PORT_PLAN.md §7.2). */
+/** Minimum length of `APP_JWT_SECRET`, in bytes. */
 export const MIN_JWT_SECRET_BYTES = 32;
 
 export interface EnvConfig {
@@ -21,13 +20,20 @@ export interface EnvConfig {
 	APP_JWT_SECRET: string;
 	/** Root of the submission-file volume. */
 	UPLOADS_DIR: string;
+	/** Comma-separated allowed `Origin` values. Required in production. */
 	ALLOWED_ORIGINS?: string;
 	/** Sentry DSN for error tracking. Set in production to enable. */
 	SENTRY_DSN?: string;
-	/** Public base URL of the app, used in outbound email links. */
+	/** Public base URL of the app, used in outbound email links. Required in production. */
 	APP_URL?: string;
 	/** Resend API key for transactional email. Leave unset for local dev (emails are skipped). */
 	RESEND_API_KEY?: string;
+	/** Trust `CF-Connecting-IP` / `X-Forwarded-For` / `x-real-ip`. Required in production. */
+	TRUST_PROXY_HEADERS: boolean;
+	/** HTTP port. */
+	PORT: number;
+	/** `development` | `production` | `test`. */
+	NODE_ENV: string;
 }
 
 let envCache: EnvConfig | null = null;
@@ -61,6 +67,19 @@ function requireJwtSecret(): string {
 export function getEnv(): EnvConfig {
 	if (envCache) return envCache;
 
+	const nodeEnv = process.env.NODE_ENV ?? "development";
+	const isProduction = nodeEnv === "production";
+
+	// Both are load-bearing in production: without APP_URL every reset link
+	// points at the wrong host, and without ALLOWED_ORIGINS every same-origin
+	// POST is rejected with a 403. Fail at boot instead of at the first user.
+	if (isProduction) {
+		requireEnv("APP_URL");
+		requireEnv("ALLOWED_ORIGINS");
+	}
+
+	const rawPort = Number(process.env.PORT ?? 3000);
+
 	const config: EnvConfig = {
 		DATABASE_URL: requireEnv("DATABASE_URL"),
 		APP_JWT_SECRET: requireJwtSecret(),
@@ -69,18 +88,18 @@ export function getEnv(): EnvConfig {
 		APP_URL: process.env.APP_URL,
 		RESEND_API_KEY: process.env.RESEND_API_KEY,
 		SENTRY_DSN: process.env.SENTRY_DSN,
+		TRUST_PROXY_HEADERS: process.env.TRUST_PROXY_HEADERS === "1",
+		PORT: Number.isFinite(rawPort) ? rawPort : 3000,
+		NODE_ENV: nodeEnv,
 	};
 
 	envCache = config;
 	return config;
 }
 
-/**
- * Public base URL of the app (no trailing slash). Falls back to the
- * production domain when APP_URL is not configured.
- */
+/** Public base URL of the app (no trailing slash). Required in production. */
 export function getAppUrl(): string {
-	const raw = getEnv().APP_URL || "https://visionhack.mulearn.org";
+	const raw = getEnv().APP_URL || "http://localhost:5173";
 	return raw.replace(/\/+$/, "");
 }
 

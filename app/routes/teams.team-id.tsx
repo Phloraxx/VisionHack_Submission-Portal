@@ -20,6 +20,7 @@ import {
 import type {
 	MemberRecord,
 	QuestionnaireResponseRecord,
+	Role,
 	TeamStatus,
 	TeamView,
 	UserRecord,
@@ -49,11 +50,9 @@ export const loader = secureLoader(
 		switch (user.role) {
 			// Lead — can only access their own team
 			case "lead": {
-				const team = await getLeadTeam<TeamView>(user.id, {
-					expand: "institutionId,leaderUserId",
-				});
-				if (!team) throw new Response("No team found", { status: 404 });
-				if (team.id !== teamId) throw new Response("Forbidden", { status: 403 });
+				const team = await getLeadTeam(user);
+				// 404 for "not yours" as well: a 403 would confirm the id exists.
+				if (!team || team.id !== teamId) throw new Response("Team not found", { status: 404 });
 
 				// Both reads are scoped by the §6.2 predicate: the roster by
 				// the parent team's leader, the questionnaire by `user_id`.
@@ -74,7 +73,7 @@ export const loader = secureLoader(
 			// Institution — scoped to their own institution's teams
 			case "institution": {
 				const [institution, team] = await Promise.all([
-					getInstitutionForUser(user.id, { fields: "id" }),
+					getInstitutionForUser(user),
 					teams.getOne(user, teamId),
 				]);
 
@@ -150,9 +149,7 @@ export const action = secureAction(
 			// Resolve institutionId for the institution IDOR guard.
 			let institutionId: string | undefined;
 			if (user.role === "institution") {
-				const inst = await getInstitutionForUser(user.id, {
-					fields: "id",
-				});
+				const inst = await getInstitutionForUser(user);
 				if (!inst) return fail({ error: "Institution not found", status: 404 });
 				institutionId = inst.id;
 			}
@@ -174,7 +171,7 @@ export const action = secureAction(
 			// Send notification email best-effort.
 			if (team?.expand?.leaderUserId) {
 				const lead = team.expand.leaderUserId;
-				void sendStatusChangeEmail({
+				await sendStatusChangeEmail({
 					to: lead.email,
 					leadName: lead.name || "Team Lead",
 					teamName: team.name,
@@ -222,7 +219,7 @@ export default function TeamDetailPage() {
 }
 
 function buildExportCard(
-	role: string,
+	role: Role,
 	team: TeamView,
 	members: MemberRecord[],
 	questionnaire: QuestionnaireResponseRecord | null,

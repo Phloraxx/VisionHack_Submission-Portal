@@ -1,12 +1,6 @@
 import { Building2, Filter, MapPin, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-	isRouteErrorResponse,
-	useLoaderData,
-	useNavigation,
-	useRouteError,
-	useSearchParams,
-} from "react-router";
+import { useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { FilterableTeamList } from "~/components/shared/filterable-team-list";
 import { MetricCard } from "~/components/shared/metric-card";
 import { Button } from "~/components/ui/button";
@@ -81,7 +75,6 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, re
 					{ total: number; registered: number; shortlisted: number }
 				>,
 				uniqueInstitutionIds: 0,
-				scannedCount: 0,
 				activeFilters: { search, status, district, institution },
 			};
 		}
@@ -108,63 +101,29 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, re
 					{ total: number; registered: number; shortlisted: number }
 				>,
 				uniqueInstitutionIds: 0,
-				scannedCount: 0,
 				activeFilters: { search, status, district, institution },
 			};
 		}
 	}
 
-	// For accurate per-status counts and per-institution aggregates we scan
-	// a bounded set of teams matching the current filter — independent of the
-	// page slice. Capped to keep it cheap.
-	const COUNT_SCAN_CAP = 1000;
+	const filter = {
+		q: search ? search.slice(0, 100) : undefined,
+		status: statusFilter,
+		institutionId: institutionIds,
+	};
 
-	const [teamsPage, countScan] = await Promise.all([
-		teamsRepo.list(user, {
-			page,
-			perPage: PAGE_SIZE,
-			sort: "-created",
-			q: search ? search.slice(0, 100) : undefined,
-			status: statusFilter,
-			institutionId: institutionIds,
-		}),
-		teamsRepo.list(user, {
-			page: 1,
-			perPage: COUNT_SCAN_CAP,
-			q: search ? search.slice(0, 100) : undefined,
-			status: statusFilter,
-			institutionId: institutionIds,
-		}),
+	// Page slice + one GROUP BY for the per-status and per-institution
+	// counters.
+	const [teamsPage, totals] = await Promise.all([
+		teamsRepo.list(user, { page, perPage: PAGE_SIZE, sort: "-created", ...filter }),
+		teamsRepo.aggregate(user, filter),
 	]);
 
 	// Member counts for the visible page only.
 	const memberCounts = await getMemberCountsForTeams(
-		teamsPage.items.map((t) => t.id),
 		user,
+		teamsPage.items.map((t) => t.id),
 	);
-
-	// Status counts + per-institution aggregates across the (filtered) scan.
-	const statusCounts: Partial<Record<TeamStatus, number>> = {};
-	const teamsByInstitution: Record<
-		string,
-		{ total: number; registered: number; shortlisted: number }
-	> = {};
-	for (const t of countScan.items) {
-		statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1;
-		if (!teamsByInstitution[t.institutionId]) {
-			teamsByInstitution[t.institutionId] = {
-				total: 0,
-				registered: 0,
-				shortlisted: 0,
-			};
-		}
-		const agg = teamsByInstitution[t.institutionId];
-		agg.total++;
-		if (t.status === "registered") agg.registered++;
-		if (t.status === "shortlisted") agg.shortlisted++;
-	}
-
-	const uniqueInstitutionIds = new Set(countScan.items.map((t) => t.institutionId)).size;
 
 	return {
 		user,
@@ -175,10 +134,9 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, re
 		perPage: teamsPage.perPage,
 		totalItems: teamsPage.totalItems,
 		totalPages: teamsPage.totalPages,
-		statusCounts,
-		teamsByInstitution,
-		uniqueInstitutionIds,
-		scannedCount: Math.min(countScan.totalItems, COUNT_SCAN_CAP),
+		statusCounts: totals.byStatus,
+		teamsByInstitution: totals.byInstitution,
+		uniqueInstitutionIds: totals.institutions,
 		// Echo back the active filters so the UI can stay in sync.
 		activeFilters: { search, status, district, institution },
 	};
@@ -237,6 +195,13 @@ export default function CoordinatorDashboard() {
 	useEffect(() => {
 		setSearchInput(activeFilters.search);
 	}, [activeFilters.search]);
+
+	// Drop a pending debounce when the route unmounts.
+	useEffect(() => {
+		return () => {
+			if (debounceRef.current) clearTimeout(debounceRef.current);
+		};
+	}, []);
 
 	/** Update one or more URL params, always resetting pagination. */
 	const setParams = (updates: Record<string, string>, replace = false) => {
@@ -482,27 +447,4 @@ export default function CoordinatorDashboard() {
 	);
 }
 
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-	if (isRouteErrorResponse(error)) {
-		message = `Error ${error.status} — ${error.statusText || "Access denied"}`;
-	} else if (error instanceof Error) {
-		message = error.message;
-	}
-	return (
-		<div className="flex min-h-[50vh] items-center justify-center p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
-				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
-				<button
-					type="button"
-					onClick={() => window.location.reload()}
-					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";

@@ -11,9 +11,7 @@ import type { UserRecord } from "../types";
 vi.mock("~/lib/auth.server", () => ({
 	requireRole: vi.fn(),
 	getAuthFromCookie: vi.fn(() => "jwt-token"),
-	setAuthCookie: vi.fn(
-		() => "auth=token; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800",
-	),
+	setAuthCookie: vi.fn(() => "auth=token; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600"),
 }));
 
 vi.mock("~/lib/origin.server", () => ({
@@ -56,16 +54,14 @@ function extractStatusBody(result: unknown) {
 function makeUser(overrides: Partial<UserRecord> = {}): UserRecord {
 	return {
 		id: "user-1",
-		collectionId: "users",
-		collectionName: "users",
-		username: "testuser",
-		verified: true,
 		email: "test@example.com",
+		name: "Test User",
 		role: "admin",
-		created: "2024-01-01 00:00:00",
-		updated: "2024-01-01 00:00:00",
+		institutionId: "",
+		created: "2024-01-01T00:00:00.000Z",
+		updated: "2024-01-01T00:00:00.000Z",
 		...overrides,
-	} as UserRecord;
+	};
 }
 
 /**
@@ -80,8 +76,10 @@ function makeDb(): Db {
 		users: {
 			findByEmail: unused,
 			findById: unused,
+			findSessionUser: unused,
 			findPasswordHashById: unused,
 			updatePasswordHash: unused,
+			updatePasswordHashIfUnchanged: unused,
 		},
 	} as unknown as Db;
 }
@@ -241,6 +239,8 @@ describe("secureAction", () => {
 	// -----------------------------------------------------------------------
 
 	it("returns 400 when form data cannot be parsed", async () => {
+		// Auth runs before the body is read (F-66), so the caller must be valid.
+		mockRequireRole.mockResolvedValue(makeAuthResult());
 		const req = new Request("http://localhost:5173/admin/test", {
 			method: "POST",
 			headers: {

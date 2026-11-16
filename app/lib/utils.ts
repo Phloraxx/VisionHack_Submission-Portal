@@ -37,7 +37,7 @@ export function escapeCsv(str: string): string {
 	}
 
 	text = text.replace(/"/g, '""');
-	return text.includes(",") || text.includes('"') || text.includes("\n") ? `"${text}"` : text;
+	return /[",\n\r]/.test(text) ? `"${text}"` : text;
 }
 
 /**
@@ -45,15 +45,7 @@ export function escapeCsv(str: string): string {
  * CSV export. These are system fields and relation ids that aren't
  * meaningful answers.
  */
-export const QUESTIONNAIRE_EXCLUDE_KEYS = [
-	"id",
-	"teamId",
-	"userId",
-	"created",
-	"updated",
-	"collectionId",
-	"collectionName",
-] as const;
+export const QUESTIONNAIRE_EXCLUDE_KEYS = ["id", "teamId", "userId", "created", "updated"] as const;
 
 /**
  * Count items by a derived key.

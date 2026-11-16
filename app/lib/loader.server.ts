@@ -1,8 +1,9 @@
 import * as Sentry from "@sentry/node";
 import { data } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { requireRole } from "./auth.server";
+import { getAuthFromCookie, requireRole, setAuthCookie } from "./auth.server";
 import type { Db } from "./db.server";
+import { withCookie } from "./response.server";
 import type { Role, UserRecord } from "./types";
 
 /**
@@ -33,6 +34,10 @@ type LoaderHandler<C extends LoaderContext, R> = (ctx: C) => R | Promise<R>;
  * Loaders are GET-only so CSRF protection is unnecessary; only
  * authentication and role authorization are enforced.
  *
+ * A rotated session token is propagated as a `Set-Cookie` header, so a
+ * `secureLoader` route outside the dashboard layout still refreshes the
+ * cookie.
+ *
  * @example
  * export const loader = secureLoader(
  *   { roles: ["admin"] },
@@ -40,7 +45,7 @@ type LoaderHandler<C extends LoaderContext, R> = (ctx: C) => R | Promise<R>;
  *     const items = await db.query("SELECT … FROM teams LIMIT 10");
  *     return { items };
  *   },
- * );
+ * )
  */
 export function secureLoader<C extends LoaderContext = LoaderContext, R = unknown>(
 	options: { roles: Role[] },
@@ -50,10 +55,12 @@ export function secureLoader<C extends LoaderContext = LoaderContext, R = unknow
 		// 1. Auth + role — catch redirects and return JSON instead
 		let db: Db;
 		let user: UserRecord;
+		let token: string;
 		try {
 			const auth = await requireRole(request, options.roles);
 			db = auth.db;
 			user = auth.user;
+			token = auth.token;
 		} catch (err) {
 			if (err instanceof Response) {
 				// Navigation (SSR) requests expect HTML; let the redirect flow
@@ -80,24 +87,23 @@ export function secureLoader<C extends LoaderContext = LoaderContext, R = unknow
 			params: params as Record<string, string>,
 		} as C;
 
+		let result: R;
 		try {
-			return await handler(ctx);
+			result = await handler(ctx);
 		} catch (err) {
-			if (process.env.NODE_ENV !== "production") {
-				console.error("[secureLoader]", err, {
-					route: new URL(request.url).pathname,
-					userId: user.id,
-					role: user.role,
-				});
-			}
-			Sentry.captureException(err, {
-				extra: {
-					route: new URL(request.url).pathname,
-					userId: user.id,
-					role: user.role,
-				},
-			});
+			const context = {
+				route: new URL(request.url).pathname,
+				userId: user.id,
+				role: user.role,
+			};
+			// Always log: with SENTRY_DSN unset, Sentry is a no-op and a
+			// production-only console.error would record nothing at all.
+			console.error("[secureLoader]", err, context);
+			Sentry.captureException(err, { extra: context });
 			throw err;
 		}
+
+		const cookie = token === getAuthFromCookie(request) ? null : setAuthCookie(token);
+		return withCookie(result, cookie) as R | ReturnType<typeof data>;
 	};
 }

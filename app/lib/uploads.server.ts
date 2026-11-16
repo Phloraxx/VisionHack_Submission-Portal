@@ -13,8 +13,13 @@ import { mkdir, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getEnv } from "./env.server";
 
-/** Filenames the download route accepts — no separators, no `..`. */
+/** Filenames the download route accepts — no separators, no `.`/`..`. */
 const SAFE_FILENAME = /^[\w.\-]+$/;
+
+/** `SAFE_FILENAME` plus the dot-segment check the regex alone cannot express. */
+function isSafeFilename(name: string): boolean {
+	return SAFE_FILENAME.test(name) && name !== "." && name !== "..";
+}
 
 /** `$UPLOADS_DIR/teams` — the only root either function may touch. */
 function teamsRoot(): string {
@@ -45,7 +50,7 @@ export async function saveTeamSubmission(
 ): Promise<string> {
 	const dir = teamDir(teamId);
 	if (!dir) throw new Error(`Invalid team id for upload: ${teamId}`);
-	if (!SAFE_FILENAME.test(filename)) throw new Error(`Invalid upload filename: ${filename}`);
+	if (!isSafeFilename(filename)) throw new Error(`Invalid upload filename: ${filename}`);
 
 	await mkdir(dir, { recursive: true });
 	// Atomic-ish write (plan 4.2 step 5): bytes land in a temp name first, so
@@ -56,12 +61,25 @@ export async function saveTeamSubmission(
 	await rename(tmp, path.join(dir, filename));
 
 	// Best effort: a stale file left behind is harmless, a failed upload is not.
+	// `.tmp-*` names belong to concurrent uploads and are left alone.
 	const existing = await readdir(dir).catch(() => [] as string[]);
 	for (const name of existing) {
-		if (name !== filename) await unlink(path.join(dir, name)).catch(() => {});
+		if (name !== filename && !name.startsWith(".tmp-")) {
+			await unlink(path.join(dir, name)).catch(() => {});
+		}
 	}
 
 	return filename;
+}
+
+/**
+ * Remove a stored submission file. Best-effort: a missing file is not an
+ * error, because the caller is usually compensating for a failed write.
+ */
+export async function deleteTeamSubmission(teamId: string, filename: string): Promise<void> {
+	const resolved = getTeamSubmissionPath(teamId, filename);
+	if (!resolved) return;
+	await unlink(resolved).catch(() => {});
 }
 
 /**
@@ -73,7 +91,7 @@ export async function saveTeamSubmission(
 export function getTeamSubmissionPath(teamId: string, filename: string): string | null {
 	const dir = teamDir(teamId);
 	if (!dir) return null;
-	if (!SAFE_FILENAME.test(filename)) return null;
+	if (!isSafeFilename(filename)) return null;
 	const resolved = path.resolve(dir, filename);
 	return path.dirname(resolved) === dir ? resolved : null;
 }

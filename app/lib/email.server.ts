@@ -12,6 +12,8 @@
 import { getEnv } from "./env.server";
 
 const RESEND_API_URL = "https://api.resend.com/emails";
+/** Outbound calls must not hang the action (or a transaction) that awaits them. */
+const RESEND_TIMEOUT_MS = 10_000;
 const DEFAULT_FROM = "VisionHack <noreply@visionhack.mulearn.org>";
 
 /**
@@ -38,6 +40,7 @@ export async function sendEmail(options: {
 	const sanitizedSubject = options.subject.replace(/[\r\n]/g, "");
 	const response = await fetch(RESEND_API_URL, {
 		method: "POST",
+		signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
 		headers: {
 			Authorization: `Bearer ${apiKey}`,
 			"Content-Type": "application/json",

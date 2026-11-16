@@ -19,35 +19,20 @@ import { STATUS_COLORS, STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus } from "~/lib/types";
 
 export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
-	// One count query per status instead of scanning all rows; institution
-	// and user totals come from the repositories' own counts. The admin
-	// scope predicate is `TRUE` for teams/institutions, so nothing is
-	// filtered out.
-	const statusKeys: TeamStatus[] = [
-		"invited",
-		"registered",
-		"shortlisted",
-		"submitted",
-		"selected",
-		"rejected",
-		"withdrawn",
-	];
-	const countQueries = statusKeys.map((status) =>
-		teams.list(user, { status, perPage: 1 }).then((page) => [status, page.totalItems] as const),
-	);
-	const [institutionsPage, totalUsers, ...statusResults] = await Promise.all([
+	// One `GROUP BY status` for the team counters, plus the repository counts
+	// for institutions and users. The admin scope predicate is `TRUE` for
+	// teams/institutions, so nothing is filtered out.
+	const [teamTotals, institutionsPage, totalUsers] = await Promise.all([
+		teams.aggregate(user),
 		institutions.list(user, { perPage: 1 }),
 		users.count(user),
-		...countQueries,
 	]);
 
-	const statusCounts: Record<string, number> = Object.fromEntries(statusResults);
-
 	return {
-		totalTeams: Object.values(statusCounts).reduce((a, b) => a + b, 0),
+		totalTeams: teamTotals.total,
 		totalInstitutions: institutionsPage.totalItems,
 		totalUsers,
-		statusCounts,
+		statusCounts: teamTotals.byStatus as Record<string, number>,
 	};
 });
 

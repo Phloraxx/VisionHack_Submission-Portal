@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Typecheck + Test
@@ -152,7 +155,7 @@ jobs:
   build:
     name: Build
     if: github.ref == 'refs/heads/main'
-    needs: [check]
+    needs: [check, lint, idor]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

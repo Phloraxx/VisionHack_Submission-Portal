@@ -2,6 +2,9 @@
 	"name": "submission-portal-v2",
 	"private": true,
 	"type": "module",
+	"engines": {
+		"node": ">=22.18.0"
+	},
 	"scripts": {
 		"dev": "react-router dev",
 		"build": "react-router build",
@@ -13,7 +16,6 @@
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
 		"lint": "biome check .",
-		"analyze": "vite-bundle-visualizer",
 		"format": "biome format --write .",
 		"prepare": "husky",
 		"lint:fix": "biome check --apply ."
@@ -55,8 +57,5 @@
 		"vite": "^6.2.1",
 		"vite-tsconfig-paths": "^5.1.4",
 		"vitest": "^4.1.9"
-	},
-	"lint-staged": {
-		"*.{ts,tsx}": ["biome check --apply", "vitest related --run"]
 	}
 }

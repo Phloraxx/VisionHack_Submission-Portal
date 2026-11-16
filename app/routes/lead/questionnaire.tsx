@@ -1,15 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, ChevronLeft, ChevronRight, Loader2, Send } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import {
-	Form,
-	isRouteErrorResponse,
-	useActionData,
-	useLoaderData,
-	useNavigation,
-	useRouteError,
-} from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { PanelHeader } from "~/components/shared/panel-header";
 import {
 	StepIndicator,
@@ -124,7 +117,7 @@ function toQuestionnaireData(record: QuestionnaireResponseRecord): Questionnaire
 
 export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Team and config are independent — fetch in parallel.
-	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(user.id), getConfig()]);
+	const [team, flags] = await Promise.all([getLeadTeam(user), getConfig()]);
 
 	const record = team ? await questionnaireResponses.getByTeam(user, team.id) : null;
 
@@ -162,11 +155,10 @@ export const action = secureAction(
 			team_experience: teamExperience = "",
 			expectations = "",
 			additional_info: additionalInfo = "",
+			year_of_graduation: yearOfGraduation = "",
 		} = validated as QuestionnaireInput;
 		// Find team
-		const team = await getLeadTeam<TeamRecord>(user.id, {
-			fields: "id,status,questionnaire_completed",
-		});
+		const team = await getLeadTeam(user);
 		if (!team) return fail({ error: "Team not found", status: 404 });
 
 		if (!canSubmitQuestionnaire(team.status)) {
@@ -190,22 +182,23 @@ export const action = secureAction(
 			teamExperience: teamExperience.slice(0, 2000),
 			expectations: expectations.slice(0, 2000),
 			additionalInfo: additionalInfo.slice(0, 2000),
+			yearOfGraduation: yearOfGraduation.slice(0, 16),
 		};
 
 		await withTransaction(async () => {
-			const existing = await questionnaireResponses.getByTeam(user, team.id);
-			const saved = existing
-				? await questionnaireResponses.update(user, existing.id, patch)
-				: await questionnaireResponses.create(user, {
-						teamId: team.id,
-						userId: user.id,
-						...patch,
-					});
+			// One response per team: the upsert collapses a concurrent first
+			// submission into the same row instead of raising a unique
+			// violation.
+			const saved = await questionnaireResponses.upsert(user, {
+				teamId: team.id,
+				userId: user.id,
+				...patch,
+			});
 			if (!saved) throw new Error("Questionnaire response could not be saved");
 
 			// Denormalize: mark the team as having completed the questionnaire
 			// so the rest of the app can read it without a join.
-			if (!team.questionnaire_completed) {
+			if (!team.questionnaireCompleted) {
 				await teams.update(user, team.id, { questionnaireCompleted: true });
 			}
 		});
@@ -259,10 +252,11 @@ export default function LeadQuestionnaire() {
 	const [currentSection, setCurrentSection] = useState<SectionId>("personal");
 	const topRef = useRef<HTMLDivElement>(null);
 
-	useEffect(() => {
+	/** Switch section and bring the panel back to the top. */
+	const goToSection = (id: SectionId) => {
+		setCurrentSection(id);
 		topRef.current?.scrollIntoView({ behavior: "smooth" });
-		void currentSection;
-	}, [currentSection]);
+	};
 
 	const steps = resolveActiveStep(getStatusStepStates(team?.status ?? null), "/lead/questionnaire");
 
@@ -294,13 +288,13 @@ export default function LeadQuestionnaire() {
 
 	const goNext = () => {
 		if (currentIdx < sectionIds.length - 1) {
-			setCurrentSection(sectionIds[currentIdx + 1]);
+			goToSection(sectionIds[currentIdx + 1]);
 		}
 	};
 
 	const goPrev = () => {
 		if (currentIdx > 0) {
-			setCurrentSection(sectionIds[currentIdx - 1]);
+			goToSection(sectionIds[currentIdx - 1]);
 		}
 	};
 
@@ -316,7 +310,7 @@ export default function LeadQuestionnaire() {
 					? Math.min(currentIdx + 1, sectionIds.length - 1)
 					: Math.max(currentIdx - 1, 0);
 			if (nextIdx !== currentIdx) {
-				setCurrentSection(sectionIds[nextIdx]);
+				goToSection(sectionIds[nextIdx]);
 			}
 		}
 	};
@@ -364,7 +358,7 @@ export default function LeadQuestionnaire() {
 						aria-selected={currentSection === s.id}
 						aria-controls={`section-panel-${s.id}`}
 						tabIndex={currentSection === s.id ? 0 : -1}
-						onClick={() => setCurrentSection(s.id)}
+						onClick={() => goToSection(s.id)}
 						className={`flex-1 rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors ${
 							currentSection === s.id
 								? "bg-primary text-primary-foreground"
@@ -523,7 +517,7 @@ export default function LeadQuestionnaire() {
 								</Label>
 								<Input
 									id="district"
-									aria-invalid={!!(errors.district || actionData?.fieldErrors?.distrct)}
+									aria-invalid={!!(errors.district || actionData?.fieldErrors?.district)}
 									aria-describedby={
 										errors.district || actionData?.fieldErrors?.district
 											? "district-error"
@@ -547,6 +541,14 @@ export default function LeadQuestionnaire() {
 								<Input
 									id="year_of_graduation"
 									type="number"
+									aria-invalid={
+										!!(errors.year_of_graduation || actionData?.fieldErrors?.year_of_graduation)
+									}
+									aria-describedby={
+										errors.year_of_graduation || actionData?.fieldErrors?.year_of_graduation
+											? "year-of-graduation-error"
+											: undefined
+									}
 									placeholder="e.g. 2028"
 									{...register("year_of_graduation")}
 									disabled={!questionnaireOpen}
@@ -714,27 +716,4 @@ export default function LeadQuestionnaire() {
 	);
 }
 
-export function ErrorBoundary() {
-	const error = useRouteError();
-	let message = "Something went wrong";
-	if (isRouteErrorResponse(error)) {
-		message = `Error ${error.status} — ${error.statusText || "Access denied"}`;
-	} else if (error instanceof Error) {
-		message = error.message;
-	}
-	return (
-		<div className="flex min-h-[50vh] items-center justify-center p-8">
-			<div className="mx-auto max-w-md text-center">
-				<p className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-danger">Error</p>
-				<h1 className="mb-2 text-xl font-semibold tracking-tight">{message}</h1>
-				<button
-					type="button"
-					onClick={() => window.location.reload()}
-					className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-				>
-					Try again
-				</button>
-			</div>
-		</div>
-	);
-}
+export { default as ErrorBoundary } from "~/components/shared/route-error-boundary";

@@ -14,10 +14,10 @@ export function downloadTeamCSV(
 		"Team Name": team.name || "",
 		"Team Code": team.teamCode || "",
 		Status: team.status || "",
-		"Idea Title": team.idea_title || "",
-		"Idea Description": team.idea_desc || "",
-		"Idea Tech Stack": team.idea_tech_stack || "",
-		"Submission File": team.submission_file || "",
+		"Idea Title": team.ideaTitle || "",
+		"Idea Description": team.ideaDesc || "",
+		"Idea Tech Stack": team.ideaTechStack || "",
+		"Submission File": team.submissionFile || "",
 		"Created At": team.created || "",
 	};
 

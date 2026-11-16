@@ -13,7 +13,7 @@ export const QUESTIONNAIRE_ALLOWED_STATUSES: readonly TeamStatus[] = [
  * Whether a team in the given status may submit or update a questionnaire.
  */
 export function canSubmitQuestionnaire(status: TeamStatus): boolean {
-	return (QUESTIONNAIRE_ALLOWED_STATUSES as readonly TeamStatus[]).includes(status);
+	return QUESTIONNAIRE_ALLOWED_STATUSES.includes(status);
 }
 
 /**
@@ -22,14 +22,6 @@ export function canSubmitQuestionnaire(status: TeamStatus): boolean {
  */
 export function canSubmitIdea(status: TeamStatus): boolean {
 	return canTransition(status, "submitted", "lead");
-}
-
-/**
- * Whether the given role may withdraw from the given status.
- * Delegates to the generic transition check.
- */
-export function canWithdraw(status: TeamStatus, role: Role): boolean {
-	return canTransition(status, "withdrawn", role);
 }
 
 /** Map of role → default dashboard path */
