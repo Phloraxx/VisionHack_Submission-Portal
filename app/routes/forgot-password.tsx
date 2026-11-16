@@ -39,13 +39,13 @@ export async function action({ request }: ActionFunctionArgs) {
 		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });
 	}
 
-	// Always succeed (don't reveal whether the email exists). Origin validation
-	// and rate limiting above prevent abuse.
-	try {
-		await sendPasswordResetEmail(db, email);
-	} catch {
-		// Swallowed on purpose.
-	}
+	// Always succeed (don't reveal whether the email exists). The send is
+	// queued rather than awaited: awaiting it would make a known address take
+	// measurably longer than an unknown one, which is the oracle this endpoint
+	// exists to avoid. Origin validation and rate limiting prevent abuse.
+	void sendPasswordResetEmail(db, email).catch((err) => {
+		console.error("[forgot-password] reset email failed:", err);
+	});
 
 	return data({ sent: true }, { status: 200 });
 }

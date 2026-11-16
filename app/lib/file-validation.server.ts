@@ -19,6 +19,15 @@ const MAGIC_BYTES: Record<string, number[][]> = {
 };
 
 const ZIP_HEADER = [0x50, 0x4b, 0x03, 0x04]; // PK\x03\x04 — ZIP local file header
+
+/**
+ * OLE2 is the container for .doc, .xls, .msi and .ppt alike, so the magic
+ * bytes alone cannot tell them apart. A PowerPoint document always carries a
+ * `PowerPoint Document` directory entry, stored as UTF-16LE in the header
+ * block — check for it in the first 8 KiB.
+ */
+const OLE2_POWERPOINT_MARKER = "PowerPoint Document";
+const OLE2_SCAN_BYTES = 8 * 1024;
 const CONTENT_TYPES_ENTRY = "[Content_Types].xml";
 
 /**
@@ -33,6 +42,18 @@ const MAX_INFLATED_BYTES = 4 << 20;
 
 function matchesSignature(bytes: Uint8Array, sig: number[]): boolean {
 	return sig.every((b, i) => bytes[i] === b);
+}
+
+/** Whether `haystack` contains `needle` at any offset. */
+function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
+	if (needle.length === 0 || haystack.length < needle.length) return false;
+	outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
+		for (let j = 0; j < needle.length; j++) {
+			if (haystack[i + j] !== needle[j]) continue outer;
+		}
+		return true;
+	}
+	return false;
 }
 
 /**
@@ -111,8 +132,16 @@ export async function validateFileSignature(file: File): Promise<boolean> {
 	const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
 	if (matchesSignature(head, MAGIC_BYTES.pdf[0])) return true;
 
-	// OLE2 (legacy .ppt)
-	if (matchesSignature(head, MAGIC_BYTES.ppt[0])) return true;
+	// OLE2 (legacy .ppt) — the container is shared with .doc/.xls/.msi, so the
+	// PowerPoint stream name has to be present too.
+	if (matchesSignature(head, MAGIC_BYTES.ppt[0])) {
+		const bytes = new Uint8Array(await file.slice(0, OLE2_SCAN_BYTES).arrayBuffer());
+		const utf16 = new Uint8Array(OLE2_POWERPOINT_MARKER.length * 2);
+		for (let i = 0; i < OLE2_POWERPOINT_MARKER.length; i++) {
+			utf16[i * 2] = OLE2_POWERPOINT_MARKER.charCodeAt(i);
+		}
+		return containsBytes(bytes, utf16);
+	}
 
 	// PPTX (OpenXML) — ZIP header + content-type verification
 	if (matchesSignature(head, ZIP_HEADER)) {

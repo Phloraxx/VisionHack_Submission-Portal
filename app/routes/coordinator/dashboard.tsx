@@ -45,8 +45,17 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, re
 	// (a few hundred at most for a hackathon) and is still loaded once.
 	// Filtering teams by district resolves the district to institution IDs
 	// and filters on `institutionId` instead — the repository takes the list.
-	const institutionsResult = await institutionsRepo.list(user, { perPage: 200, sort: "name" });
+	const INSTITUTION_SCAN_CAP = 1000;
+	const institutionsResult = await institutionsRepo.list(user, {
+		perPage: INSTITUTION_SCAN_CAP,
+		sort: "name",
+	});
 	const institutions = institutionsResult.items;
+	if (institutionsResult.totalItems > INSTITUTION_SCAN_CAP) {
+		console.warn(
+			`[coordinator] more than ${INSTITUTION_SCAN_CAP} institutions — the district filter is incomplete`,
+		);
+	}
 
 	const statusFilter =
 		status && status !== "all" && TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
@@ -185,7 +194,10 @@ export default function CoordinatorDashboard() {
 	// pagination. The search box keeps local state only to debounce typing.
 	const [searchInput, setSearchInput] = useState(activeFilters.search);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [viewMode, setViewMode] = useState<"teams" | "institutions">("teams");
+	// The view mode lives in the URL so a refresh (or a shared link) keeps it.
+	const viewMode: "teams" | "institutions" =
+		searchParams.get("view") === "institutions" ? "institutions" : "teams";
+	const setViewMode = (next: "teams" | "institutions") => setParams({ view: next });
 
 	const districtFilter = activeFilters.district || "all";
 	const institutionFilter = activeFilters.institution || "all";

@@ -37,13 +37,11 @@ export const JWT_ISSUER = "visionhack-portal";
 /** Session lifetime — matches `COOKIE_MAX_AGE` in auth.server.ts. */
 export const SESSION_TTL_SECONDS = 3600;
 
-export interface PbJwtPayload {
+export interface JwtClaims {
 	id?: string;
-	/** Legacy collection id for the auth record. */
-	collectionId?: string;
 	/** Unix expiry (seconds). */
 	exp?: number;
-	/** Custom claims mirrored into the token by the legacy issuer. */
+	/** Role at the time the token was minted. */
 	role?: string;
 	institutionId?: string;
 	email?: string;
@@ -52,7 +50,7 @@ export interface PbJwtPayload {
 }
 
 /** Claims this app writes. `purpose` marks non-session tokens (password reset). */
-export interface JwtPayload extends PbJwtPayload {
+export interface JwtPayload extends JwtClaims {
 	iss?: string;
 	iat?: number;
 	/** `"pwreset"` on password-reset tokens; absent on session tokens. */
@@ -64,7 +62,7 @@ export interface JwtPayload extends PbJwtPayload {
 }
 
 /** Decode the base64url payload segment of a JWT. Returns null if malformed. */
-export function decodeJwtPayload(token: string): PbJwtPayload | null {
+export function decodeJwtPayload(token: string): JwtClaims | null {
 	try {
 		const parts = token.split(".");
 		if (parts.length !== 3) return null;
@@ -74,7 +72,7 @@ export function decodeJwtPayload(token: string): PbJwtPayload | null {
 		const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
 
 		const json = atob(padded);
-		return JSON.parse(json) as PbJwtPayload;
+		return JSON.parse(json) as JwtClaims;
 	} catch {
 		return null;
 	}
@@ -83,7 +81,7 @@ export function decodeJwtPayload(token: string): PbJwtPayload | null {
 /**
  * `skewSeconds` (default 5 min). Used to decide whether to refresh.
  */
-export function isExpiringSoon(payload: PbJwtPayload | null, skewSeconds = 300): boolean {
+export function isExpiringSoon(payload: JwtClaims | null, skewSeconds = 300): boolean {
 	if (!payload || typeof payload.exp !== "number") return true;
 	const nowSeconds = Date.now() / 1000;
 	return payload.exp - nowSeconds < skewSeconds;
@@ -133,8 +131,8 @@ export function signJwt(
  * unusable.
  *
  * Rejects: a malformed token, any `alg` other than `HS256` (including
- * `none`), a signature mismatch (compared with `timingSafeEqual`), and a
- * missing or past `exp`.
+ * `none`), a signature mismatch (compared with `timingSafeEqual`), a foreign
+ * `iss`, and a missing or past `exp`.
  */
 export function verifyJwt<T extends JwtPayload = JwtPayload>(token: string): T | null {
 	try {

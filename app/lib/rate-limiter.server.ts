@@ -70,6 +70,16 @@ export function checkRateLimit(key: string, maxAttempts: number, windowMs: numbe
 	store.set(key, { count: 1, resetAt: now + windowMs });
 }
 
+/**
+ * Forget one bucket.
+ *
+ * Used after a successful login so the per-account limit only counts failed
+ * attempts — otherwise five sign-ins in a minute would trip it.
+ */
+export function resetRateLimit(key: string): void {
+	store.delete(key);
+}
+
 /** Clear the store — used by tests to isolate cases. */
 export function _resetStore(): void {
 	store.clear();

@@ -7,6 +7,7 @@ import {
 	useActionData,
 	useLoaderData,
 	useNavigation,
+	useSearchParams,
 } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { AnimatedGrid } from "~/components/ui/animated-grid";
@@ -27,13 +28,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const token = new URL(request.url).searchParams.get("token") ?? "";
 	const verified = token ? await verifyPasswordResetToken(db, token) : null;
 
+	// The token stays in the URL: echoing it into loader data would also put it
+	// in the hydration payload.
 	return data(
-		{
-			valid: verified !== null,
-			// Echoed into a hidden field so the action can re-verify. The token is
-			// already in the URL, so this exposes nothing new.
-			token: verified ? token : "",
-		},
+		{ valid: verified !== null },
 		// The HTML carries a reset token — never let a cache keep it.
 		{ headers: { "Cache-Control": "no-store" } },
 	);
@@ -86,7 +84,9 @@ export function meta() {
 }
 
 export default function ResetPassword() {
-	const { valid, token } = useLoaderData() as { valid: boolean; token: string };
+	const { valid } = useLoaderData() as { valid: boolean };
+	const [searchParams] = useSearchParams();
+	const token = searchParams.get("token") ?? "";
 	const actionData = useActionData() as { error?: string } | undefined;
 	const navigation = useNavigation();
 	const isSubmitting = navigation.state === "submitting";

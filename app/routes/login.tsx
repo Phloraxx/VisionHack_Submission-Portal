@@ -19,7 +19,7 @@ import { users } from "~/lib/db.server";
 import { ipRateLimitKey } from "~/lib/ip.server";
 import { verifyJwt } from "~/lib/jwt.server";
 import { validateOrigin } from "~/lib/origin.server";
-import { checkRateLimit } from "~/lib/rate-limiter.server";
+import { checkRateLimit, resetRateLimit } from "~/lib/rate-limiter.server";
 import { loginSchema } from "~/lib/schemas/auth";
 import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
 
@@ -37,9 +37,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 					if (!target) {
 						throw new Response("No dashboard configured for your account role.", { status: 403 });
 					}
-					const headers = new Headers();
-					headers.append("Set-Cookie", setAuthCookie(token));
-					throw redirect(target, { headers });
+					// The cookie is already valid — re-issuing it would only
+					// reset its Max-Age on every visit to /login.
+					throw redirect(target);
 				}
 			}
 		} catch (err) {
@@ -86,6 +86,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	try {
 		const { token, record } = await login(email, password);
+		// A successful sign-in is not an attempt: clear the per-account bucket
+		// so the limit only counts failures.
+		resetRateLimit(`login:email:${email}`);
 		// Guard against unmapped roles — redirecting to /login would loop.
 		const dashboardPath = ROLE_DASHBOARD_MAP[record.role as keyof typeof ROLE_DASHBOARD_MAP];
 		if (!dashboardPath) {

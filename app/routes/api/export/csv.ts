@@ -139,12 +139,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	}
 
 	const encoder = new TextEncoder();
-	const csvPrefix = truncated
-		? `# WARNING: Data truncated. Showing ${MAX_SAFE_LIST} of ${filteredResult.totalItems} total items.\n`
-		: "";
 	const stream = new ReadableStream({
 		start(controller) {
-			controller.enqueue(encoder.encode(`\uFEFF${csvPrefix}${headers.join(",")}\n`));
+			// No warning line: a `#`-prefixed first row is read as data and
+			// shifts the header. Truncation is reported in the headers instead.
+			controller.enqueue(encoder.encode(`\uFEFF${headers.join(",")}\n`));
 			for (const team of filtered) {
 				const row = buildRow(team, membersByTeam[team.id] || []);
 				controller.enqueue(encoder.encode(`${row}\n`));
@@ -159,6 +158,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		// PII export — never cache.
 		"Cache-Control": "no-store",
 		"X-Total-Count": String(filteredResult.totalItems),
+		"X-Export-Truncated": truncated ? "true" : "false",
 	};
 
 	return new Response(stream, {
