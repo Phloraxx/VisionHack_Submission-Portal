@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
-import type { InstitutionRecord } from "~/lib/types";
+import { institutions } from "~/lib/db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	if (request.method !== "GET") {
@@ -10,19 +10,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const auth = await requireAuthJson(request);
 	if (auth instanceof Response) return auth;
 
-	const pb = auth.pb;
 	const user = auth.user;
 
 	try {
 		// Admin/coordinator: full list with institution codes
 		if (user.role === "admin" || user.role === "coordinator") {
-			const institutions = await pb.collection("institutions").getList<InstitutionRecord>(1, 1000, {
+			const result = await institutions.list(user, {
+				page: 1,
+				perPage: 1000,
 				sort: "name",
-				fields: "id,name,district,code",
 			});
 
 			return Response.json(
-				{ institutions: institutions.items },
+				{
+					// Same projection the old `fields: "id,name,district,code"`
+					// asked PocketBase for — no campus-lead id, capacity or
+					// timestamps in the payload.
+					institutions: result.items.map(({ id, name, district, code }) => ({
+						id,
+						name,
+						district,
+						code,
+					})),
+				},
 				{
 					status: 200,
 					headers: {
@@ -35,15 +45,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
 			);
 		}
 
-		// Other authenticated roles: return only their own institution, no code
-		const institution = await pb
-			.collection("institutions")
-			.getOne<InstitutionRecord>(user.institutionId, {
-				fields: "id,name,district",
-			});
+		// Other authenticated roles: return only their own institution, no code.
+		// The repository's §6.2 predicate already limits this to the actor's
+		// own institution, so a missing row means "no institution on file".
+		const institution = await institutions.getOne(user, user.institutionId);
+		if (!institution) {
+			// PocketBase threw a 404 here; the catch below has always turned
+			// that into the 500 this endpoint returns.
+			throw new Error("Institution not found");
+		}
 
 		return Response.json(
-			{ institutions: [institution] },
+			{
+				institutions: [
+					{ id: institution.id, name: institution.name, district: institution.district },
+				],
+			},
 			{
 				headers: { "Cache-Control": "private, max-age=60" },
 			},

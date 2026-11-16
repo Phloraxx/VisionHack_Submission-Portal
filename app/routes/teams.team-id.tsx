@@ -6,6 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { fail, ok, secureAction } from "~/lib/action.server";
 import { downloadTeamCSV } from "~/lib/csv-export.client";
+import { members, questionnaireResponses, teams } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { transitionTeamSchema } from "~/lib/schemas/institution";
 import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
@@ -54,22 +55,17 @@ export const loader = secureLoader(
 				if (!team) throw new Response("No team found", { status: 404 });
 				if (team.id !== teamId) throw new Response("Forbidden", { status: 403 });
 
-				const [members, questionnaire] = await Promise.all([
-					pb.collection("members").getList<MemberRecord>(1, 100, {
-						filter: pb.filter("teamId = {:teamId}", { teamId: team.id }),
-					}),
-					pb
-						.collection("questionnaire_responses")
-						.getFirstListItem<QuestionnaireResponseRecord>(
-							pb.filter("teamId = {:teamId}", { teamId: team.id }),
-						)
-						.catch(() => null),
+				// Both reads are scoped by the §6.2 predicate: the roster by
+				// the parent team's leader, the questionnaire by `user_id`.
+				const [membersResult, questionnaire] = await Promise.all([
+					members.list(user, { teamId: team.id, perPage: 100 }),
+					questionnaireResponses.getByTeam(user, team.id),
 				]);
 
 				return {
 					user,
 					team,
-					members: members.items,
+					members: membersResult.items,
 					questionnaire,
 					validTransitions: [],
 				} satisfies LoaderData;
@@ -79,12 +75,7 @@ export const loader = secureLoader(
 			case "institution": {
 				const [institution, team] = await Promise.all([
 					getInstitutionForUser(pb, user.id, { fields: "id" }),
-					pb
-						.collection("teams")
-						.getOne<TeamView>(teamId, {
-							expand: "institutionId,leaderUserId",
-						})
-						.catch(() => null),
+					teams.getOne(user, teamId),
 				]);
 
 				if (!institution) throw new Response("Institution not found", { status: 404 });
@@ -93,16 +84,9 @@ export const loader = secureLoader(
 					throw new Response("Team not found", { status: 404 });
 				}
 
-				const [members, questionnaire] = await Promise.all([
-					pb.collection("members").getList<MemberRecord>(1, 100, {
-						filter: pb.filter("teamId = {:teamId}", { teamId }),
-					}),
-					pb
-						.collection("questionnaire_responses")
-						.getFirstListItem<QuestionnaireResponseRecord>(
-							pb.filter("teamId = {:teamId}", { teamId }),
-						)
-						.catch(() => null),
+				const [membersResult, questionnaire] = await Promise.all([
+					members.list(user, { teamId, perPage: 100 }),
+					questionnaireResponses.getByTeam(user, teamId),
 				]);
 
 				const validTransitions = getValidTransitions(team.status, user.role);
@@ -110,7 +94,7 @@ export const loader = secureLoader(
 				return {
 					user,
 					team,
-					members: members.items,
+					members: membersResult.items,
 					questionnaire,
 					validTransitions,
 				} satisfies LoaderData;
@@ -119,24 +103,12 @@ export const loader = secureLoader(
 			// Admin & Coordinator — global access, transitions filtered per role
 			case "admin":
 			case "coordinator": {
-				const team = await pb
-					.collection("teams")
-					.getOne<TeamView>(teamId, {
-						expand: "institutionId,leaderUserId",
-					})
-					.catch(() => null);
+				const team = await teams.getOne(user, teamId);
 				if (!team) throw new Response("Team not found", { status: 404 });
 
-				const [members, questionnaire] = await Promise.all([
-					pb.collection("members").getList<MemberRecord>(1, 100, {
-						filter: pb.filter("teamId = {:teamId}", { teamId }),
-					}),
-					pb
-						.collection("questionnaire_responses")
-						.getFirstListItem<QuestionnaireResponseRecord>(
-							pb.filter("teamId = {:teamId}", { teamId }),
-						)
-						.catch(() => null),
+				const [membersResult, questionnaire] = await Promise.all([
+					members.list(user, { teamId, perPage: 100 }),
+					questionnaireResponses.getByTeam(user, teamId),
 				]);
 
 				const validTransitions = getValidTransitions(team.status, user.role);
@@ -144,7 +116,7 @@ export const loader = secureLoader(
 				return {
 					user,
 					team,
-					members: members.items,
+					members: membersResult.items,
 					questionnaire,
 					validTransitions,
 				} satisfies LoaderData;
@@ -174,8 +146,6 @@ export const action = secureAction(
 				return fail({ error: parsed.error.issues[0]?.message ?? "Invalid input.", status: 400 });
 			}
 			const { toStatus } = parsed.data;
-			// Coordinator now has write access via PB updateRule — use their own client.
-			const actionPb = pb;
 
 			// Resolve institutionId for the institution IDOR guard.
 			let institutionId: string | undefined;
@@ -187,16 +157,12 @@ export const action = secureAction(
 				institutionId = inst.id;
 			}
 
-			// Re-fetch team with leader info for the notification email.
-			const team = await actionPb
-				.collection("teams")
-				.getOne(teamId, {
-					expand: "leaderUserId",
-					fields: "id,name,leaderUserId,expand.leaderUserId.email,expand.leaderUserId.name",
-				})
-				.catch(() => null);
+			// Re-fetch team with leader info for the notification email. The
+			// repository always populates `expand.leaderUserId` from its join,
+			// and scopes the read to the actor (§6.2).
+			const team = await teams.getOne(user, teamId);
 
-			const result = await transitionTeamStatus(actionPb, {
+			const result = await transitionTeamStatus(pb, {
 				teamId,
 				to: toStatus,
 				role: user.role,

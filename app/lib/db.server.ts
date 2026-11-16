@@ -535,7 +535,6 @@ export interface TeamListOptions {
 	/** PocketBase-style sort string: `"-created"`, `"name"`, … */
 	sort?: string;
 	institutionId?: string | string[];
-	leaderUserId?: string;
 	status?: TeamStatus | TeamStatus[];
 	/** Contains match on `name` and `team_code`. */
 	q?: string;
@@ -612,9 +611,6 @@ export const teams: TeamsRepository = {
 		const institutionIds = toArray(options.institutionId);
 		if (institutionIds.length > 0) {
 			where.push(`t.institution_id = ANY(${p(institutionIds)}::uuid[])`);
-		}
-		if (options.leaderUserId) {
-			where.push(`t.leader_user_id = ${p(options.leaderUserId)}`);
 		}
 		const statuses = toArray(options.status);
 		if (statuses.length > 0) {
@@ -877,7 +873,6 @@ export interface InstitutionListOptions {
 	page?: number;
 	perPage?: number;
 	sort?: string;
-	district?: string;
 	/** Contains match on `name` and `code`. */
 	q?: string;
 }
@@ -935,7 +930,6 @@ export const institutions: InstitutionsRepository = {
 		const { params, p } = paramList();
 		const where: string[] = [institutionScope(user, p)];
 
-		if (options.district) where.push(`i.district = ${p(options.district)}`);
 		if (options.q) {
 			const pattern = p(containsPattern(options.q));
 			where.push(`(i.name ILIKE ${pattern} ESCAPE '\\' OR i.code ILIKE ${pattern} ESCAPE '\\')`);

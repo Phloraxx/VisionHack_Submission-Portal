@@ -6,6 +6,7 @@
  */
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
+import { teams } from "~/lib/db.server";
 import { getEnv } from "~/lib/env.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -32,19 +33,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
 		return new Response("Invalid filename", { status: 400 });
 	}
-	if (!/^[A-Za-z0-9]{10,30}$/.test(recordId)) {
+	// Team ids are uuids in Postgres (PocketBase used 15-char ids). The
+	// repository guards the uuid cast too, so a malformed id reads as
+	// "not found" rather than a 500.
+	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) {
 		return new Response("Not found", { status: 404 });
 	}
 
 	// Authorize: confirm the requesting user is allowed to view this
-	// team's record. The PB schema's `viewRule` for `teams` enforces the
-	// same scoping at the storage layer (re-checked below via the file
-	// token), but we re-check here to return a clean 403 before the
-	// fetch and so the proxy stays safe even if the schema rules regress.
-	const team = await auth.pb
-		.collection("teams")
-		.getOne(recordId, { fields: "id,institutionId,leaderUserId,submission_file" })
-		.catch(() => null);
+	// team's record. `teams.getOne` applies the §6.2 scope predicate in SQL
+	// (admin/coordinator: any team, institution: own institution, lead: own
+	// team), so an out-of-scope id reads as "not found" — the same answer
+	// PocketBase's `viewRule` gave. The explicit `canRead` check below stays
+	// as defence in depth.
+	const team = await teams.getOne(user, recordId);
 	if (!team) {
 		return new Response("Not found", { status: 404 });
 	}
@@ -76,6 +78,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	// so this enforces ownership at the storage layer too — defense in
 	// depth on top of the `canRead` check above. No superuser credentials
 	// are involved.
+	//
+	// Phase D replaces this whole block with `$UPLOADS_DIR` reads
+	// (`app/lib/uploads.server.ts`); the token flow is the last PocketBase
+	// dependency in this route and is deliberately left in place here.
 	const fileToken = await auth.pb.files.getToken();
 
 	try {

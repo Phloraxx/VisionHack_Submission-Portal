@@ -5,6 +5,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { requireAuthJson } from "~/lib/auth.server";
 import { TEAM_STATUSES } from "~/lib/constants";
+import { members, teams } from "~/lib/db.server";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { MemberRecord, TeamStatus, TeamView } from "~/lib/types";
 import { escapeCsv } from "~/lib/utils";
@@ -27,26 +28,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		: "all";
 	const searchQuery = (url.searchParams.get("q") || "").trim().slice(0, 100);
 
-	const pb = auth.pb;
-
-	// Build the PocketBase filter from status + search query.
-	const clauses: string[] = [];
-	if (filterStatus !== "all") {
-		clauses.push(pb.filter("status = {:status}", { status: filterStatus }));
-	}
-	if (searchQuery) {
-		const safe = searchQuery.replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
-		clauses.push(pb.filter("(name ~ {:q} || teamCode ~ {:q})", { q: safe }));
-	}
-	const teamFilter = clauses.length > 0 ? clauses.join(" && ") : undefined;
-
-	// Push the filter into PocketBase instead of fetching everything
-	// and filtering in JS.
+	// Push the filter into Postgres instead of fetching everything and
+	// filtering in JS. `q` is the same `contains` match on name/team_code
+	// that PocketBase's `~` operator covered.
 	const MAX_SAFE_LIST = 500;
-	const filteredResult = await pb.collection("teams").getList<TeamView>(1, MAX_SAFE_LIST, {
-		filter: teamFilter,
-		expand: "institutionId,leaderUserId",
+	const filteredResult = await teams.list(auth.user, {
+		page: 1,
+		perPage: MAX_SAFE_LIST,
 		sort: "-created",
+		status: filterStatus === "all" ? undefined : filterStatus,
+		q: searchQuery || undefined,
 	});
 	const filtered = filteredResult.items;
 	const truncated = filteredResult.totalItems > MAX_SAFE_LIST;
@@ -56,20 +47,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 	// Fetch only the members of the teams we're exporting.
 	const teamIds = filtered.map((t) => t.id);
-	const members =
+	const memberRows =
 		teamIds.length > 0
-			? (
-					await pb.collection("members").getList<MemberRecord>(1, MAX_SAFE_LIST, {
-						filter: pb.filter(
-							teamIds.map((_, i) => `teamId = {:t${i}}`).join(" || "),
-							Object.fromEntries(teamIds.map((id, i) => [`t${i}`, id])),
-						),
-					})
-				).items
+			? (await members.list(auth.user, { teamIds, perPage: MAX_SAFE_LIST })).items
 			: [];
 
 	const membersByTeam: Record<string, MemberRecord[]> = {};
-	for (const m of members) {
+	for (const m of memberRows) {
 		const list = membersByTeam[m.teamId] ?? (membersByTeam[m.teamId] = []);
 		list.push(m);
 	}
