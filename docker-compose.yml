@@ -22,7 +22,7 @@ services:
       - /home/drvij/services/visionhack-portal/uploads:/app/uploads
       # The SQLite database (plus its -wal/-shm siblings) lives on the host so
       # it survives redeploys. Back it up with `VACUUM INTO`, never a copy.
-      - /home/drvij/services/visionhack-portal/data:/app/data
+      - /home/drvij/portal-data:/app/data
     # The app needs no Linux capabilities beyond binding its own port.
     cap_drop:
       - ALL
