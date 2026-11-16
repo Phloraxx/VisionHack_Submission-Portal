@@ -14,12 +14,12 @@ import {
  * IDOR suite.
  */
 
-/** A stand-in for the `$n` placeholder factory: records the bound values. */
+/** A stand-in for the `?` placeholder factory: records the bound values. */
 function paramSpy() {
 	const params: unknown[] = [];
 	const p = (value: unknown) => {
 		params.push(value);
-		return `$${params.length}`;
+		return "?";
 	};
 	return { params, p };
 }
@@ -38,7 +38,7 @@ describe("teamScope", () => {
 
 	it("scopes a campus lead to her own institution", () => {
 		const { p, params } = paramSpy();
-		expect(teamScope(campusLead, p)).toBe("t.institution_id = $1");
+		expect(teamScope(campusLead, p)).toBe("t.institution_id = ?");
 		expect(params).toEqual(["inst-1"]);
 	});
 
@@ -48,12 +48,12 @@ describe("teamScope", () => {
 
 	it("scopes a team lead to the teams she leads", () => {
 		const { p, params } = paramSpy();
-		expect(teamScope(teamLead, p)).toBe("t.leader_user_id = $1");
+		expect(teamScope(teamLead, p)).toBe("t.leader_user_id = ?");
 		expect(params).toEqual(["user-1"]);
 	});
 
 	it("honours the table alias", () => {
-		expect(teamScope(teamLead, paramSpy().p, "teams")).toBe("teams.leader_user_id = $1");
+		expect(teamScope(teamLead, paramSpy().p, "teams")).toBe("teams.leader_user_id = ?");
 	});
 });
 
@@ -64,8 +64,8 @@ describe("institutionScope", () => {
 	});
 
 	it("scopes everyone else to their own institution", () => {
-		expect(institutionScope(campusLead, paramSpy().p)).toBe("i.id = $1");
-		expect(institutionScope(teamLead, paramSpy().p)).toBe("i.id = $1");
+		expect(institutionScope(campusLead, paramSpy().p)).toBe("i.id = ?");
+		expect(institutionScope(teamLead, paramSpy().p)).toBe("i.id = ?");
 	});
 
 	it("denies a user with no institution", () => {
@@ -80,11 +80,11 @@ describe("questionnaireScope", () => {
 	});
 
 	it("scopes a campus lead to her institution's teams", () => {
-		expect(questionnaireScope(campusLead, paramSpy().p)).toBe("t.institution_id = $1");
+		expect(questionnaireScope(campusLead, paramSpy().p)).toBe("t.institution_id = ?");
 	});
 
 	it("scopes a lead to her own response", () => {
-		expect(questionnaireScope(teamLead, paramSpy().p)).toBe("q.user_id = $1");
+		expect(questionnaireScope(teamLead, paramSpy().p)).toBe("q.user_id = ?");
 	});
 });
 
@@ -94,11 +94,11 @@ describe("memberCreateScope", () => {
 	});
 
 	it("scopes a campus lead to her institution's teams", () => {
-		expect(memberCreateScope(campusLead, paramSpy().p)).toBe("t.institution_id = $1");
+		expect(memberCreateScope(campusLead, paramSpy().p)).toBe("t.institution_id = ?");
 	});
 
 	it("scopes a team lead to her own team", () => {
-		expect(memberCreateScope(teamLead, paramSpy().p)).toBe("t.leader_user_id = $1");
+		expect(memberCreateScope(teamLead, paramSpy().p)).toBe("t.leader_user_id = ?");
 	});
 
 	it("denies a coordinator", () => {
@@ -112,7 +112,7 @@ describe("memberWriteScope", () => {
 	});
 
 	it("scopes a team lead to her own team", () => {
-		expect(memberWriteScope(teamLead, paramSpy().p)).toBe("t.leader_user_id = $1");
+		expect(memberWriteScope(teamLead, paramSpy().p)).toBe("t.leader_user_id = ?");
 	});
 
 	it("denies campus leads and coordinators", () => {

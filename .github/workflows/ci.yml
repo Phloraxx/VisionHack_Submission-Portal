@@ -43,8 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
-
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,27 +60,16 @@ jobs:
         run: npx biome check .
 
   idor:
-    name: IDOR (app HTTP + Postgres)
+    name: IDOR (app HTTP + SQLite)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: visionhack
-          POSTGRES_PASSWORD: visionhack_ci
-          POSTGRES_DB: visionhack_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U visionhack -d visionhack_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     env:
-      DATABASE_URL: postgres://visionhack:visionhack_ci@localhost:5432/visionhack_test
+      # A fresh file per run. The app applies sqlite/schema.sql on first boot
+      # and `npm run seed:test` applies it too, so no separate schema step is
+      # needed. The name must contain "test" (or the file must live under the
+      # temp dir) or the seed refuses to run.
+      SQLITE_PATH: /tmp/vh-ci/portal-test.db
       # Fixed CI-only signing key. Must be >= 32 bytes (env.server.ts).
       APP_JWT_SECRET: ci-idor-secret-0123456789abcdef0123456789abcdef
       UPLOADS_DIR: /tmp/uploads
@@ -104,12 +91,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install psql
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-
-      - name: Apply schema
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f postgres/schema.sql
 
       - name: Seed fixtures
         run: npm run seed:test
@@ -179,10 +160,10 @@ jobs:
         run: npm run build
 
   # Boots the actual Docker image (the Dockerfile CMD, the exact runner-stage
-  # file set, Node 22 type stripping) against a fresh Postgres, so boot-only
-  # regressions fail CI instead of crash-looping production. This would have
-  # caught both the env.server import crash and the divergent-hashed CSS from
-  # the `app.css?url` era (a second stylesheet link on /login).
+  # file set, Node 22 type stripping) against a fresh SQLite database, so
+  # boot-only regressions fail CI instead of crash-looping production. This
+  # would have caught both the env.server import crash and the divergent-hashed
+  # CSS from the `app.css?url` era (a second stylesheet link on /login).
   image:
     name: Docker image boot smoke
     if: github.ref == 'refs/heads/main'
@@ -190,30 +171,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: visionhack
-          POSTGRES_PASSWORD: visionhack_ci
-          POSTGRES_DB: visionhack_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U visionhack -d visionhack_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install psql
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-
-      - name: Apply schema
-        run: psql "postgres://visionhack:visionhack_ci@localhost:5432/visionhack_test" -v ON_ERROR_STOP=1 -f postgres/schema.sql
 
       - name: Build image
         run: docker build -t vh-ci-image .
@@ -221,10 +181,12 @@ jobs:
       - name: Boot image in production mode
         run: |
           set -euo pipefail
-          # Host networking: the container reaches the postgres service on
-          # localhost and its port is reachable from the runner.
+          # Host networking so the app's port is reachable from the runner.
+          # /app/data is the production database path; a tmpfs owned by the
+          # unprivileged apprunner user lets the app create the file there.
           docker run -d --name vh-ci-app --network host \
-            -e DATABASE_URL=postgres://visionhack:visionhack_ci@localhost:5432/visionhack_test \
+            --tmpfs /app/data:rw,uid=1001,gid=1001 \
+            -e SQLITE_PATH=/app/data/portal.db \
             -e APP_JWT_SECRET=ci-image-secret-0123456789abcdef0123456789abcdef \
             -e UPLOADS_DIR=/tmp/uploads \
             -e APP_URL=http://localhost:4199 \
@@ -242,7 +204,8 @@ jobs:
               ready=1
               break
             fi
-            if [ "$(docker inspect -f '{{.State.Running}}' vh-ci-app)" != "true" ]; then
+            running=$(docker inspect -f '{{.State.Running}}' vh-ci-app)
+            if [ "$running" != "true" ]; then
               break
             fi
             sleep 1
@@ -260,10 +223,12 @@ jobs:
           # Exactly one stylesheet href, and the named file must exist. The
           # `app.css?url` bug leaked a second, client-only CSS hash here.
           printf '%s' "$html" | grep -qE '/assets/[A-Za-z0-9_.-]+\.css'
-          css=$(printf '%s' "$html" | grep -oE '/assets/[A-Za-z0-9_.-]+\.css' | sort -u)
+          css=$(printf '%s' "$html" \
+            | grep -oE '/assets/[A-Za-z0-9_.-]+\.css' | sort -u)
           echo "stylesheet hrefs: $css"
           [ "$(printf '%s\n' "$css" | grep -c .)" -eq 1 ]
-          status=$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:4199$css")
+          status=$(curl -fsS -o /dev/null -w '%{http_code}' \
+            "http://localhost:4199$css")
           echo "stylesheet fetch: $status"
 
       - name: Container log (on failure)

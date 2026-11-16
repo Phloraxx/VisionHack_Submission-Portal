@@ -19,8 +19,8 @@ import { query } from "./db.server";
 export async function getConfig(): Promise<Record<string, boolean>> {
 	const MAX_SAFE_LIST = 100;
 	// One row over the cap is enough to know the warning applies.
-	const result = await query<{ key: string; value: boolean }>(
-		"SELECT key, value FROM config ORDER BY key LIMIT $1",
+	const result = await query<{ key: string; value: number }>(
+		"SELECT key, value FROM config ORDER BY key LIMIT ?",
 		[MAX_SAFE_LIST + 1],
 	);
 	if (result.rows.length > MAX_SAFE_LIST) {
@@ -30,7 +30,8 @@ export async function getConfig(): Promise<Record<string, boolean>> {
 	const value: Record<string, boolean> = {};
 	for (const row of result.rows) {
 		if (row.key === "schema_version" || row.key.startsWith("_")) continue;
-		value[row.key] = row.value === true;
+		// SQLite stores booleans as INTEGER 0/1, never as a JS boolean.
+		value[row.key] = row.value === 1;
 	}
 
 	return value;

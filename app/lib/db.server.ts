@@ -1,26 +1,44 @@
 /**
- * PostgreSQL access layer.
+ * SQLite access layer — one process-wide better-sqlite3 connection.
  *
- * The pool is a process-wide singleton guarded on `globalThis` so Vite HMR (and React Router
- * dev restarts) do not leak connections.
+ * The connection is a singleton guarded on `globalThis` so Vite HMR (and React
+ * Router dev restarts) do not leak file handles. It is opened lazily, so
+ * importing this module never touches the disk (tests and `react-router build`
+ * stay side-effect free).
+ *
+ * Why one connection
+ * ------------------
+ * better-sqlite3 is synchronous, so the event loop *is* the write queue: a
+ * statement runs to completion before any other request can start one. That is
+ * what makes the single-connection design faster than a pool — see the
+ * benchmark note in `sqlite/schema.sql`'s sibling brief. A pool of connections
+ * would instead serialise on SQLite's writer lock and produce `SQLITE_BUSY`
+ * tails.
  *
  * Conventions
  * -----------
- * - Columns are snake_case (see `postgres/schema.sql`); the mappers here turn
+ * - Columns are snake_case (see `sqlite/schema.sql`); the mappers here turn
  *   rows into the camelCase record shapes in `app/lib/types.ts`, so route code
  *   keeps reading `user.institutionId`, `team.created`, and so on.
  * - Every query is parameterised. No string interpolation of user input.
- * - `statement_timeout` is 20 s, matching the old backend's request timeout.
+ * - Timestamps are TEXT ISO-8601 UTC with milliseconds. `strftime('%Y-%m-%dT%H:%M:%fZ')`
+ *   in the schema and `Date.toISOString()` in the app produce the same shape,
+ *   so lexical comparison is chronological.
+ * - Booleans are INTEGER 0/1; `bindable` coerces on the way in and the mappers
+ *   compare against 1 on the way out.
  * - Every repository method takes the acting user and applies the §6.2 scope
  *   predicate in SQL. The old backend's API rules were the second line of
- *   defence behind the route loaders; in Postgres they are gone, so the
- *   predicate lives here instead (docs/PG_PORT_PLAN.md §6.2).
+ *   defence behind the route loaders; here the predicate is the only line, so
+ *   it lives in this file (docs/PG_PORT_PLAN.md §6.2).
  * - Repository calls made inside `withTransaction` join that transaction, so a
  *   route can compose several writes into one atomic unit.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import Database from "better-sqlite3";
 import { getEnv } from "./env.server";
 import type {
 	ConfigRecord,
@@ -33,108 +51,244 @@ import type {
 	UserRecord,
 } from "./types";
 
-/** Matches the 20 s timeout the old backend applied to every request. */
-const STATEMENT_TIMEOUT_MS = 20_000;
-/** pg-hub runs max_connections=120 across all apps (plan §10.7). */
-const POOL_MAX = 10;
+/**
+ * Schema version this build expects. 1 is the initial release.
+ *
+ * Bumping this re-applies `sqlite/schema.sql`, which is idempotent — but the
+ * file only creates missing objects. Changing an existing column (a type, a
+ * NOT NULL) still needs a real migration; a bump alone will not alter it.
+ */
+const SCHEMA_VERSION = 1;
+
+/** `:memory:` opens a private in-memory database — used by the unit tests. */
+const IN_MEMORY = ":memory:";
 
 // ---------------------------------------------------------------------------
-// Pool singleton (HMR-safe)
+// Connection singleton (HMR-safe)
 // ---------------------------------------------------------------------------
 
 interface DbGlobal {
-	__visionhackPgPool?: Pool;
+	__visionhackSqlite?: Database.Database;
 }
 
 const globalForDb = globalThis as typeof globalThis & DbGlobal;
 
 /**
- * The shared `pg` pool. Created on first use so importing this module never
- * opens a socket (tests and `react-router build` stay side-effect free).
+ * Apply `sqlite/schema.sql` when the database is older than this build.
+ *
+ * The file is idempotent, so re-applying it to a database created by an older
+ * build is safe. `PRAGMA user_version` is the marker: 0 means "never
+ * initialised" (a fresh file, or one from before the port).
  */
-export function getPool(): Pool {
-	if (!globalForDb.__visionhackPgPool) {
-		const pool = new Pool({
-			connectionString: getEnv().DATABASE_URL,
-			max: POOL_MAX,
-			statement_timeout: STATEMENT_TIMEOUT_MS,
-			idleTimeoutMillis: 30_000,
-			connectionTimeoutMillis: 10_000,
-		});
-		// An idle client erroring (server restart, network blip) must not take
-		// the process down — pg emits it on the pool, not on the query.
-		pool.on("error", (err) => {
-			console.error("[db] Idle client error", err);
-		});
-		globalForDb.__visionhackPgPool = pool;
+function ensureSchema(database: Database.Database): void {
+	const version = database.pragma("user_version", { simple: true }) as number;
+	if (version >= SCHEMA_VERSION) return;
+
+	const schemaFile = resolve(process.cwd(), "sqlite", "schema.sql");
+	const schema = readFileSync(schemaFile, "utf8");
+
+	database.exec("BEGIN IMMEDIATE");
+	try {
+		database.exec(schema);
+		database.pragma(`user_version = ${SCHEMA_VERSION}`);
+		database.exec("COMMIT");
+	} catch (err) {
+		database.exec("ROLLBACK");
+		throw err;
 	}
-	return globalForDb.__visionhackPgPool;
+}
+
+function openDatabase(): Database.Database {
+	const path = getEnv().SQLITE_PATH;
+	if (path !== IN_MEMORY) mkdirSync(dirname(resolve(path)), { recursive: true });
+
+	const database = new Database(path);
+	// WAL keeps readers off the writer's back and survives a crash; NORMAL
+	// syncs at checkpoint rather than per commit (the documented trade: the
+	// last few transactions can be lost on power loss, the database cannot
+	// corrupt).
+	database.pragma("journal_mode = WAL");
+	database.pragma("synchronous = NORMAL");
+	// Off by default in SQLite — without it every FK in the schema is decorative.
+	database.pragma("foreign_keys = ON");
+	database.pragma("busy_timeout = 5000");
+	database.pragma("wal_autocheckpoint = 1000");
+
+	ensureSchema(database);
+	return database;
+}
+
+/** The shared connection. Opened on first use, never closed by the app. */
+function getDatabase(): Database.Database {
+	if (!globalForDb.__visionhackSqlite) {
+		globalForDb.__visionhackSqlite = openDatabase();
+	}
+	return globalForDb.__visionhackSqlite;
+}
+
+// ---------------------------------------------------------------------------
+// Statement cache + binding
+// ---------------------------------------------------------------------------
+
+/**
+ * Prepared statements, keyed by SQL text.
+ *
+ * The set of distinct statements is fixed by the code paths below, so the map
+ * is naturally bounded. Re-preparing per call would re-parse and re-plan on
+ * every request — the single largest avoidable cost in a synchronous driver.
+ */
+const statementCache = new Map<string, Database.Statement>();
+
+function prepare(sql: string): Database.Statement {
+	let statement = statementCache.get(sql);
+	if (!statement) {
+		statement = getDatabase().prepare(sql);
+		statementCache.set(sql, statement);
+	}
+	return statement;
+}
+
+/** What better-sqlite3 accepts as a bound value. */
+type BindValue = string | number | bigint | Buffer | null;
+
+/**
+ * Coerce a JavaScript value to something SQLite can bind.
+ *
+ * SQLite has no boolean type and better-sqlite3 rejects `true`/`false`
+ * outright, so they become 1/0 here rather than at every call site. `undefined`
+ * binds as NULL, matching how an absent optional column behaved in Postgres.
+ */
+function bindable(value: unknown): BindValue {
+	if (value === null || value === undefined) return null;
+	if (typeof value === "boolean") return value ? 1 : 0;
+	if (value instanceof Date) return value.toISOString();
+	if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+		return value;
+	}
+	if (Buffer.isBuffer(value)) return value;
+	throw new TypeError(`Unsupported SQLite bind value of type ${typeof value}`);
+}
+
+function bindAll(params: unknown[]): BindValue[] {
+	return params.map(bindable);
+}
+
+/**
+ * Run a statement and return every row it produced.
+ *
+ * `query()` is a general escape hatch, so a statement that returns no rows
+ * (a plain INSERT/UPDATE/DELETE) is executed with `run()` and reported as an
+ * empty result — the same shape pg gave for a write without RETURNING.
+ */
+function selectAll<T>(sql: string, params: unknown[] = []): T[] {
+	const statement = prepare(sql);
+	const values = bindAll(params);
+	if (!statement.reader) {
+		statement.run(...values);
+		return [];
+	}
+	return statement.all(...values) as T[];
+}
+
+/** Run a statement and return its first row, if any. */
+function selectOne<T>(sql: string, params: unknown[] = []): T | undefined {
+	return prepare(sql).get(...bindAll(params)) as T | undefined;
 }
 
 // ---------------------------------------------------------------------------
 // Query helpers
 // ---------------------------------------------------------------------------
 
+/** The `rows` shape `query()` returns — the subset of pg's result the app reads. */
+export interface QueryResult<T> {
+	rows: T[];
+}
+
 /**
- * The client of the transaction the current async call chain is running in.
+ * Marks the async call chain that is running inside `withTransaction`.
  *
- * `withTransaction` publishes its client here so the repository methods below
- * join the transaction without every signature growing a `client` parameter:
- * `query()` prefers the ambient client over the pool.
+ * `query()` publishes nothing here; it only *reads* it to decide whether to
+ * join the open transaction or wait for it to finish.
  */
-const transactionStorage = new AsyncLocalStorage<PoolClient>();
+const transactionStorage = new AsyncLocalStorage<true>();
+
+/**
+ * Tail of the queue that serialises access to the single connection.
+ *
+ * A transaction holds this for its whole duration, including any await inside
+ * its body. That matters: better-sqlite3 is synchronous, but a transaction body
+ * may still await non-database I/O (the campus-lead invite hashes a password
+ * with argon2 inside one). Without the lock, another request's statements would
+ * execute inside that open transaction and be committed or rolled back with it.
+ */
+let lockTail: Promise<void> = Promise.resolve();
+
+async function acquireConnection(): Promise<() => void> {
+	let release!: () => void;
+	const held = new Promise<void>((resolveHeld) => {
+		release = resolveHeld;
+	});
+	const previous = lockTail;
+	lockTail = previous.then(() => held);
+	await previous;
+	return release;
+}
 
 /**
  * Run a parameterised query.
  *
- * Inside `withTransaction` the query runs on that transaction's client, so a
+ * Inside `withTransaction` the query runs on the open transaction, so a
  * repository call made from the callback is part of the same atomic unit.
+ * Outside one it waits for any in-flight transaction to finish first.
  */
-export function query<T extends QueryResultRow = QueryResultRow>(
-	text: string,
+export async function query<T = Record<string, unknown>>(
+	sql: string,
 	params: unknown[] = [],
 ): Promise<QueryResult<T>> {
-	const client = transactionStorage.getStore();
-	if (client) return client.query<T>(text, params);
-	return getPool().query<T>(text, params);
+	if (transactionStorage.getStore()) return { rows: selectAll<T>(sql, params) };
+
+	const release = await acquireConnection();
+	try {
+		return { rows: selectAll<T>(sql, params) };
+	} finally {
+		release();
+	}
 }
 
 /**
- * Run `fn` inside a transaction on a dedicated client.
+ * Run `fn` inside a transaction on the shared connection.
  *
- * Commits when `fn` resolves, rolls back when it throws, and always releases
- * the client back to the pool. Repository calls made inside `fn` — directly or
- * through a helper — run on the transaction's client (see `query`), so a
+ * `BEGIN IMMEDIATE` takes the write lock up front, so a transaction that will
+ * write cannot fail halfway through on a lock upgrade. Commits when `fn`
+ * resolves, rolls back when it throws. Repository calls made inside `fn` —
+ * directly or through a helper — run on the same connection (see `query`), so a
  * multi-write sequence is all-or-nothing.
  *
  * Nested calls join the enclosing transaction instead of opening a second one.
  */
-export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-	const ambient = transactionStorage.getStore();
-	if (ambient) return fn(ambient);
+export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+	if (transactionStorage.getStore()) return fn();
 
-	const client = await getPool().connect();
-	let broken = false;
+	const release = await acquireConnection();
+	const database = getDatabase();
 	try {
-		await client.query("BEGIN");
-		const result = await transactionStorage.run(client, () => fn(client));
-		await client.query("COMMIT");
-		return result;
-	} catch (err) {
+		database.exec("BEGIN IMMEDIATE");
 		try {
-			await client.query("ROLLBACK");
-		} catch (rollbackErr) {
-			// The connection is in an unknown state — destroy it instead of
-			// returning it to the pool.
-			broken = true;
-			console.error("[db] Rollback failed", rollbackErr);
+			const result = await transactionStorage.run(true, fn);
+			database.exec("COMMIT");
+			return result;
+		} catch (err) {
+			try {
+				database.exec("ROLLBACK");
+			} catch (rollbackErr) {
+				// The connection is in an unknown state; surface both failures
+				// rather than hiding the rollback behind the original error.
+				console.error("[db] Rollback failed", rollbackErr);
+			}
+			throw err;
 		}
-		throw err;
 	} finally {
-		// A successful ROLLBACK leaves the connection clean, so a control-flow
-		// abort (a validation error used to end the transaction) must not
-		// destroy a pooled connection.
-		client.release(broken ? new Error("transaction rollback failed") : undefined);
+		release();
 	}
 }
 
@@ -173,7 +327,13 @@ function emptyList<T>(): ListResult<T> {
 	return { page: 1, perPage: 0, totalItems: 0, totalPages: 0, items: [] };
 }
 
-/** `$n` placeholder factory — keeps the SQL text and the parameter array in sync. */
+/**
+ * Placeholder factory — keeps the SQL text and the parameter array in sync.
+ *
+ * SQLite binds positionally, so each `?` consumes the next value: a value
+ * referenced twice in one statement must be pushed twice. Call `p()` at the
+ * point of use rather than reusing the returned string.
+ */
 interface ParamList {
 	params: unknown[];
 	p(value: unknown): string;
@@ -185,26 +345,40 @@ function paramList(): ParamList {
 		params,
 		p(value: unknown): string {
 			params.push(value);
-			return `$${params.length}`;
+			return "?";
 		},
 	};
 }
 
+/** `?, ?, ?` for an `IN (…)` list, pushing one parameter per value. */
+function inClause(values: unknown[], p: ParamList["p"]): string {
+	return values.map((value) => p(value)).join(", ");
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Guard a uuid cast: a malformed id must read as "no such row", not a 500. */
+/** Guard an id: a malformed one must read as "no such row", not as an error. */
 export function isUuid(value: string): boolean {
 	return UUID_RE.test(value);
 }
 
-/** Postgres `foreign_key_violation` — a delete blocked by a referencing row. */
+/** SQLite `foreign key constraint failed` — a delete blocked by a referencing row. */
 function isForeignKeyViolation(err: unknown): boolean {
-	return typeof err === "object" && err !== null && (err as { code?: string }).code === "23503";
+	if (typeof err !== "object" || err === null) return false;
+	const { code, message } = err as { code?: string; message?: string };
+	// A dangling reference on INSERT/UPDATE reports FOREIGNKEY directly.
+	if (code === "SQLITE_CONSTRAINT_FOREIGNKEY") return true;
+	// SQLite implements ON DELETE RESTRICT as an internal trigger, so a delete
+	// blocked by a referencing row surfaces as TRIGGER instead. The message is
+	// checked too, so an unrelated trigger failure is not swallowed here.
+	return code === "SQLITE_CONSTRAINT_TRIGGER" && /FOREIGN KEY/i.test(message ?? "");
 }
 
-/** `timestamptz` → ISO string; unset → `""`. */
-function toIso(value: Date | null): string {
-	return value ? value.toISOString() : "";
+/** Stored ISO-8601 text → the same string; unset → `""`. */
+function toIso(value: string | null): string {
+	if (!value) return "";
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
 function toArray<T>(value: T | T[] | undefined): T[] {
@@ -278,16 +452,16 @@ export function institutionScope(user: ActingUser, p: ParamList["p"], alias = "i
 // users repository
 // ---------------------------------------------------------------------------
 
-/** A `users` row as Postgres returns it. */
-interface UserDbRow extends QueryResultRow {
+/** A `users` row as SQLite returns it. */
+interface UserDbRow {
 	id: string;
 	email: string;
 	name: string | null;
 	role: Role;
 	institution_id: string | null;
 	password_hash: string;
-	created_at: Date;
-	updated_at: Date;
+	created_at: string;
+	updated_at: string;
 }
 
 /** `UserRecord` plus the password hash — only the auth paths may see this. */
@@ -308,8 +482,8 @@ function toUserRecord(row: UserDbRow): UserRecord {
 		name: row.name ?? "",
 		role: row.role,
 		institutionId: row.institution_id ?? "",
-		created: row.created_at.toISOString(),
-		updated: row.updated_at.toISOString(),
+		created: toIso(row.created_at),
+		updated: toIso(row.updated_at),
 	};
 }
 
@@ -360,67 +534,60 @@ export interface UsersRepository {
 
 export const users: UsersRepository = {
 	async findByEmail(email: string): Promise<UserAuthRow | null> {
-		const result = await query<UserDbRow>(
-			`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE email = lower($1) LIMIT 1`,
+		const row = selectOne<UserDbRow>(
+			`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE email = lower(?) LIMIT 1`,
 			[email],
 		);
-		const row = result.rows[0];
 		if (!row) return null;
 		return { ...toUserRecord(row), passwordHash: row.password_hash };
 	},
 
 	async findById(id: string): Promise<UserRecord | null> {
-		// Guard the uuid cast: a malformed id must read as "no such user", not
-		// as a 500 from Postgres.
+		// Guard the id: a malformed one must read as "no such user", not as an
+		// error from the driver.
 		if (!isUuid(id)) return null;
-		const result = await query<UserDbRow>(
-			`SELECT ${USER_COLUMNS} FROM users WHERE id = $1 LIMIT 1`,
-			[id],
-		);
-		const row = result.rows[0];
+		const row = selectOne<UserDbRow>(`SELECT ${USER_COLUMNS} FROM users WHERE id = ? LIMIT 1`, [
+			id,
+		]);
 		return row ? toUserRecord(row) : null;
 	},
 
 	async findSessionUser(id: string): Promise<UserAuthRow | null> {
 		if (!isUuid(id)) return null;
-		const result = await query<UserDbRow>(
-			`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE id = $1 LIMIT 1`,
+		const row = selectOne<UserDbRow>(
+			`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE id = ? LIMIT 1`,
 			[id],
 		);
-		const row = result.rows[0];
 		return row ? { ...toUserRecord(row), passwordHash: row.password_hash } : null;
 	},
 
 	async count(user: ActingUser): Promise<number> {
 		const { params, p } = paramList();
-		const actorId = p(user.id);
-		const actorRole = p(user.role);
-		const actorInstitution = p(user.institutionId);
 		// §6.2 users list/view: self ∨ admin ∨ coordinator ∨ own institution.
 		const scope = [
-			`id = NULLIF(${actorId}, '')::uuid`,
-			`${actorRole}::text IN ('admin', 'coordinator')`,
-			`institution_id = NULLIF(${actorInstitution}, '')::uuid`,
+			`id = NULLIF(${p(user.id)}, '')`,
+			`${p(user.role)} IN ('admin', 'coordinator')`,
+			`institution_id = NULLIF(${p(user.institutionId)}, '')`,
 		].join(" OR ");
-		const result = await query<{ count: number }>(
-			`SELECT count(*)::int AS count FROM users WHERE ${scope}`,
+		const row = selectOne<{ count: number }>(
+			`SELECT count(*) AS count FROM users WHERE ${scope}`,
 			params,
 		);
-		return result.rows[0]?.count ?? 0;
+		return row?.count ?? 0;
 	},
 
 	async findPasswordHashById(id: string): Promise<string | null> {
 		if (!isUuid(id)) return null;
-		const result = await query<{ password_hash: string }>(
-			"SELECT password_hash FROM users WHERE id = $1 LIMIT 1",
+		const row = selectOne<{ password_hash: string }>(
+			"SELECT password_hash FROM users WHERE id = ? LIMIT 1",
 			[id],
 		);
-		return result.rows[0]?.password_hash ?? null;
+		return row?.password_hash ?? null;
 	},
 
 	async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
 		if (!isUuid(id)) return;
-		await query("UPDATE users SET password_hash = $2 WHERE id = $1", [id, passwordHash]);
+		prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, id);
 	},
 
 	async updatePasswordHashIfUnchanged(
@@ -429,37 +596,35 @@ export const users: UsersRepository = {
 		passwordHash: string,
 	): Promise<boolean> {
 		if (!isUuid(id)) return false;
-		const result = await query(
-			"UPDATE users SET password_hash = $3 WHERE id = $1 AND password_hash = $2 RETURNING id",
-			[id, expectedHash, passwordHash],
+		const rows = selectAll<{ id: string }>(
+			"UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ? RETURNING id",
+			[passwordHash, id, expectedHash],
 		);
-		return result.rows.length > 0;
+		return rows.length > 0;
 	},
 
 	async create(user: ActingUser, input: UserCreateInput): Promise<UserRecord | null> {
 		const { params, p } = paramList();
+		const id = p(randomUUID());
 		const email = p(input.email.toLowerCase());
 		const name = p(input.name);
 		const role = p(input.role);
 		const institutionId = p(input.institutionId ?? "");
 		const passwordHash = p(input.passwordHash);
-		const actorRole = p(user.role);
-		const actorInstitution = p(user.institutionId);
 
 		// §6.2 users create: admin, or (institution ∧ role = 'lead' ∧ own inst).
 		const scope = [
-			`${actorRole}::text = 'admin'`,
-			`(${actorRole}::text = 'institution' AND ${role} = 'lead' AND NULLIF(${institutionId}, '')::uuid = NULLIF(${actorInstitution}, '')::uuid)`,
+			`${p(user.role)} = 'admin'`,
+			`(${p(user.role)} = 'institution' AND ${p(input.role)} = 'lead' AND NULLIF(${p(input.institutionId ?? "")}, '') = NULLIF(${p(user.institutionId)}, ''))`,
 		].join(" OR ");
 
-		const result = await query<UserDbRow>(
-			`INSERT INTO users (email, name, role, institution_id, password_hash)
-			 SELECT ${email}, ${name}, ${role}, NULLIF(${institutionId}, '')::uuid, ${passwordHash}
+		const row = selectOne<UserDbRow>(
+			`INSERT INTO users (id, email, name, role, institution_id, password_hash)
+			 SELECT ${id}, ${email}, ${name}, ${role}, NULLIF(${institutionId}, ''), ${passwordHash}
 			 WHERE ${scope}
 			 RETURNING ${USER_COLUMNS}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toUserRecord(row) : null;
 	},
 
@@ -469,11 +634,11 @@ export const users: UsersRepository = {
 		const idParam = p(id);
 		const actorRole = p(user.role);
 		try {
-			const result = await query(
-				`DELETE FROM users WHERE id = ${idParam} AND ${actorRole}::text = 'admin' RETURNING id`,
+			const rows = selectAll<{ id: string }>(
+				`DELETE FROM users WHERE id = ${idParam} AND ${actorRole} = 'admin' RETURNING id`,
 				params,
 			);
-			return result.rows.length > 0;
+			return rows.length > 0;
 		} catch (err) {
 			// A user still leading a team cannot be deleted — report "not
 			// deleted" instead of surfacing the FK error as a 500.
@@ -488,21 +653,21 @@ export const users: UsersRepository = {
 // ---------------------------------------------------------------------------
 
 /** A `teams` row joined with its institution and leader (the `expand` shape). */
-interface TeamRow extends QueryResultRow {
+interface TeamRow {
 	id: string;
 	name: string;
 	institution_id: string;
 	leader_user_id: string;
 	team_code: string | null;
 	status: TeamStatus;
-	status_changed_at: Date | null;
-	questionnaire_completed: boolean;
+	status_changed_at: string | null;
+	questionnaire_completed: number;
 	idea_title: string | null;
 	idea_desc: string | null;
 	idea_tech_stack: string | null;
 	submission_file: string | null;
-	created_at: Date;
-	updated_at: Date;
+	created_at: string;
+	updated_at: string;
 	inst_id: string | null;
 	inst_name: string | null;
 	inst_district: string | null;
@@ -548,13 +713,13 @@ function toTeamView(row: TeamRow): TeamView {
 		teamCode: row.team_code ?? "",
 		status: row.status,
 		statusChangedAt: toIso(row.status_changed_at),
-		questionnaireCompleted: row.questionnaire_completed,
+		questionnaireCompleted: row.questionnaire_completed === 1,
 		ideaTitle: row.idea_title ?? "",
 		ideaDesc: row.idea_desc ?? "",
 		ideaTechStack: row.idea_tech_stack ?? "",
 		submissionFile: row.submission_file ?? "",
-		created: row.created_at.toISOString(),
-		updated: row.updated_at.toISOString(),
+		created: toIso(row.created_at),
+		updated: toIso(row.updated_at),
 	};
 
 	if (row.inst_id) {
@@ -658,7 +823,7 @@ export interface TeamsRepository {
 	/** Create a team. Null when the acting user may not (§6.2 create rule). */
 	create(user: ActingUser, input: TeamCreateInput): Promise<TeamView | null>;
 	/**
-	 * Update with the optimistic lock: `WHERE id = $1 AND status = $expected`.
+	 * Update with the optimistic lock: `WHERE id = ? AND status = ?expected`.
 	 * Null means "no row matched" — the caller turns that into the 409.
 	 */
 	update(
@@ -680,26 +845,26 @@ function teamWhere(user: ActingUser, options: TeamListOptions, p: ParamList["p"]
 
 	const requested = toArray(options.institutionId);
 	const institutionIds = requested.filter(isUuid);
-	// Every id was malformed — read as "no match" rather than letting the
-	// ::uuid[] cast raise 22P02.
+	// Every id was malformed — read as "no match" rather than letting a
+	// malformed value reach the query.
 	if (requested.length > 0 && institutionIds.length === 0) return null;
 	if (institutionIds.length > 0) {
-		where.push(`t.institution_id = ANY(${p(institutionIds)}::uuid[])`);
+		where.push(`t.institution_id IN (${inClause(institutionIds, p)})`);
 	}
 
 	const statuses = toArray(options.status);
 	if (statuses.length > 0) {
-		where.push(`t.status = ANY(${p(statuses)}::text[])`);
+		where.push(`t.status IN (${inClause(statuses, p)})`);
 	}
 
 	if (options.q) {
-		const pattern = p(containsPattern(options.q));
-		// Search covers the team, its lead and its institution — the joins are
-		// already in TEAM_FROM, so this costs nothing extra.
+		// SQLite's LIKE is case-insensitive for ASCII, which is what ILIKE gave
+		// us. Search covers the team, its lead and its institution — the joins
+		// are already in TEAM_FROM, so this costs nothing extra.
+		const like = (column: string) =>
+			`${column} LIKE ${p(containsPattern(options.q ?? ""))} ESCAPE '\\'`;
 		where.push(
-			`(t.name ILIKE ${pattern} ESCAPE '\\' OR t.team_code ILIKE ${pattern} ESCAPE '\\'
-				OR u.name ILIKE ${pattern} ESCAPE '\\' OR u.email ILIKE ${pattern} ESCAPE '\\'
-				OR i.name ILIKE ${pattern} ESCAPE '\\')`,
+			`(${like("t.name")} OR ${like("t.team_code")} OR ${like("u.name")} OR ${like("u.email")} OR ${like("i.name")})`,
 		);
 	}
 
@@ -715,18 +880,16 @@ export const teams: TeamsRepository = {
 		const whereSql = where.join(" AND ");
 		const { page, perPage, offset } = normalizePaging(options.page, options.perPage);
 
-		const countResult = await query<{ count: number }>(
-			`SELECT count(*)::int AS count ${TEAM_FROM} WHERE ${whereSql}`,
+		const countRow = selectOne<{ count: number }>(
+			`SELECT count(*) AS count ${TEAM_FROM} WHERE ${whereSql}`,
 			params,
 		);
-		const totalItems = countResult.rows[0]?.count ?? 0;
+		const totalItems = countRow?.count ?? 0;
 
-		const limitParam = `$${params.length + 1}`;
-		const offsetParam = `$${params.length + 2}`;
-		const rows = await query<TeamRow>(
+		const rows = selectAll<TeamRow>(
 			`SELECT ${TEAM_SELECT} ${TEAM_FROM} WHERE ${whereSql}
 			 ORDER BY ${orderByClause(options.sort, TEAM_SORT_COLUMNS, "-created")}
-			 LIMIT ${limitParam} OFFSET ${offsetParam}`,
+			 LIMIT ? OFFSET ?`,
 			[...params, perPage, offset],
 		);
 
@@ -735,7 +898,7 @@ export const teams: TeamsRepository = {
 			perPage,
 			totalItems,
 			totalPages: Math.ceil(totalItems / perPage),
-			items: rows.rows.map(toTeamView),
+			items: rows.map(toTeamView),
 		};
 	},
 
@@ -745,15 +908,15 @@ export const teams: TeamsRepository = {
 		const empty: TeamAggregate = { byStatus: {}, byInstitution: {}, total: 0, institutions: 0 };
 		if (!where) return empty;
 
-		const result = await query<{ status: TeamStatus; institution_id: string; count: number }>(
-			`SELECT t.status, t.institution_id, count(*)::int AS count ${TEAM_FROM}
+		const rows = selectAll<{ status: TeamStatus; institution_id: string; count: number }>(
+			`SELECT t.status, t.institution_id, count(*) AS count ${TEAM_FROM}
 			 WHERE ${where.join(" AND ")}
 			 GROUP BY t.status, t.institution_id`,
 			params,
 		);
 
 		const aggregate: TeamAggregate = { byStatus: {}, byInstitution: {}, total: 0, institutions: 0 };
-		for (const row of result.rows) {
+		for (const row of rows) {
 			aggregate.byStatus[row.status] = (aggregate.byStatus[row.status] ?? 0) + row.count;
 			aggregate.total += row.count;
 			let bucket = aggregate.byInstitution[row.institution_id];
@@ -774,11 +937,10 @@ export const teams: TeamsRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const scope = teamScope(user, p);
-		const result = await query<TeamRow>(
+		const row = selectOne<TeamRow>(
 			`SELECT ${TEAM_SELECT} ${TEAM_FROM} WHERE t.id = ${idParam} AND ${scope} LIMIT 1`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toTeamView(row) : null;
 	},
 
@@ -787,13 +949,12 @@ export const teams: TeamsRepository = {
 		const { params, p } = paramList();
 		const leaderParam = p(leaderUserId);
 		const scope = teamScope(user, p);
-		const result = await query<TeamRow>(
+		const row = selectOne<TeamRow>(
 			`SELECT ${TEAM_SELECT} ${TEAM_FROM}
 			 WHERE t.leader_user_id = ${leaderParam} AND ${scope}
 			 ORDER BY t.created_at DESC LIMIT 1`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toTeamView(row) : null;
 	},
 
@@ -801,24 +962,23 @@ export const teams: TeamsRepository = {
 		if (!isUuid(institutionId)) return 0;
 		const { params, p } = paramList();
 		const institutionParam = p(institutionId);
-		const actorRole = p(user.role);
-		const actorInstitution = p(user.institutionId);
 		const scope = [
-			`${actorRole}::text IN ('admin', 'coordinator')`,
-			`NULLIF(${actorInstitution}, '')::uuid = ${institutionParam}::uuid`,
+			`${p(user.role)} IN ('admin', 'coordinator')`,
+			`NULLIF(${p(user.institutionId)}, '') = ${p(institutionId)}`,
 		].join(" OR ");
-		const result = await query<{ count: number }>(
-			`SELECT count(*)::int AS count FROM teams t
-			 WHERE t.institution_id = ${institutionParam}::uuid AND (${scope})`,
+		const row = selectOne<{ count: number }>(
+			`SELECT count(*) AS count FROM teams t
+			 WHERE t.institution_id = ${institutionParam} AND (${scope})`,
 			params,
 		);
-		return result.rows[0]?.count ?? 0;
+		return row?.count ?? 0;
 	},
 
 	async create(user: ActingUser, input: TeamCreateInput): Promise<TeamView | null> {
 		if (!isUuid(input.institutionId) || !isUuid(input.leaderUserId)) return null;
 
 		const { params, p } = paramList();
+		const id = p(randomUUID());
 		const name = p(input.name);
 		const institutionId = p(input.institutionId);
 		const leaderUserId = p(input.leaderUserId);
@@ -831,32 +991,27 @@ export const teams: TeamsRepository = {
 		const ideaTechStack = p(input.ideaTechStack ?? "");
 		const submissionFile = p(input.submissionFile ?? "");
 
-		const actorRole = p(user.role);
-		const actorInstitution = p(user.institutionId);
-		const actorId = p(user.id);
-
 		// §6.2 teams create: admin, or (institution ∧ own inst ∧ status invited),
 		// or (lead ∧ own inst ∧ leader = self ∧ status registered).
 		const scope = [
-			`${actorRole}::text = 'admin'`,
-			`(${actorRole}::text = 'institution' AND NULLIF(${actorInstitution}, '')::uuid = ${institutionId}::uuid AND ${status} = 'invited')`,
-			`(${actorRole}::text = 'lead' AND NULLIF(${actorInstitution}, '')::uuid = ${institutionId}::uuid AND ${leaderUserId}::uuid = NULLIF(${actorId}, '')::uuid AND ${status} = 'registered')`,
+			`${p(user.role)} = 'admin'`,
+			`(${p(user.role)} = 'institution' AND NULLIF(${p(user.institutionId)}, '') = ${p(input.institutionId)} AND ${p(input.status)} = 'invited')`,
+			`(${p(user.role)} = 'lead' AND NULLIF(${p(user.institutionId)}, '') = ${p(input.institutionId)} AND ${p(input.leaderUserId)} = NULLIF(${p(user.id)}, '') AND ${p(input.status)} = 'registered')`,
 		].join(" OR ");
 
-		const result = await query<{ id: string }>(
+		const created = selectOne<{ id: string }>(
 			`INSERT INTO teams (
-				name, institution_id, leader_user_id, team_code, status, status_changed_at,
+				id, name, institution_id, leader_user_id, team_code, status, status_changed_at,
 				questionnaire_completed, idea_title, idea_desc, idea_tech_stack, submission_file
 			 )
-			 SELECT ${name}, ${institutionId}::uuid, ${leaderUserId}::uuid, NULLIF(${teamCode}, ''),
-				${status}, ${statusChangedAt}::timestamptz, ${questionnaireCompleted}::boolean,
+			 SELECT ${id}, ${name}, ${institutionId}, ${leaderUserId}, NULLIF(${teamCode}, ''),
+				${status}, ${statusChangedAt}, ${questionnaireCompleted},
 				NULLIF(${ideaTitle}, ''), NULLIF(${ideaDesc}, ''), NULLIF(${ideaTechStack}, ''),
 				NULLIF(${submissionFile}, '')
 			 WHERE ${scope}
 			 RETURNING id`,
 			params,
 		);
-		const created = result.rows[0];
 		if (!created) return null;
 		return teams.getOne(user, created.id);
 	},
@@ -874,7 +1029,7 @@ export const teams: TeamsRepository = {
 		if (patch.name !== undefined) sets.push(`name = ${p(patch.name)}`);
 		if (patch.teamCode !== undefined) sets.push(`team_code = NULLIF(${p(patch.teamCode)}, '')`);
 		if (patch.questionnaireCompleted !== undefined) {
-			sets.push(`questionnaire_completed = ${p(patch.questionnaireCompleted)}::boolean`);
+			sets.push(`questionnaire_completed = ${p(patch.questionnaireCompleted)}`);
 		}
 		if (patch.ideaTitle !== undefined) sets.push(`idea_title = NULLIF(${p(patch.ideaTitle)}, '')`);
 		if (patch.ideaDesc !== undefined) sets.push(`idea_desc = NULLIF(${p(patch.ideaDesc)}, '')`);
@@ -887,24 +1042,24 @@ export const teams: TeamsRepository = {
 		if (patch.status !== undefined) {
 			sets.push(`status = ${p(patch.status)}`);
 			// §6.1: status_changed_at is written by the app, never by a trigger.
-			sets.push(
-				`status_changed_at = ${p(patch.statusChangedAt ?? new Date().toISOString())}::timestamptz`,
-			);
+			sets.push(`status_changed_at = ${p(patch.statusChangedAt ?? new Date().toISOString())}`);
 		}
 
 		if (sets.length === 0) return teams.getOne(user, id);
 
 		const idParam = p(id);
+		// The UPDATE target is the table itself, so the scope predicate is
+		// qualified with the table name rather than the `t` join alias.
 		const where = [`id = ${idParam}`, teamScope(user, p, "teams")];
 		if (options.expectedStatus) {
 			where.push(`status = ${p(options.expectedStatus)}`);
 		}
 
-		const result = await query<{ id: string }>(
+		const updated = selectOne<{ id: string }>(
 			`UPDATE teams SET ${sets.join(", ")} WHERE ${where.join(" AND ")} RETURNING id`,
 			params,
 		);
-		if (!result.rows[0]) return null;
+		if (!updated) return null;
 		return teams.getOne(user, id);
 	},
 
@@ -913,11 +1068,11 @@ export const teams: TeamsRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const actorRole = p(user.role);
-		const result = await query(
-			`DELETE FROM teams WHERE id = ${idParam} AND ${actorRole}::text = 'admin' RETURNING id`,
+		const rows = selectAll<{ id: string }>(
+			`DELETE FROM teams WHERE id = ${idParam} AND ${actorRole} = 'admin' RETURNING id`,
 			params,
 		);
-		return result.rows.length > 0;
+		return rows.length > 0;
 	},
 };
 
@@ -932,7 +1087,7 @@ export interface InstitutionView extends InstitutionRecord {
 	};
 }
 
-interface InstitutionRow extends QueryResultRow {
+interface InstitutionRow {
 	id: string;
 	name: string;
 	district: string | null;
@@ -940,8 +1095,8 @@ interface InstitutionRow extends QueryResultRow {
 	campus_lead_id: string | null;
 	max_teams: number | null;
 	status: string | null;
-	created_at: Date;
-	updated_at: Date;
+	created_at: string;
+	updated_at: string;
 	lead_id: string | null;
 	lead_name: string | null;
 	lead_email: string | null;
@@ -973,8 +1128,8 @@ function toInstitutionView(row: InstitutionRow): InstitutionView {
 		campusLeadId: row.campus_lead_id ?? "",
 		maxTeams: row.max_teams ?? 0,
 		status: row.status ?? "",
-		created: row.created_at.toISOString(),
-		updated: row.updated_at.toISOString(),
+		created: toIso(row.created_at),
+		updated: toIso(row.updated_at),
 	};
 	if (row.lead_id) {
 		institution.expand = {
@@ -1033,9 +1188,13 @@ export interface InstitutionsRepository {
 	 */
 	findByCode(user: ActingUser, code: string): Promise<InstitutionView | null>;
 	/**
-	 * Lock the institution row for the rest of the transaction and return its
-	 * capacity. Serialises the SEC-9 capacity check against concurrent
-	 * registrations, which a plain read under READ COMMITTED does not.
+	 * Read the institution's capacity inside the caller's transaction.
+	 *
+	 * Postgres needed `SELECT … FOR UPDATE` here to serialise the SEC-9 capacity
+	 * check against concurrent registrations. SQLite has no row locks, and none
+	 * are needed: `withTransaction` opens with `BEGIN IMMEDIATE`, so the whole
+	 * transaction already holds the database write lock and no other writer can
+	 * observe or change the count in between.
 	 */
 	lockForUpdate(user: ActingUser, id: string): Promise<{ maxTeams: number } | null>;
 	create(user: ActingUser, input: InstitutionCreateInput): Promise<InstitutionView | null>;
@@ -1056,25 +1215,24 @@ export const institutions: InstitutionsRepository = {
 		const where: string[] = [institutionScope(user, p)];
 
 		if (options.q) {
-			const pattern = p(containsPattern(options.q));
-			where.push(`(i.name ILIKE ${pattern} ESCAPE '\\' OR i.code ILIKE ${pattern} ESCAPE '\\')`);
+			const like = (column: string) =>
+				`${column} LIKE ${p(containsPattern(options.q ?? ""))} ESCAPE '\\'`;
+			where.push(`(${like("i.name")} OR ${like("i.code")})`);
 		}
 
 		const whereSql = where.join(" AND ");
 		const { page, perPage, offset } = normalizePaging(options.page, options.perPage);
 
-		const countResult = await query<{ count: number }>(
-			`SELECT count(*)::int AS count ${INSTITUTION_FROM} WHERE ${whereSql}`,
+		const countRow = selectOne<{ count: number }>(
+			`SELECT count(*) AS count ${INSTITUTION_FROM} WHERE ${whereSql}`,
 			params,
 		);
-		const totalItems = countResult.rows[0]?.count ?? 0;
+		const totalItems = countRow?.count ?? 0;
 
-		const limitParam = `$${params.length + 1}`;
-		const offsetParam = `$${params.length + 2}`;
-		const rows = await query<InstitutionRow>(
+		const rows = selectAll<InstitutionRow>(
 			`SELECT ${INSTITUTION_SELECT} ${INSTITUTION_FROM} WHERE ${whereSql}
 			 ORDER BY ${orderByClause(options.sort, INSTITUTION_SORT_COLUMNS, "name")}
-			 LIMIT ${limitParam} OFFSET ${offsetParam}`,
+			 LIMIT ? OFFSET ?`,
 			[...params, perPage, offset],
 		);
 
@@ -1083,7 +1241,7 @@ export const institutions: InstitutionsRepository = {
 			perPage,
 			totalItems,
 			totalPages: Math.ceil(totalItems / perPage),
-			items: rows.rows.map(toInstitutionView),
+			items: rows.map(toInstitutionView),
 		};
 	},
 
@@ -1092,11 +1250,10 @@ export const institutions: InstitutionsRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const scope = institutionScope(user, p);
-		const result = await query<InstitutionRow>(
+		const row = selectOne<InstitutionRow>(
 			`SELECT ${INSTITUTION_SELECT} ${INSTITUTION_FROM} WHERE i.id = ${idParam} AND ${scope} LIMIT 1`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toInstitutionView(row) : null;
 	},
 
@@ -1107,21 +1264,17 @@ export const institutions: InstitutionsRepository = {
 		if (!isUuid(campusLeadId)) return null;
 		const { params, p } = paramList();
 		const leadParam = p(campusLeadId);
-		const actorRole = p(user.role);
-		const actorInstitution = p(user.institutionId);
-		const actorId = p(user.id);
 		const scope = [
-			`${actorRole}::text IN ('admin', 'coordinator')`,
-			`i.id = NULLIF(${actorInstitution}, '')::uuid`,
-			`i.campus_lead_id = NULLIF(${actorId}, '')::uuid`,
+			`${p(user.role)} IN ('admin', 'coordinator')`,
+			`i.id = NULLIF(${p(user.institutionId)}, '')`,
+			`i.campus_lead_id = NULLIF(${p(user.id)}, '')`,
 		].join(" OR ");
-		const result = await query<InstitutionRow>(
+		const row = selectOne<InstitutionRow>(
 			`SELECT ${INSTITUTION_SELECT} ${INSTITUTION_FROM}
 			 WHERE i.campus_lead_id = ${leadParam} AND (${scope})
 			 LIMIT 1`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toInstitutionView(row) : null;
 	},
 
@@ -1129,13 +1282,12 @@ export const institutions: InstitutionsRepository = {
 		const { params, p } = paramList();
 		const codeParam = p(code);
 		const scope = institutionScope(user, p);
-		const result = await query<InstitutionRow>(
+		const row = selectOne<InstitutionRow>(
 			`SELECT ${INSTITUTION_SELECT} ${INSTITUTION_FROM}
 			 WHERE i.code = ${codeParam} AND ${scope}
 			 LIMIT 1`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toInstitutionView(row) : null;
 	},
 
@@ -1144,16 +1296,16 @@ export const institutions: InstitutionsRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const scope = institutionScope(user, p);
-		const result = await query<{ max_teams: number | null }>(
-			`SELECT i.max_teams FROM institutions i WHERE i.id = ${idParam} AND ${scope} FOR UPDATE`,
+		const row = selectOne<{ max_teams: number | null }>(
+			`SELECT i.max_teams FROM institutions i WHERE i.id = ${idParam} AND ${scope}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? { maxTeams: row.max_teams ?? 0 } : null;
 	},
 
 	async create(user: ActingUser, input: InstitutionCreateInput): Promise<InstitutionView | null> {
 		const { params, p } = paramList();
+		const id = p(randomUUID());
 		const name = p(input.name);
 		const district = p(input.district ?? "");
 		const code = p(input.code);
@@ -1162,15 +1314,14 @@ export const institutions: InstitutionsRepository = {
 		const status = p(input.status ?? "active");
 		const actorRole = p(user.role);
 
-		const result = await query<{ id: string }>(
-			`INSERT INTO institutions (name, district, code, campus_lead_id, max_teams, status)
-			 SELECT ${name}, NULLIF(${district}, ''), ${code}, NULLIF(${campusLeadId}, '')::uuid,
-				${maxTeams}::int, ${status}
-			 WHERE ${actorRole}::text = 'admin'
+		const created = selectOne<{ id: string }>(
+			`INSERT INTO institutions (id, name, district, code, campus_lead_id, max_teams, status)
+			 SELECT ${id}, ${name}, NULLIF(${district}, ''), ${code}, NULLIF(${campusLeadId}, ''),
+				${maxTeams}, ${status}
+			 WHERE ${actorRole} = 'admin'
 			 RETURNING id`,
 			params,
 		);
-		const created = result.rows[0];
 		if (!created) return null;
 		return institutions.getOne(user, created.id);
 	},
@@ -1188,22 +1339,22 @@ export const institutions: InstitutionsRepository = {
 		if (patch.district !== undefined) sets.push(`district = NULLIF(${p(patch.district)}, '')`);
 		if (patch.code !== undefined) sets.push(`code = ${p(patch.code)}`);
 		if (patch.campusLeadId !== undefined) {
-			sets.push(`campus_lead_id = NULLIF(${p(patch.campusLeadId)}, '')::uuid`);
+			sets.push(`campus_lead_id = NULLIF(${p(patch.campusLeadId)}, '')`);
 		}
-		if (patch.maxTeams !== undefined) sets.push(`max_teams = ${p(patch.maxTeams)}::int`);
+		if (patch.maxTeams !== undefined) sets.push(`max_teams = ${p(patch.maxTeams)}`);
 		if (patch.status !== undefined) sets.push(`status = ${p(patch.status)}`);
 
 		if (sets.length === 0) return institutions.getOne(user, id);
 
 		const idParam = p(id);
 		const actorRole = p(user.role);
-		const result = await query<{ id: string }>(
+		const updated = selectOne<{ id: string }>(
 			`UPDATE institutions SET ${sets.join(", ")}
-			 WHERE id = ${idParam} AND ${actorRole}::text = 'admin'
+			 WHERE id = ${idParam} AND ${actorRole} = 'admin'
 			 RETURNING id`,
 			params,
 		);
-		if (!result.rows[0]) return null;
+		if (!updated) return null;
 		return institutions.getOne(user, id);
 	},
 
@@ -1213,11 +1364,11 @@ export const institutions: InstitutionsRepository = {
 		const idParam = p(id);
 		const actorRole = p(user.role);
 		try {
-			const result = await query(
-				`DELETE FROM institutions WHERE id = ${idParam} AND ${actorRole}::text = 'admin' RETURNING id`,
+			const rows = selectAll<{ id: string }>(
+				`DELETE FROM institutions WHERE id = ${idParam} AND ${actorRole} = 'admin' RETURNING id`,
 				params,
 			);
-			return result.rows.length > 0;
+			return rows.length > 0;
 		} catch (err) {
 			// An institution that still owns teams cannot be deleted — report
 			// "not deleted" instead of surfacing the FK error as a 500.
@@ -1231,7 +1382,7 @@ export const institutions: InstitutionsRepository = {
 // members repository
 // ---------------------------------------------------------------------------
 
-interface MemberRow extends QueryResultRow {
+interface MemberRow {
 	id: string;
 	team_id: string;
 	full_name: string;
@@ -1239,13 +1390,28 @@ interface MemberRow extends QueryResultRow {
 	phone: string | null;
 	gender: string | null;
 	role: string | null;
-	created_at: Date;
-	updated_at: Date;
+	created_at: string;
+	updated_at: string;
 }
 
-const MEMBER_SELECT = `
-	m.id, m.team_id, m.full_name, m.email, m.phone, m.gender, m.role,
-	m.created_at, m.updated_at`;
+/**
+ * Bare column list, so the same names work in a `SELECT … FROM members m`
+ * projection and in an `UPDATE members … RETURNING` clause (which has no alias).
+ */
+const MEMBER_COLUMNS = [
+	"id",
+	"team_id",
+	"full_name",
+	"email",
+	"phone",
+	"gender",
+	"role",
+	"created_at",
+	"updated_at",
+];
+
+const MEMBER_SELECT = MEMBER_COLUMNS.map((column) => `m.${column}`).join(", ");
+const MEMBER_RETURNING = MEMBER_COLUMNS.join(", ");
 
 const MEMBER_FROM = `
 	FROM members m
@@ -1267,8 +1433,8 @@ function toMemberRecord(row: MemberRow): MemberRecord {
 		phone: row.phone ?? "",
 		gender: row.gender ?? "",
 		role: row.role ?? "",
-		created: row.created_at.toISOString(),
-		updated: row.updated_at.toISOString(),
+		created: toIso(row.created_at),
+		updated: toIso(row.updated_at),
 	};
 }
 
@@ -1336,13 +1502,13 @@ export const members: MembersRepository = {
 		const where: string[] = [teamScope(user, p)];
 
 		// Ids arrive from query params, so a malformed one must read as "no
-		// match" rather than reaching the ::uuid cast.
+		// match" rather than reaching the query.
 		if (options.teamId) {
 			if (!isUuid(options.teamId)) return emptyList();
 			where.push(`m.team_id = ${p(options.teamId)}`);
 		}
 		const teamIds = (options.teamIds ?? []).filter(isUuid);
-		if (teamIds.length > 0) where.push(`m.team_id = ANY(${p(teamIds)}::uuid[])`);
+		if (teamIds.length > 0) where.push(`m.team_id IN (${inClause(teamIds, p)})`);
 		if (options.institutionId) {
 			if (!isUuid(options.institutionId)) return emptyList();
 			where.push(`t.institution_id = ${p(options.institutionId)}`);
@@ -1351,18 +1517,16 @@ export const members: MembersRepository = {
 		const whereSql = where.join(" AND ");
 		const { page, perPage, offset } = normalizePaging(options.page, options.perPage);
 
-		const countResult = await query<{ count: number }>(
-			`SELECT count(*)::int AS count ${MEMBER_FROM} WHERE ${whereSql}`,
+		const countRow = selectOne<{ count: number }>(
+			`SELECT count(*) AS count ${MEMBER_FROM} WHERE ${whereSql}`,
 			params,
 		);
-		const totalItems = countResult.rows[0]?.count ?? 0;
+		const totalItems = countRow?.count ?? 0;
 
-		const limitParam = `$${params.length + 1}`;
-		const offsetParam = `$${params.length + 2}`;
-		const rows = await query<MemberRow>(
+		const rows = selectAll<MemberRow>(
 			`SELECT ${MEMBER_SELECT} ${MEMBER_FROM} WHERE ${whereSql}
 			 ORDER BY ${orderByClause(options.sort, MEMBER_SORT_COLUMNS, "-created")}
-			 LIMIT ${limitParam} OFFSET ${offsetParam}`,
+			 LIMIT ? OFFSET ?`,
 			[...params, perPage, offset],
 		);
 
@@ -1371,7 +1535,7 @@ export const members: MembersRepository = {
 			perPage,
 			totalItems,
 			totalPages: Math.ceil(totalItems / perPage),
-			items: rows.rows.map(toMemberRecord),
+			items: rows.map(toMemberRecord),
 		};
 	},
 
@@ -1379,66 +1543,70 @@ export const members: MembersRepository = {
 		const ids = teamIds.filter(isUuid);
 		if (ids.length === 0) return {};
 		const { params, p } = paramList();
-		const idsParam = p(ids);
+		const idsParam = inClause(ids, p);
 		const scope = teamScope(user, p);
-		const result = await query<{ team_id: string; count: number }>(
-			`SELECT m.team_id, count(*)::int AS count ${MEMBER_FROM}
-			 WHERE m.team_id = ANY(${idsParam}::uuid[]) AND (${scope})
+		const rows = selectAll<{ team_id: string; count: number }>(
+			`SELECT m.team_id, count(*) AS count ${MEMBER_FROM}
+			 WHERE m.team_id IN (${idsParam}) AND (${scope})
 			 GROUP BY m.team_id`,
 			params,
 		);
 		const counts: Record<string, number> = {};
-		for (const row of result.rows) counts[row.team_id] = row.count;
+		for (const row of rows) counts[row.team_id] = row.count;
 		return counts;
 	},
 
 	async create(user: ActingUser, input: MemberCreateInput): Promise<MemberRecord | null> {
 		if (!isUuid(input.teamId)) return null;
 		const { params, p } = paramList();
-		const teamId = p(input.teamId);
+		// Bind order must match the order the placeholders appear in the SQL:
+		// the SELECT list first, then the WHERE clause that follows the FROM.
+		const id = p(randomUUID());
 		const fullName = p(input.fullName);
 		const email = p(input.email.toLowerCase());
 		const phone = p(input.phone ?? "");
 		const gender = p(input.gender ?? "");
 		const role = p(input.role ?? "");
+		const teamId = p(input.teamId);
 		const scope = memberCreateScope(user, p);
 
-		const result = await query<MemberRow>(
-			`INSERT INTO members (team_id, full_name, email, phone, gender, role)
-			 SELECT t.id, ${fullName}, ${email}, NULLIF(${phone}, ''), NULLIF(${gender}, ''),
+		const row = selectOne<MemberRow>(
+			`INSERT INTO members (id, team_id, full_name, email, phone, gender, role)
+			 SELECT ${id}, t.id, ${fullName}, ${email}, NULLIF(${phone}, ''), NULLIF(${gender}, ''),
 				NULLIF(${role}, '')
 			 FROM teams t
-			 WHERE t.id = ${teamId}::uuid AND (${scope})
-			 RETURNING id, team_id, full_name, email, phone, gender, role, created_at, updated_at`,
+			 WHERE t.id = ${teamId} AND (${scope})
+			 RETURNING ${MEMBER_RETURNING}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toMemberRecord(row) : null;
 	},
 
 	async createMany(user: ActingUser, teamId: string, rows: MemberCreateInput[]): Promise<number> {
 		if (!isUuid(teamId) || rows.length === 0) return 0;
 		const { params, p } = paramList();
+		// One bound row per member; the CTE replaces Postgres's parallel
+		// `unnest(...)` arrays, which SQLite has no equivalent for.
+		const values = rows
+			.map(
+				(row) =>
+					`(${p(randomUUID())}, ${p(row.fullName)}, ${p(row.email.toLowerCase())}, ${p(row.phone ?? "")}, ${p(row.gender ?? "")}, ${p(row.role ?? "")})`,
+			)
+			.join(", ");
 		const teamIdParam = p(teamId);
-		const fullNames = p(rows.map((row) => row.fullName));
-		const emails = p(rows.map((row) => row.email.toLowerCase()));
-		const phones = p(rows.map((row) => row.phone ?? ""));
-		const genders = p(rows.map((row) => row.gender ?? ""));
-		const roles = p(rows.map((row) => row.role ?? ""));
 		const scope = memberCreateScope(user, p);
-		const result = await query(
-			`INSERT INTO members (team_id, full_name, email, phone, gender, role)
-			 SELECT t.id, v.full_name, v.email, NULLIF(v.phone, ''), NULLIF(v.gender, ''),
+
+		const written = selectAll<{ id: string }>(
+			`WITH v (id, full_name, email, phone, gender, role) AS (VALUES ${values})
+			 INSERT INTO members (id, team_id, full_name, email, phone, gender, role)
+			 SELECT v.id, t.id, v.full_name, v.email, NULLIF(v.phone, ''), NULLIF(v.gender, ''),
 				NULLIF(v.role, '')
-			 FROM teams t,
-				unnest(${fullNames}::text[], ${emails}::text[], ${phones}::text[],
-					${genders}::text[], ${roles}::text[])
-					AS v(full_name, email, phone, gender, role)
-			 WHERE t.id = ${teamIdParam}::uuid AND (${scope})
+			 FROM v, teams t
+			 WHERE t.id = ${teamIdParam} AND (${scope})
 			 RETURNING id`,
 			params,
 		);
-		return result.rows.length;
+		return written.length;
 	},
 
 	async deleteByTeam(user: ActingUser, teamId: string): Promise<number> {
@@ -1446,13 +1614,16 @@ export const members: MembersRepository = {
 		const { params, p } = paramList();
 		const teamIdParam = p(teamId);
 		const scope = memberWriteScope(user, p);
-		const result = await query(
-			`DELETE FROM members m USING teams t
-			 WHERE m.team_id = ${teamIdParam}::uuid AND t.id = m.team_id AND (${scope})
-			 RETURNING m.id`,
+		// SQLite has no `DELETE … USING`; the correlated EXISTS is the same
+		// predicate against the parent team.
+		const rows = selectAll<{ id: string }>(
+			`DELETE FROM members
+			 WHERE team_id = ${teamIdParam}
+				AND EXISTS (SELECT 1 FROM teams t WHERE t.id = members.team_id AND (${scope}))
+			 RETURNING id`,
 			params,
 		);
-		return result.rows.length;
+		return rows.length;
 	},
 
 	async update(
@@ -1473,25 +1644,22 @@ export const members: MembersRepository = {
 		if (sets.length === 0) {
 			const idParam = p(id);
 			const scope = teamScope(user, p);
-			const current = await query<MemberRow>(
+			const current = selectOne<MemberRow>(
 				`SELECT ${MEMBER_SELECT} ${MEMBER_FROM} WHERE m.id = ${idParam} AND (${scope}) LIMIT 1`,
 				params,
 			);
-			const row = current.rows[0];
-			return row ? toMemberRecord(row) : null;
+			return current ? toMemberRecord(current) : null;
 		}
 
 		const idParam = p(id);
 		const scope = memberWriteScope(user, p);
-		const result = await query<MemberRow>(
-			`UPDATE members m SET ${sets.join(", ")}
-			 FROM teams t
-			 WHERE m.id = ${idParam} AND t.id = m.team_id AND (${scope})
-			 RETURNING m.id, m.team_id, m.full_name, m.email, m.phone, m.gender, m.role,
-				m.created_at, m.updated_at`,
+		const row = selectOne<MemberRow>(
+			`UPDATE members SET ${sets.join(", ")}
+			 WHERE id = ${idParam}
+				AND EXISTS (SELECT 1 FROM teams t WHERE t.id = members.team_id AND (${scope}))
+			 RETURNING ${MEMBER_RETURNING}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toMemberRecord(row) : null;
 	},
 
@@ -1500,13 +1668,14 @@ export const members: MembersRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const scope = memberWriteScope(user, p);
-		const result = await query(
-			`DELETE FROM members m USING teams t
-			 WHERE m.id = ${idParam} AND t.id = m.team_id AND (${scope})
-			 RETURNING m.id`,
+		const rows = selectAll<{ id: string }>(
+			`DELETE FROM members
+			 WHERE id = ${idParam}
+				AND EXISTS (SELECT 1 FROM teams t WHERE t.id = members.team_id AND (${scope}))
+			 RETURNING id`,
 			params,
 		);
-		return result.rows.length > 0;
+		return rows.length > 0;
 	},
 };
 
@@ -1533,7 +1702,7 @@ export async function listAllMembers(
 // questionnaire_responses repository
 // ---------------------------------------------------------------------------
 
-interface QuestionnaireRow extends QueryResultRow {
+interface QuestionnaireRow {
 	id: string;
 	team_id: string;
 	user_id: string;
@@ -1551,14 +1720,35 @@ interface QuestionnaireRow extends QueryResultRow {
 	expectations: string | null;
 	additional_info: string | null;
 	year_of_graduation: string | null;
-	created_at: Date;
-	updated_at: Date;
+	created_at: string;
+	updated_at: string;
 }
 
-const QUESTIONNAIRE_SELECT = `
-	q.id, q.team_id, q.user_id, q.age, q.gender, q.education, q.college_name, q.district,
-	q.skills, q.interests, q.challenges, q.experience, q.motivation, q.team_experience,
-	q.expectations, q.additional_info, q.year_of_graduation, q.created_at, q.updated_at`;
+/** Bare column list — usable in a `q.`-qualified SELECT and an unaliased RETURNING. */
+const QUESTIONNAIRE_COLUMNS = [
+	"id",
+	"team_id",
+	"user_id",
+	"age",
+	"gender",
+	"education",
+	"college_name",
+	"district",
+	"skills",
+	"interests",
+	"challenges",
+	"experience",
+	"motivation",
+	"team_experience",
+	"expectations",
+	"additional_info",
+	"year_of_graduation",
+	"created_at",
+	"updated_at",
+];
+
+const QUESTIONNAIRE_SELECT = QUESTIONNAIRE_COLUMNS.map((column) => `q.${column}`).join(", ");
+const QUESTIONNAIRE_RETURNING = QUESTIONNAIRE_COLUMNS.join(", ");
 
 const QUESTIONNAIRE_FROM = `
 	FROM questionnaire_responses q
@@ -1568,17 +1758,17 @@ const QUESTIONNAIRE_FROM = `
  * `questionnaire_responses` row → record.
  *
  * The answer columns are free-form (`[field: string]: unknown` in
- * `types.ts`), so the mapper is generic: snake → camel, dates → ISO, and
- * unset text → `""` / unset number → `0`, matching the old backend's defaults.
+ * `types.ts`), so the mapper is generic: snake → camel, and unset text → `""`
+ * / unset number → `0`, matching the old backend's defaults.
  */
 function toQuestionnaireRecord(row: QuestionnaireRow): QuestionnaireResponseRecord {
 	const record: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(row)) {
 		const name = toCamelCase(key);
-		if (value instanceof Date) {
-			record[name] = value.toISOString();
-		} else if (name === "age") {
+		if (name === "age") {
 			record[name] = value ?? 0;
+		} else if (name === "createdAt" || name === "updatedAt") {
+			record[name] = toIso(value as string | null);
 		} else {
 			record[name] = value ?? "";
 		}
@@ -1679,14 +1869,13 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 		const { params, p } = paramList();
 		const teamParam = p(teamId);
 		const scope = questionnaireScope(user, p);
-		const result = await query<QuestionnaireRow>(
+		const row = selectOne<QuestionnaireRow>(
 			`SELECT ${QUESTIONNAIRE_SELECT} ${QUESTIONNAIRE_FROM}
 			 WHERE q.team_id = ${teamParam} AND (${scope})
 			 ORDER BY q.created_at DESC
 			 LIMIT 1`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toQuestionnaireRecord(row) : null;
 	},
 
@@ -1697,35 +1886,34 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 		if (!isUuid(input.teamId) || !isUuid(input.userId)) return null;
 
 		const { params, p } = paramList();
-		const teamId = p(input.teamId);
+		// Bind order must match the order the placeholders appear in the SQL:
+		// the SELECT list first, then the WHERE clause that follows the FROM.
+		const id = p(randomUUID());
 		const userId = p(input.userId);
 		const values = QUESTIONNAIRE_FIELDS.map(([key]) => {
 			const value = input[key];
-			if (key === "age") return `${p(value ?? 0)}::double precision`;
+			if (key === "age") return p(value ?? 0);
 			return `NULLIF(${p(typeof value === "string" ? value : "")}, '')`;
 		});
+		const teamId = p(input.teamId);
 
 		// §6.2 questionnaire create: admin ∨ (institution ∧ own inst) ∨
 		// (lead ∧ own team ∧ userId = self).
-		const actorRole = p(user.role);
-		const actorInstitution = p(user.institutionId);
-		const actorId = p(user.id);
 		const scope = [
-			`${actorRole}::text = 'admin'`,
-			`(${actorRole}::text = 'institution' AND NULLIF(${actorInstitution}, '')::uuid = t.institution_id)`,
-			`(${actorRole}::text = 'lead' AND t.leader_user_id = ${actorId}::uuid AND ${userId}::uuid = ${actorId}::uuid)`,
+			`${p(user.role)} = 'admin'`,
+			`(${p(user.role)} = 'institution' AND NULLIF(${p(user.institutionId)}, '') = t.institution_id)`,
+			`(${p(user.role)} = 'lead' AND t.leader_user_id = ${p(user.id)} AND ${p(input.userId)} = ${p(user.id)})`,
 		].join(" OR ");
 
 		const columns = QUESTIONNAIRE_FIELDS.map(([, column]) => column).join(", ");
-		const result = await query<QuestionnaireRow>(
-			`INSERT INTO questionnaire_responses (team_id, user_id, ${columns})
-			 SELECT t.id, ${userId}::uuid, ${values.join(", ")}
+		const row = selectOne<QuestionnaireRow>(
+			`INSERT INTO questionnaire_responses (id, team_id, user_id, ${columns})
+			 SELECT ${id}, t.id, ${userId}, ${values.join(", ")}
 			 FROM teams t
-			 WHERE t.id = ${teamId}::uuid AND (${scope})
-			 RETURNING id, team_id, user_id, ${columns}, created_at, updated_at`,
+			 WHERE t.id = ${teamId} AND (${scope})
+			 RETURNING ${QUESTIONNAIRE_RETURNING}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toQuestionnaireRecord(row) : null;
 	},
 
@@ -1736,35 +1924,34 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 		if (!isUuid(input.teamId) || !isUuid(input.userId)) return null;
 
 		const { params, p } = paramList();
-		const teamId = p(input.teamId);
+		// Bind order must match the order the placeholders appear in the SQL:
+		// the SELECT list first, then the WHERE clause that follows the FROM.
+		const id = p(randomUUID());
 		const userId = p(input.userId);
 		const values = QUESTIONNAIRE_FIELDS.map(([key]) => {
 			const value = input[key];
-			if (key === "age") return `${p(value ?? 0)}::double precision`;
+			if (key === "age") return p(value ?? 0);
 			return `NULLIF(${p(typeof value === "string" ? value : "")}, '')`;
 		});
+		const teamId = p(input.teamId);
 
-		const actorRole = p(user.role);
-		const actorInstitution = p(user.institutionId);
-		const actorId = p(user.id);
 		const scope = [
-			`${actorRole}::text = 'admin'`,
-			`(${actorRole}::text = 'institution' AND NULLIF(${actorInstitution}, '')::uuid = t.institution_id)`,
-			`(${actorRole}::text = 'lead' AND t.leader_user_id = ${actorId}::uuid AND ${userId}::uuid = ${actorId}::uuid)`,
+			`${p(user.role)} = 'admin'`,
+			`(${p(user.role)} = 'institution' AND NULLIF(${p(user.institutionId)}, '') = t.institution_id)`,
+			`(${p(user.role)} = 'lead' AND t.leader_user_id = ${p(user.id)} AND ${p(input.userId)} = ${p(user.id)})`,
 		].join(" OR ");
 
 		const columns = QUESTIONNAIRE_FIELDS.map(([, column]) => column);
 		const assignments = columns.map((column) => `${column} = EXCLUDED.${column}`).join(", ");
-		const result = await query<QuestionnaireRow>(
-			`INSERT INTO questionnaire_responses (team_id, user_id, ${columns.join(", ")})
-			 SELECT t.id, ${userId}::uuid, ${values.join(", ")}
+		const row = selectOne<QuestionnaireRow>(
+			`INSERT INTO questionnaire_responses (id, team_id, user_id, ${columns.join(", ")})
+			 SELECT ${id}, t.id, ${userId}, ${values.join(", ")}
 			 FROM teams t
-			 WHERE t.id = ${teamId}::uuid AND (${scope})
+			 WHERE t.id = ${teamId} AND (${scope})
 			 ON CONFLICT (team_id) DO UPDATE SET ${assignments}
-			 RETURNING id, team_id, user_id, ${columns.join(", ")}, created_at, updated_at`,
+			 RETURNING ${QUESTIONNAIRE_RETURNING}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toQuestionnaireRecord(row) : null;
 	},
 
@@ -1781,7 +1968,7 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 			const value = patch[key];
 			if (value === undefined) continue;
 			if (key === "age") {
-				sets.push(`${column} = ${p(value)}::double precision`);
+				sets.push(`${column} = ${p(value)}`);
 			} else {
 				sets.push(`${column} = NULLIF(${p(value)}, '')`);
 			}
@@ -1790,25 +1977,26 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 		if (sets.length === 0) {
 			const idParam = p(id);
 			const scope = questionnaireScope(user, p);
-			const current = await query<QuestionnaireRow>(
+			const current = selectOne<QuestionnaireRow>(
 				`SELECT ${QUESTIONNAIRE_SELECT} ${QUESTIONNAIRE_FROM}
 				 WHERE q.id = ${idParam} AND (${scope}) LIMIT 1`,
 				params,
 			);
-			const row = current.rows[0];
-			return row ? toQuestionnaireRecord(row) : null;
+			return current ? toQuestionnaireRecord(current) : null;
 		}
 
 		const idParam = p(id);
 		const scope = questionnaireWriteScope(user, p);
-		const result = await query<QuestionnaireRow>(
-			`UPDATE questionnaire_responses q SET ${sets.join(", ")}
-			 FROM teams t
-			 WHERE q.id = ${idParam} AND t.id = q.team_id AND (${scope})
-			 RETURNING ${QUESTIONNAIRE_SELECT}`,
+		const row = selectOne<QuestionnaireRow>(
+			`UPDATE questionnaire_responses SET ${sets.join(", ")}
+			 WHERE id = ${idParam}
+				AND EXISTS (
+					SELECT 1 FROM teams t
+					WHERE t.id = questionnaire_responses.team_id AND (${scope})
+				)
+			 RETURNING ${QUESTIONNAIRE_RETURNING}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toQuestionnaireRecord(row) : null;
 	},
 
@@ -1817,13 +2005,13 @@ export const questionnaireResponses: QuestionnaireResponsesRepository = {
 		const { params, p } = paramList();
 		const idParam = p(id);
 		const actorRole = p(user.role);
-		const result = await query(
+		const rows = selectAll<{ id: string }>(
 			`DELETE FROM questionnaire_responses
-			 WHERE id = ${idParam} AND ${actorRole}::text = 'admin'
+			 WHERE id = ${idParam} AND ${actorRole} = 'admin'
 			 RETURNING id`,
 			params,
 		);
-		return result.rows.length > 0;
+		return rows.length > 0;
 	},
 };
 
@@ -1844,21 +2032,24 @@ export interface StatusTransitionRecord {
 	updated: string;
 }
 
-interface StatusTransitionRow extends QueryResultRow {
+interface StatusTransitionRow {
 	id: string;
 	team_id: string;
 	actor_user_id: string;
 	from_status: string;
 	to_status: string;
 	role: Role;
-	at: Date;
-	created_at: Date;
-	updated_at: Date;
+	at: string;
+	created_at: string;
+	updated_at: string;
 }
 
-const STATUS_TRANSITION_SELECT = `
-	s.id, s.team_id, s.actor_user_id, s.from_status, s.to_status, s.role, s.at,
-	s.created_at, s.updated_at`;
+/**
+ * Bare column list: this projection is used in an `INSERT … RETURNING`, where
+ * the target table has no alias.
+ */
+const STATUS_TRANSITION_RETURNING =
+	"id, team_id, actor_user_id, from_status, to_status, role, at, created_at, updated_at";
 
 function toStatusTransitionRecord(row: StatusTransitionRow): StatusTransitionRecord {
 	return {
@@ -1868,9 +2059,9 @@ function toStatusTransitionRecord(row: StatusTransitionRow): StatusTransitionRec
 		fromStatus: row.from_status,
 		toStatus: row.to_status,
 		role: row.role,
-		at: row.at.toISOString(),
-		created: row.created_at.toISOString(),
-		updated: row.updated_at.toISOString(),
+		at: toIso(row.at),
+		created: toIso(row.created_at),
+		updated: toIso(row.updated_at),
 	};
 }
 
@@ -1902,26 +2093,28 @@ export const statusTransitions: StatusTransitionsRepository = {
 	): Promise<StatusTransitionRecord | null> {
 		if (!isUuid(input.teamId) || !isUuid(user.id)) return null;
 		const { params, p } = paramList();
-		const teamId = p(input.teamId);
+		// Bind order must match the order the placeholders appear in the SQL:
+		// the SELECT list first, then the WHERE clause that follows the FROM.
+		const id = p(randomUUID());
 		const actorUserId = p(user.id);
 		const fromStatus = p(input.fromStatus);
 		const toStatus = p(input.toStatus);
 		const role = p(user.role);
 		const at = p(input.at ?? new Date().toISOString());
+		const teamId = p(input.teamId);
 
 		// §6.2: an audit row may only be appended for a team the actor can
 		// already see, so a forged team id cannot create one.
 		const scope = teamScope(user, p);
-		const result = await query<StatusTransitionRow>(
-			`INSERT INTO status_transitions (team_id, actor_user_id, from_status, to_status, role, at)
-			 SELECT t.id, ${actorUserId}::uuid, ${fromStatus}, ${toStatus}, ${role},
-				${at}::timestamptz
+		const row = selectOne<StatusTransitionRow>(
+			`INSERT INTO status_transitions
+				(id, team_id, actor_user_id, from_status, to_status, role, at)
+			 SELECT ${id}, t.id, ${actorUserId}, ${fromStatus}, ${toStatus}, ${role}, ${at}
 			 FROM teams t
-			 WHERE t.id = ${teamId}::uuid AND (${scope})
-			 RETURNING ${STATUS_TRANSITION_SELECT}`,
+			 WHERE t.id = ${teamId} AND (${scope})
+			 RETURNING ${STATUS_TRANSITION_RETURNING}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toStatusTransitionRecord(row) : null;
 	},
 };
@@ -1930,12 +2123,12 @@ export const statusTransitions: StatusTransitionsRepository = {
 // config repository
 // ---------------------------------------------------------------------------
 
-interface ConfigRow extends QueryResultRow {
+interface ConfigRow {
 	id: string;
 	key: string;
-	value: boolean;
-	created_at: Date;
-	updated_at: Date;
+	value: number;
+	created_at: string;
+	updated_at: string;
 }
 
 const CONFIG_SELECT = "id, key, value, created_at, updated_at";
@@ -1944,9 +2137,9 @@ function toConfigRecord(row: ConfigRow): ConfigRecord {
 	return {
 		id: row.id,
 		key: row.key,
-		value: row.value === true,
-		created: row.created_at.toISOString(),
-		updated: row.updated_at.toISOString(),
+		value: row.value === 1,
+		created: toIso(row.created_at),
+		updated: toIso(row.updated_at),
 	};
 }
 
@@ -1983,29 +2176,27 @@ export const config: ConfigRepository = {
 		// §6.2 config list/view is public — the login page reads it
 		// unauthenticated — so there is no actor to scope by.
 		if (!isFlagKey(key)) return null;
-		const result = await query<ConfigRow>(
-			`SELECT ${CONFIG_SELECT} FROM config WHERE key = $1 LIMIT 1`,
-			[key],
-		);
-		const row = result.rows[0];
+		const row = selectOne<ConfigRow>(`SELECT ${CONFIG_SELECT} FROM config WHERE key = ? LIMIT 1`, [
+			key,
+		]);
 		return row ? toConfigRecord(row) : null;
 	},
 
 	async upsert(user: ActingUser, key: string, value: boolean): Promise<ConfigRecord | null> {
 		if (!isFlagKey(key)) return null;
 		const { params, p } = paramList();
+		const id = p(randomUUID());
 		const keyParam = p(key);
 		const valueParam = p(value);
 		const actorRole = p(user.role);
-		const result = await query<ConfigRow>(
-			`INSERT INTO config (key, value)
-			 SELECT ${keyParam}, ${valueParam}::boolean
-			 WHERE ${actorRole}::text = 'admin'
+		const row = selectOne<ConfigRow>(
+			`INSERT INTO config (id, key, value)
+			 SELECT ${id}, ${keyParam}, ${valueParam}
+			 WHERE ${actorRole} = 'admin'
 			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
 			 RETURNING ${CONFIG_SELECT}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toConfigRecord(row) : null;
 	},
 
@@ -2014,13 +2205,12 @@ export const config: ConfigRepository = {
 		const { params, p } = paramList();
 		const keyParam = p(key);
 		const actorRole = p(user.role);
-		const result = await query<ConfigRow>(
+		const row = selectOne<ConfigRow>(
 			`UPDATE config SET value = NOT value
-			 WHERE key = ${keyParam} AND ${actorRole}::text = 'admin'
+			 WHERE key = ${keyParam} AND ${actorRole} = 'admin'
 			 RETURNING ${CONFIG_SELECT}`,
 			params,
 		);
-		const row = result.rows[0];
 		return row ? toConfigRecord(row) : null;
 	},
 };

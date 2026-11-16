@@ -62,3 +62,11 @@ screens/
 /*-before.png
 /*-after.png
 /*-final.png
+
+# SQLite runtime state (default SQLITE_PATH=./data/portal.db). The database file
+# and its WAL siblings are data, not source — never commit them, and never copy
+# a hot .db (use `VACUUM INTO`).
+data/
+*.db
+*.db-wal
+*.db-shm
