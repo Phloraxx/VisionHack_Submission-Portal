@@ -9,8 +9,6 @@
 		"target": "ES2022",
 		"module": "ES2022",
 		"moduleResolution": "bundler",
-		// server.ts is executed directly with node's type stripping, so its
-		// relative import must carry the .ts extension (TS5097 otherwise).
 		"allowImportingTsExtensions": true
 	}
 }
