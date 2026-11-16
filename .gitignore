@@ -16,6 +16,9 @@ test-results/
 # Logs
 *.log
 
+# Migration run artifacts (scripts/migrate-pb-to-pg.ts): id map + staged files
+migration-output/
+
 # One-off / ad-hoc scripts (only setup-pb.ts and tests/ are tracked)
 scripts/*.mjs
 scripts/*.ps1
