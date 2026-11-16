@@ -38,7 +38,7 @@ interface InstitutionRecord {
 }
 
 const PAGE_SIZE = 50;
-export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb, request }) => {
+export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, request }) => {
 	const url = new URL(request.url);
 	const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
 	const search = (url.searchParams.get("q") ?? "").trim();
@@ -139,7 +139,6 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 
 	// Member counts for the visible page only.
 	const memberCounts = await getMemberCountsForTeams(
-		pb,
 		teamsPage.items.map((t) => t.id),
 		user,
 	);

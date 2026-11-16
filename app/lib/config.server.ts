@@ -1,4 +1,3 @@
-import type PocketBase from "pocketbase";
 import { query } from "./db.server";
 
 /**
@@ -13,15 +12,11 @@ import { query } from "./db.server";
  * not phase gates (plan §6.3).
  *
  * ```ts
- * const config = await getConfig(pb);
+ * const config = await getConfig();
  * if (config.registration_open) { … }
  * ```
- *
- * `pb` is kept for call-site compatibility and never used — the flags come
- * from Postgres (plan §10.8).
  */
-export async function getConfig(pb: PocketBase): Promise<Record<string, boolean>> {
-	void pb;
+export async function getConfig(): Promise<Record<string, boolean>> {
 	const MAX_SAFE_LIST = 100;
 	// One row over the cap is enough to know the warning applies.
 	const result = await query<{ key: string; value: boolean }>(

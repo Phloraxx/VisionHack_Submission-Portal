@@ -51,7 +51,7 @@ import type { InstitutionRecord, MemberRecord, TeamStatus } from "~/lib/types";
 // Types
 // ---------------------------------------------------------------------------
 
-// Reuse InstitutionRecord from central types (extra fields ignored by PocketBase)
+// Reuse InstitutionRecord from central types (extra fields ignored)
 type Institution = InstitutionRecord;
 
 interface TeamWithExpand {
@@ -72,9 +72,9 @@ interface TeamWithExpand {
 // Loader
 // ---------------------------------------------------------------------------
 
-export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb }) => {
+export const loader = secureLoader({ roles: ["institution"] }, async ({ user }) => {
 	// Resolve this institution via the user's id (no full scan).
-	const institution = await getInstitutionForUser(pb, user.id);
+	const institution = await getInstitutionForUser(user.id);
 	if (!institution) {
 		throw new Response("Institution not found for this user", { status: 404 });
 	}
@@ -88,7 +88,7 @@ export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb
 			perPage: MAX_SAFE_LIST,
 			sort: "-created",
 		}),
-		getConfig(pb),
+		getConfig(),
 	]);
 	const institutionTeams = teamsResult.items;
 	if (teamsResult.totalItems > MAX_SAFE_LIST) {
@@ -138,8 +138,8 @@ class InviteError extends Error {
 
 export const action = secureAction(
 	{ roles: ["institution"] },
-	async ({ formData, user, db, pb, intent }) => {
-		const institution = await getInstitutionForUser(pb, user.id);
+	async ({ formData, user, db, intent }) => {
+		const institution = await getInstitutionForUser(user.id);
 		if (!institution) return fail({ error: "Institution not found", status: 404 });
 
 		switch (intent) {
@@ -264,12 +264,12 @@ export const action = secureAction(
 				}
 
 				const { teamId } = parsed.data;
-				const flags = await getConfig(pb);
+				const flags = await getConfig();
 				if (!flags.nomination_open) {
 					return fail({ error: "Shortlisting is currently closed", status: 403 });
 				}
 				const to: TeamStatus = intent === "shortlist" ? "shortlisted" : "registered";
-				const result = await transitionTeamStatus(pb, {
+				const result = await transitionTeamStatus({
 					teamId,
 					to,
 					role: "institution",

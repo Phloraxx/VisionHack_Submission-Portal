@@ -44,8 +44,6 @@ COPY --from=build --chown=apprunner:nodejs /app/node_modules ./node_modules
 COPY --from=build --chown=apprunner:nodejs /app/server.ts ./server.ts
 COPY --from=build --chown=apprunner:nodejs /app/package.json ./package.json
 
-# Copy the PocketBase schema setup script for post-deploy execution.
-COPY --from=build --chown=apprunner:nodejs /app/scripts/setup-pb.ts ./scripts/setup-pb.ts
 COPY --from=build --chown=apprunner:nodejs /app/tsconfig.json ./tsconfig.json
 
 USER apprunner

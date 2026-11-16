@@ -55,9 +55,6 @@ docs/
 !.dockerignore
 screens/
 
-# PocketBase hooks — not needed for deployment
-pb_hooks/
-
 # Browser tool screenshot artifacts
 /*-before.png
 /*-after.png

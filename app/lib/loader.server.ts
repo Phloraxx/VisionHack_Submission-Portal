@@ -1,5 +1,4 @@
 import * as Sentry from "@sentry/node";
-import type PocketBase from "pocketbase";
 import { data } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { requireRole } from "./auth.server";
@@ -11,9 +10,7 @@ import type { Role, UserRecord } from "./types";
  *
  * - `request` is the raw Request (rarely needed inside the handler)
  * - `user` is the authenticated user record
- * - `db` is the Postgres handle for ported routes
- * - `pb` is a fresh authenticated PocketBase client, kept for the routes
- *   that are not ported yet (plan §10.8)
+ * - `db` is the Postgres handle for the route's data reads
  * - `params` is the route's URL params (e.g. `teamId` from
  *   `/admin/teams/:teamId`)
  */
@@ -21,7 +18,6 @@ export interface LoaderContext {
 	request: Request;
 	user: UserRecord;
 	db: Db;
-	pb: PocketBase;
 	params: Record<string, string>;
 }
 
@@ -53,12 +49,10 @@ export function secureLoader<C extends LoaderContext = LoaderContext, R = unknow
 	return async ({ request, params }: LoaderFunctionArgs): Promise<R | ReturnType<typeof data>> => {
 		// 1. Auth + role — catch redirects and return JSON instead
 		let db: Db;
-		let pb: PocketBase;
 		let user: UserRecord;
 		try {
 			const auth = await requireRole(request, options.roles);
 			db = auth.db;
-			pb = auth.pb;
 			user = auth.user;
 		} catch (err) {
 			if (err instanceof Response) {
@@ -83,7 +77,6 @@ export function secureLoader<C extends LoaderContext = LoaderContext, R = unknow
 			request,
 			user,
 			db,
-			pb,
 			params: params as Record<string, string>,
 		} as C;
 

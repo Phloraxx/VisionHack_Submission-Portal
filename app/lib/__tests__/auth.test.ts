@@ -1,18 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearAuthCookie, getAuthFromCookie, setAuthCookie } from "../auth.server";
 
-const ORIG_PB_URL = process.env.POCKETBASE_URL;
 const ORIG_APP_URL = process.env.APP_URL;
 const ORIG_NODE_ENV = process.env.NODE_ENV;
 
 beforeEach(() => {
-	process.env.POCKETBASE_URL = "http://localhost:5173";
 	process.env.APP_URL = "https://visionhack.mulearn.org";
 	process.env.NODE_ENV = "test";
 });
 
 afterEach(() => {
-	process.env.POCKETBASE_URL = ORIG_PB_URL;
 	process.env.APP_URL = ORIG_APP_URL;
 	process.env.NODE_ENV = ORIG_NODE_ENV;
 });

@@ -29,8 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const searchQuery = (url.searchParams.get("q") || "").trim().slice(0, 100);
 
 	// Push the filter into Postgres instead of fetching everything and
-	// filtering in JS. `q` is the same `contains` match on name/team_code
-	// that PocketBase's `~` operator covered.
+	// filtering in JS. `q` is a `contains` match on name/team_code.
 	const MAX_SAFE_LIST = 500;
 	const filteredResult = await teams.list(auth.user, {
 		page: 1,

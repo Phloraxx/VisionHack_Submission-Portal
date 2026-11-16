@@ -1,5 +1,4 @@
 import * as Sentry from "@sentry/node";
-import type PocketBase from "pocketbase";
 import { data } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import type { ZodSchema } from "zod";
@@ -14,9 +13,7 @@ import { extractFieldErrors } from "./utils";
  *
  * - `request` is the raw Request (rarely needed inside the handler)
  * - `user` is the authenticated user record
- * - `db` is the Postgres handle for ported routes
- * - `pb` is a fresh authenticated PocketBase client, kept for the routes
- *   that are not ported yet (plan §10.8)
+ * - `db` is the Postgres handle for the route's data reads
  * - `formData` is the parsed form payload
  * - `intent` is the `intent` field from the form, normalized to lowercase
  * - `params` is the route's URL params (e.g. `teamId` from
@@ -26,7 +23,6 @@ export interface ActionContext {
 	request: Request;
 	user: UserRecord;
 	db: Db;
-	pb: PocketBase;
 	formData: FormData;
 	intent: string;
 	params: Record<string, string>;
@@ -90,14 +86,13 @@ function withTokenCookie(
  *     handler so multi-intent actions can `switch` on it.
  *
  * Rate limiting is intentionally NOT in the wrapper — it must run BEFORE
- * the body is read (so the wrapper can't apply it) and is configured
- * server-wide by PocketBase's built-in rules. If a per-route rate limit
- * is ever needed, do it inside the handler.
+ * the body is read (so the wrapper can't apply it). If a per-route rate
+ * limit is needed, do it inside the handler.
  *
  * ```ts
  * export const action = secureAction(
  *   { roles: ["lead"] },
- *   async ({ formData, user, pb, intent }) => {
+ *   async ({ formData, user, intent }) => {
  *     switch (intent) {
  *       case "withdraw":
  *         // ...
@@ -134,13 +129,11 @@ export function secureAction(
 		const originalToken = getAuthFromCookie(request);
 
 		let db: Db;
-		let pb: PocketBase;
 		let user: UserRecord;
 		let token: string;
 		try {
 			const auth = await requireRole(request, options.roles);
 			db = auth.db;
-			pb = auth.pb;
 			user = auth.user;
 			token = auth.token;
 		} catch (err) {
@@ -186,7 +179,6 @@ export function secureAction(
 				request,
 				user,
 				db,
-				pb,
 				formData,
 				intent: String(formData.get("intent") ?? "").toLowerCase(),
 				params: params as Record<string, string>,
@@ -223,7 +215,6 @@ export function secureAction(
 			request,
 			user,
 			db,
-			pb,
 			formData,
 			intent: String(formData.get("intent") ?? "").toLowerCase(),
 			params: params as Record<string, string>,

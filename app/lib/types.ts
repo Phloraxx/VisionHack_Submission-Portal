@@ -42,7 +42,7 @@ export interface TeamRecord {
 
 /**
  * Shape returned by loaders — raw `TeamRecord` plus `expand` fields
- * joined from PocketBase. Use this everywhere a component reads
+ * joined by the repository. Use this everywhere a component reads
  * `team.expand.*`.
  */
 export interface TeamView extends TeamRecord {

@@ -30,30 +30,30 @@ A team moves `invited → registered → shortlisted → submitted → selected 
 
 - **React Router v7** in framework mode (SSR, nested layouts, resource routes for the API)
 - **React 19**, **Tailwind v4**, Radix UI, `lucide-react`
-- **PocketBase** for records, file storage and rules; collection schema is provisioned by script, not by hand
+- **PostgreSQL** for records and rules; the schema lives in `postgres/schema.sql`, and submission files are stored on a local volume
 - **Zod** + `react-hook-form` for every form, validated again on the server
 - **Sentry** for server errors, **Resend** for status-change email
 - **Biome** for lint and format, **Vitest** for unit tests, **Playwright** for end-to-end
 
 ## Local setup
 
-You need Node 22 and a PocketBase instance.
+You need Node 22 and a PostgreSQL database.
 
 ```bash
 npm ci
-cp .env.example .env          # set POCKETBASE_URL and the admin credentials
-npm run setup:pb              # create collections, indexes and API rules
+cp .env.example .env          # set DATABASE_URL, APP_JWT_SECRET and UPLOADS_DIR
 npm run dev                   # http://localhost:5173
 ```
 
-`setup:pb` is idempotent: it creates missing collections, repairs drifted ones, and seeds the `config` record that holds the phase flags.
+Apply `postgres/schema.sql` to a fresh database before the first run.
 
 ## Configuration
 
 | Variable | Purpose |
 | --- | --- |
-| `POCKETBASE_URL` | PocketBase base URL, no trailing slash |
-| `POCKETBASE_ADMIN_EMAIL` / `POCKETBASE_ADMIN_PASSWORD` | Used only by `setup:pb` |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `APP_JWT_SECRET` | HS256 signing key for session and password-reset tokens, at least 32 bytes |
+| `UPLOADS_DIR` | Root of the submission-file volume |
 | `APP_URL` | Public base URL, used to build absolute links in email |
 | `ALLOWED_ORIGINS` | Extra allowed `Origin` values beyond the localhost dev ports |
 | `RESEND_API_KEY` | Transactional email; skipped with a console warning when unset |
@@ -77,11 +77,10 @@ The `Dockerfile` is a three-stage build (deps → build → runtime) producing a
 
 ## Security notes
 
-- Sessions are an httpOnly cookie with a one-hour lifetime; PocketBase rules read the role from the JWT claims.
+- Sessions are an httpOnly cookie with a one-hour lifetime; the role is read from the JWT claims and re-checked against the live user row on every request.
 - Every mutating action goes through a `secureAction` wrapper that validates the request origin, parses and validates the form against a Zod schema, and re-checks the session and role before the handler runs.
 - Login and password reset are rate-limited per client.
-- Uploads are restricted to PDF and PowerPoint, capped at 10 MB, and validated server-side before they reach PocketBase.
-- The PocketBase admin credentials are used by the setup script only. They are never read at request time.
+- Uploads are restricted to PDF and PowerPoint, capped at 10 MB, and validated server-side before they are written to the uploads volume.
 
 ## License
 

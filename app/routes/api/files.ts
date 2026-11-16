@@ -1,6 +1,6 @@
 /**
  * Submission-file download — streams a team's upload from `$UPLOADS_DIR`
- * after the same ownership checks PocketBase's `viewRule` applied.
+ * after the same ownership checks the old backend's view rule applied.
  *
  * GET /api/files/:collection/:recordId/:filename
  */
@@ -48,9 +48,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
 		return new Response("Invalid filename", { status: 400 });
 	}
-	// Team ids are uuids in Postgres (PocketBase used 15-char ids). The
-	// repository guards the uuid cast too, so a malformed id reads as
-	// "not found" rather than a 500.
+	// Team ids are uuids. The repository guards the uuid cast too, so a
+	// malformed id reads as "not found" rather than a 500.
 	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) {
 		return new Response("Not found", { status: 404 });
 	}
@@ -59,8 +58,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	// team's record. `teams.getOne` applies the §6.2 scope predicate in SQL
 	// (admin/coordinator: any team, institution: own institution, lead: own
 	// team), so an out-of-scope id reads as "not found" — the same answer
-	// PocketBase's `viewRule` gave. The explicit `canRead` check below stays
-	// as defence in depth.
+	// the old backend's view rule gave. The explicit `canRead` check below
+	// stays as defence in depth.
 	const team = await teams.getOne(user, recordId);
 	if (!team) {
 		return new Response("Not found", { status: 404 });

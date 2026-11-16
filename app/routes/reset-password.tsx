@@ -12,7 +12,7 @@ import { validateOrigin } from "~/lib/origin.server";
 import { resetPassword, verifyPasswordResetToken } from "~/lib/password-reset.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
 
-/** Minimum password length — matches PocketBase's default auth policy. */
+/** Minimum password length — matches the app's auth policy. */
 const MIN_PASSWORD_LENGTH = 8;
 
 export async function loader({ request }: LoaderFunctionArgs) {

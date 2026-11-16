@@ -43,13 +43,13 @@ interface LoaderData {
 
 export const loader = secureLoader(
 	{ roles: ["admin", "coordinator", "institution", "lead"] },
-	async ({ pb, user, params }) => {
+	async ({ user, params }) => {
 		const teamId = params.teamId as string;
 
 		switch (user.role) {
 			// Lead — can only access their own team
 			case "lead": {
-				const team = await getLeadTeam<TeamView>(pb, user.id, {
+				const team = await getLeadTeam<TeamView>(user.id, {
 					expand: "institutionId,leaderUserId",
 				});
 				if (!team) throw new Response("No team found", { status: 404 });
@@ -74,7 +74,7 @@ export const loader = secureLoader(
 			// Institution — scoped to their own institution's teams
 			case "institution": {
 				const [institution, team] = await Promise.all([
-					getInstitutionForUser(pb, user.id, { fields: "id" }),
+					getInstitutionForUser(user.id, { fields: "id" }),
 					teams.getOne(user, teamId),
 				]);
 
@@ -134,7 +134,7 @@ export const loader = secureLoader(
 
 export const action = secureAction(
 	{ roles: ["admin", "coordinator", "institution"] },
-	async ({ formData, user, pb, intent, params }) => {
+	async ({ formData, user, intent, params }) => {
 		const teamId = params.teamId ?? (formData.get("teamId") as string | null) ?? "";
 
 		if (intent === "transition") {
@@ -150,7 +150,7 @@ export const action = secureAction(
 			// Resolve institutionId for the institution IDOR guard.
 			let institutionId: string | undefined;
 			if (user.role === "institution") {
-				const inst = await getInstitutionForUser(pb, user.id, {
+				const inst = await getInstitutionForUser(user.id, {
 					fields: "id",
 				});
 				if (!inst) return fail({ error: "Institution not found", status: 404 });
@@ -162,7 +162,7 @@ export const action = secureAction(
 			// and scopes the read to the actor (§6.2).
 			const team = await teams.getOne(user, teamId);
 
-			const result = await transitionTeamStatus(pb, {
+			const result = await transitionTeamStatus({
 				teamId,
 				to: toStatus,
 				role: user.role,

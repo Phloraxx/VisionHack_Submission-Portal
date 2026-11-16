@@ -122,9 +122,9 @@ function toQuestionnaireData(record: QuestionnaireResponseRecord): Questionnaire
 // Loader
 // ---------------------------------------------------------------------------
 
-export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => {
+export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Team and config are independent — fetch in parallel.
-	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(pb, user.id), getConfig(pb)]);
+	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(user.id), getConfig()]);
 
 	const record = team ? await questionnaireResponses.getByTeam(user, team.id) : null;
 
@@ -142,8 +142,8 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 
 export const action = secureAction(
 	{ roles: ["lead"], schema: questionnaireSchema },
-	async ({ formData, user, pb, validated }) => {
-		const flags = await getConfig(pb);
+	async ({ formData, user, validated }) => {
+		const flags = await getConfig();
 		if (!flags.questionnaire_open) {
 			return fail({ error: "Questionnaire is currently closed", status: 403 });
 		}
@@ -164,7 +164,7 @@ export const action = secureAction(
 			additional_info: additionalInfo = "",
 		} = validated as QuestionnaireInput;
 		// Find team
-		const team = await getLeadTeam<TeamRecord>(pb, user.id, {
+		const team = await getLeadTeam<TeamRecord>(user.id, {
 			fields: "id,status,questionnaire_completed",
 		});
 		if (!team) return fail({ error: "Team not found", status: 404 });

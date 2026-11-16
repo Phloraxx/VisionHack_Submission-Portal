@@ -42,8 +42,8 @@ export function escapeCsv(str: string): string {
 
 /**
  * Keys excluded when flattening a questionnaire response for display or
- * CSV export. These are PocketBase system fields and relation ids that
- * aren't meaningful answers.
+ * CSV export. These are system fields and relation ids that aren't
+ * meaningful answers.
  */
 export const QUESTIONNAIRE_EXCLUDE_KEYS = [
 	"id",

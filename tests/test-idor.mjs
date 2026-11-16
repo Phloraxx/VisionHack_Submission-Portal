@@ -1,8 +1,7 @@
 /**
  * IDOR suite — app HTTP surface.
  *
- * Replaces the PocketBase REST version of this file. Every request now goes to
- * the app itself: log in through `POST /login` (form-encoded, Origin-checked)
+ * Every request goes to the app itself: log in through `POST /login` (form-encoded, Origin-checked)
  * with a manual cookie jar, then hit the app's own routes and resource routes.
  *
  * Prerequisites:
@@ -378,18 +377,20 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// Dropped from the PocketBase version
+// Dropped from the legacy REST suite
 // ---------------------------------------------------------------------------
 //
 // * `GET /api/collections/{teams,members,questionnaire_responses}/records` —
-//   PocketBase collection listing. The app exposes no equivalent JSON list
+//   the legacy backend's collection listing. The app exposes no equivalent
+//   JSON list
 //   endpoint; the same scoping is asserted through `/teams/<id>` (the roster
 //   and the questionnaire render server-side) and `/api/institutions`.
 // * `PATCH /api/collections/users/records/<id>` with `{ role: "admin" }` —
-//   PocketBase's update rule was the only thing rejecting a self-promotion.
+//   the legacy backend's update rule was the only thing rejecting a
+//   self-promotion.
 //   No app route writes `users.role`; the nearest write surface is the
 //   `/teams/<id>` action, covered by case 17.
-// * `GET <POCKETBASE_URL>/api/files/teams/<id>/<file>` — replaced by the app's
+// * `GET <legacy-base-url>/api/files/teams/<id>/<file>` — replaced by the app's
 //   own `/api/files/...` proxy (cases 8-10).
 //
 // Known gap: the fixture set has a single institution, so there is no

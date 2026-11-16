@@ -38,15 +38,15 @@ import type { TeamStatus, TeamView } from "~/lib/types";
 // Loader / Action
 // ---------------------------------------------------------------------------
 
-export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => {
+export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Team + config are independent — fetch in parallel.
 	const [team, config] = await Promise.all([
-		getLeadTeam<TeamView>(pb, user.id, {
+		getLeadTeam<TeamView>(user.id, {
 			expand: "institutionId",
 			fields:
 				"id,name,status,institutionId,leaderUserId,teamCode,idea_title,questionnaire_completed,status_changed_at,created,updated,expand.institutionId.name,expand.institutionId.district",
 		}),
-		getConfig(pb),
+		getConfig(),
 	]);
 
 	let institutionName = "";
@@ -98,12 +98,12 @@ export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => 
 	};
 });
 
-export const action = secureAction({ roles: ["lead"] }, async ({ user, pb, intent }) => {
+export const action = secureAction({ roles: ["lead"] }, async ({ user, intent }) => {
 	if (intent === "withdraw") {
-		const team = await getLeadTeam(pb, user.id, { fields: "id,status" });
+		const team = await getLeadTeam(user.id, { fields: "id,status" });
 		if (!team) return fail({ error: "Team not found", status: 404 });
 
-		const result = await transitionTeamStatus(pb, {
+		const result = await transitionTeamStatus({
 			teamId: team.id,
 			to: "withdrawn",
 			role: "lead",

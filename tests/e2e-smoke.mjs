@@ -1,7 +1,7 @@
 /**
  * Playwright smoke suite — public surfaces + auth boundaries.
  *
- * Covers flows that don't require a seeded PocketBase:
+ * Covers flows that don't require seeded data:
  *   - public pages render (login, forgot-password, 404)
  *   - auth gates redirect unauthenticated users to /login
  *   - role-based rejection (lead → admin route returns 403)

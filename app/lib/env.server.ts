@@ -15,8 +15,6 @@
 export const MIN_JWT_SECRET_BYTES = 32;
 
 export interface EnvConfig {
-	/** PocketBase base URL. Still required while unported routes use the SDK. */
-	POCKETBASE_URL: string;
 	/** PostgreSQL connection string, e.g. `postgres://user:pass@host:5432/db?sslmode=disable`. */
 	DATABASE_URL: string;
 	/** HS256 signing key for session and password-reset tokens. At least 32 bytes. */
@@ -65,7 +63,6 @@ export function getEnv(): EnvConfig {
 	if (envCache) return envCache;
 
 	const config: EnvConfig = {
-		POCKETBASE_URL: requireEnv("POCKETBASE_URL"),
 		DATABASE_URL: requireEnv("DATABASE_URL"),
 		APP_JWT_SECRET: requireJwtSecret(),
 		UPLOADS_DIR: requireEnv("UPLOADS_DIR"),

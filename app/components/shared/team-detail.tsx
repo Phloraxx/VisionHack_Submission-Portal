@@ -270,8 +270,8 @@ export default function TeamDetail({
 					</Card>
 
 					{/* Review notes form removed — there are no `notes`/`reviewed_by`
-              fields in the schema. To add review notes, add the fields
-              via setup-pb.ts first. */}
+              fields in the schema. To add review notes, add the fields to
+              the schema first. */}
 
 					{/* Institution & Lead */}
 					<Card>

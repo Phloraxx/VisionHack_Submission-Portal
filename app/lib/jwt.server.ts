@@ -3,8 +3,8 @@
  *
  * SECURITY MODEL: the app is now the only issuer. `signJwt` mints HS256
  * tokens with `APP_JWT_SECRET`; `verifyJwt` checks the signature, the
- * algorithm and the expiry before any claim is trusted. There is no
- * PocketBase round trip and no session table (docs/PG_PORT_PLAN.md §3.1).
+ * algorithm and the expiry before any claim is trusted. There is no network
+ * round trip and no session table (docs/PG_PORT_PLAN.md §3.1).
  *
  * `decodeJwtPayload` remains a *decode-only* helper for cheap claim reads
  * (e.g. `isExpiringSoon`). It must never be used to authorise a request —
@@ -39,11 +39,11 @@ export const SESSION_TTL_SECONDS = 3600;
 
 export interface PbJwtPayload {
 	id?: string;
-	/** PocketBase collection id for the auth record. */
+	/** Legacy collection id for the auth record. */
 	collectionId?: string;
 	/** Unix expiry (seconds). */
 	exp?: number;
-	/** Custom claims mirrored into the token by PocketBase. */
+	/** Custom claims mirrored into the token by the legacy issuer. */
 	role?: string;
 	institutionId?: string;
 	email?: string;

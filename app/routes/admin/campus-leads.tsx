@@ -68,7 +68,7 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
 // Action
 // ---------------------------------------------------------------------------
 
-export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent, pb, user }) => {
+export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent, user }) => {
 	if (intent === "create-single") {
 		const parsed = createCampusLeadSchema.safeParse({
 			institutionName: formData.get("institutionName"),
@@ -104,7 +104,6 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 			// failure anywhere rolls the whole creation back.
 			await withTransaction(async () => {
 				await createCampusLead(
-					pb,
 					{
 						institutionName,
 						district,
@@ -234,7 +233,6 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 				// the rows already created.
 				await withTransaction(async () => {
 					await createCampusLead(
-						pb,
 						{
 							institutionName: cleanInst,
 							district: cleanDistrict,

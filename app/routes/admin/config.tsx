@@ -23,8 +23,8 @@ const FLAG_ICONS: Record<string, LucideIcon> = {
 	submission_open: Upload,
 };
 
-export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) => {
-	const configMap = await getConfig(pb);
+export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
+	const configMap = await getConfig();
 	return { user, configMap };
 });
 

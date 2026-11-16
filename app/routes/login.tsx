@@ -20,7 +20,6 @@ import { users } from "~/lib/db.server";
 import { getClientIp } from "~/lib/ip.server";
 import { verifyJwt } from "~/lib/jwt.server";
 import { validateOrigin } from "~/lib/origin.server";
-import { createPocketBaseClient } from "~/lib/pocketbase.server";
 import { checkRateLimit } from "~/lib/rate-limiter.server";
 import { loginSchema } from "~/lib/schemas/auth";
 import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
@@ -30,7 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	if (token) {
 		try {
 			// Verify the token locally and load the live row — the same pattern
-			// `resolveAuth` uses (plan §3.4). No PocketBase round trip.
+			// `resolveAuth` uses (plan §3.4). No network round trip.
 			const payload = verifyJwt(token);
 			if (payload && typeof payload.id === "string" && payload.id && !payload.purpose) {
 				const user = await users.findById(payload.id);
@@ -49,7 +48,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		}
 	}
 
-	const cfg = await getConfig(createPocketBaseClient());
+	const cfg = await getConfig();
 
 	return data({
 		registrationOpen: !!cfg.registration_open,

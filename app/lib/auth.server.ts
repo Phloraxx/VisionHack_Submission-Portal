@@ -1,10 +1,8 @@
 import { hash as hashArgon2, verify as verifyArgon2 } from "@node-rs/argon2";
 import { compare as compareBcrypt } from "bcryptjs";
-import { cookieParse } from "pocketbase";
 import { redirect } from "react-router";
 import { type Db, db, users } from "./db.server";
 import { isExpiringSoon, signJwt, verifyJwt } from "./jwt.server";
-import { createAuthenticatedClient } from "./pocketbase.server";
 import type { Role, UserRecord } from "./types";
 
 const COOKIE_NAME = "__Host-pb_jwt";
@@ -15,11 +13,11 @@ const COOKIE_MAX_AGE = 3600; // 1 hour — matches SESSION_TTL_SECONDS in jwt.se
 // ---------------------------------------------------------------------------
 //
 // React Router 7 runs the layout loader and every child loader in
-// parallel, and each previously resolved auth independently — 2+ network
-// round-trips to PocketBase per navigation, plus a token-rotation race. We
-// dedupe by caching the in-flight auth promise keyed by the Request object
-// for the lifetime of that request. A WeakMap means entries are GC'd once
-// the request is done; nothing leaks across users.
+// parallel, and each previously resolved auth independently — 2+ user-row
+// loads per navigation, plus a token-rotation race. We dedupe by caching the
+// in-flight auth promise keyed by the Request object for the lifetime of that
+// request. A WeakMap means entries are GC'd once the request is done; nothing
+// leaks across users.
 
 const authCache = new WeakMap<Request, Promise<AuthResult>>();
 
@@ -28,11 +26,35 @@ const authCache = new WeakMap<Request, Promise<AuthResult>>();
 // ---------------------------------------------------------------------------
 
 /**
+ * Parse a `Cookie` request header into a name → value map.
+ *
+ * The header is `; `-separated `name=value` pairs; values may be
+ * percent-encoded, so each one is decoded. Malformed pairs are skipped rather
+ * than throwing — a bad cookie must not fail the request.
+ */
+function parseCookieHeader(header: string): Record<string, string> {
+	const cookies: Record<string, string> = {};
+	for (const pair of header.split(";")) {
+		const eq = pair.indexOf("=");
+		if (eq < 0) continue;
+		const name = pair.slice(0, eq).trim();
+		if (!name) continue;
+		const raw = pair.slice(eq + 1).trim();
+		try {
+			cookies[name] = decodeURIComponent(raw);
+		} catch {
+			cookies[name] = raw;
+		}
+	}
+	return cookies;
+}
+
+/**
  * Extract the `pb_jwt` token from the request's Cookie header.
  * Returns `null` when no token is present.
  */
 export function getAuthFromCookie(request: Request): string | null {
-	const cookies = cookieParse(request.headers.get("Cookie") || "");
+	const cookies = parseCookieHeader(request.headers.get("Cookie") || "");
 	return cookies[COOKIE_NAME] ?? null;
 }
 
@@ -68,7 +90,7 @@ export function clearAuthCookie(): string {
 // Password hashing
 // ---------------------------------------------------------------------------
 
-/** Migrated PocketBase hashes are bcrypt (`$2a$` / `$2b$`). */
+/** Migrated hashes from the legacy backend are bcrypt (`$2a$` / `$2b$`). */
 function isBcryptHash(passwordHash: string): boolean {
 	return passwordHash.startsWith("$2a$") || passwordHash.startsWith("$2b$");
 }
@@ -90,8 +112,8 @@ export function hashPassword(password: string): Promise<string> {
 /**
  * Verify a password against a stored hash.
  *
- * Accepts argon2id (current) and bcrypt (hashes carried over from
- * PocketBase). Anything else is treated as a failed login rather than an
+ * Accepts argon2id (current) and bcrypt (hashes carried over from the
+ * legacy backend). Anything else is treated as a failed login rather than an
  * error, so a corrupt row cannot be used to probe the login path.
  */
 export async function verifyPassword(passwordHash: string, password: string): Promise<boolean> {
@@ -177,12 +199,10 @@ export async function login(
  * Always includes the (possibly re-minted) token so callers can
  * update the cookie when the token is rotated.
  *
- * `db` is the Postgres handle for ported routes; `pb` stays alongside it
- * until the remaining PocketBase call sites are ported (plan §10.8).
+ * `db` is the Postgres handle for the route's data reads.
  */
 export interface AuthResult {
 	db: Db;
-	pb: ReturnType<typeof createAuthenticatedClient>;
 	user: UserRecord;
 	token: string;
 }
@@ -196,9 +216,8 @@ export interface AuthResult {
  *    expiry, mints a fresh one (no network round trip).
  * 4. Loads the user record once (`SELECT … WHERE id = $1`); missing →
  *    **throws** `redirect("/login")`.
- * 5. Returns the database handle, the PocketBase client (for unported
- *    routes), the user record, and the (possibly re-minted) token so callers
- *    can issue a new cookie if needed.
+ * 5. Returns the database handle, the user record, and the (possibly
+ *    re-minted) token so callers can issue a new cookie if needed.
  *
  * The result is cached per `Request` (WeakMap), so the layout loader and
  * all child loaders share one user-row load instead of each making their
@@ -241,7 +260,7 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
  *
  * The row load is what makes a deleted user, a demoted admin or a reassigned
  * institution take effect on the next request rather than at the next token
- * refresh — the same guarantee the PocketBase design had.
+ * refresh — the same guarantee the previous design had.
  */
 async function resolveAuth(request: Request): Promise<AuthResult> {
 	const token = getAuthFromCookie(request);
@@ -263,7 +282,7 @@ async function resolveAuth(request: Request): Promise<AuthResult> {
 	// secureAction/secureLoader propagate the Set-Cookie they already do.
 	const nextToken = isExpiringSoon(payload) ? signJwt(sessionClaims(user)) : token;
 
-	return { db, pb: createAuthenticatedClient(token), user, token: nextToken };
+	return { db, user, token: nextToken };
 }
 
 /**
@@ -307,11 +326,11 @@ export async function requireAuthJson(request: Request): Promise<AuthResult | Re
  * ```
  */
 export async function requireRole(request: Request, roles: Role[]): Promise<AuthResult> {
-	const { db: database, pb, user, token } = await requireAuth(request);
+	const { db: database, user, token } = await requireAuth(request);
 
 	if (!roles.includes(user.role)) {
 		throw new Response("Forbidden", { status: 403 });
 	}
 
-	return { db: database, pb, user, token };
+	return { db: database, user, token };
 }

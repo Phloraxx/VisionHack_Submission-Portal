@@ -14,15 +14,14 @@ import type { TeamStatus, TeamView } from "~/lib/types";
 
 const PAGE_SIZE = 50;
 
-export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb, request }) => {
+export const loader = secureLoader({ roles: ["admin"] }, async ({ user, request }) => {
 	const url = new URL(request.url);
 	const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
 	const search = (url.searchParams.get("q") ?? "").trim();
 	const status = url.searchParams.get("status") ?? "";
 
 	// Server-side filter. The repository's `q` option is a `contains` match
-	// on `name` and `team_code` (the same two local fields PocketBase's `~`
-	// operator covered); substring match across expanded relations is not
+	// on `name` and `team_code`; substring match across expanded relations is not
 	// expressible in SQL without a join, so lead name/email and institution
 	// name are still post-filtered in JS below. The page is bounded to
 	// PAGE_SIZE, so the post-filter is cheap.
@@ -55,7 +54,7 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb, requ
 
 	// Member counts for THIS PAGE only — full counts are too expensive.
 	const teamIds = pageResult.items.map((t) => t.id);
-	const memberCounts = await getMemberCountsForTeams(pb, teamIds, user);
+	const memberCounts = await getMemberCountsForTeams(teamIds, user);
 
 	const statusCounts: Partial<Record<TeamStatus, number>> = {};
 	for (const t of countScan.items) {

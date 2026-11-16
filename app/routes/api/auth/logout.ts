@@ -20,7 +20,7 @@ export async function action({ request }: ActionFunctionArgs) {
 	validateOrigin(request, false);
 
 	// Clear the auth cookie and redirect to login. Rate limiting is handled
-	// by PocketBase's built-in settings.
+	// by the app-wide settings.
 	const cookie = clearAuthCookie();
 
 	throw redirect("/login", {

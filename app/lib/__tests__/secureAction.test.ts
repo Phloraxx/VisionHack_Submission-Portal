@@ -88,7 +88,7 @@ function makeDb(): Db {
 
 function makeAuthResult(userOverrides: Partial<UserRecord> = {}) {
 	const user = makeUser(userOverrides);
-	return { db: makeDb(), user, pb: { collection: vi.fn() } as never, token: "jwt-token" };
+	return { db: makeDb(), user, token: "jwt-token" };
 }
 
 function makeRequest(url = "http://localhost:5173/admin/test", body?: URLSearchParams) {
@@ -178,7 +178,6 @@ describe("secureAction", () => {
 		expect(handler).toHaveBeenCalledTimes(1);
 		const ctx = handler.mock.calls[0][0];
 		expect(ctx.user).toBe(authResult.user);
-		expect(ctx.pb).toBe(authResult.pb);
 		expect(ctx.formData).toBeInstanceOf(FormData);
 		expect(ctx.request).toBe(req);
 		const { status } = extractStatusBody(result);
@@ -228,12 +227,12 @@ describe("secureAction", () => {
 	});
 
 	it("re-throws non-Response errors from requireRole", async () => {
-		mockRequireRole.mockRejectedValue(new Error("PocketBase down"));
+		mockRequireRole.mockRejectedValue(new Error("Database down"));
 		const handler = vi.fn();
 		const action = secureAction({ roles: ["admin"] }, handler);
 
 		const req = makeRequest();
-		await expect(action(makeArgs(req))).rejects.toThrow("PocketBase down");
+		await expect(action(makeArgs(req))).rejects.toThrow("Database down");
 		expect(handler).not.toHaveBeenCalled();
 	});
 

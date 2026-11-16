@@ -4,11 +4,8 @@
  * pasted across the lead / institution / admin / coordinator routes.
  *
  * Every function here reads and writes Postgres through the repositories in
- * `app/lib/db.server.ts`, which apply the §6.2 scope predicate in SQL. The
- * `pb` parameter is kept on each signature so the routes that still pass a
- * PocketBase client keep compiling; it is never used (plan §10.8).
+ * `app/lib/db.server.ts`, which apply the §6.2 scope predicate in SQL.
  */
-import type PocketBase from "pocketbase";
 import { type ActionResult, fail } from "./action.server";
 import { hashPassword } from "./auth.server";
 import {
@@ -48,11 +45,9 @@ const ADMIN_ACTOR: ActingUser = { id: "", role: "admin", institutionId: "" };
  * only ever return a team the user leads.
  */
 export async function getLeadTeam<T = TeamView>(
-	pb: PocketBase,
 	userId: string,
 	options?: { fields?: string; expand?: string },
 ): Promise<T | null> {
-	void pb;
 	void options;
 	const team = await teams.findByLeader({ id: userId, role: "lead", institutionId: "" }, userId);
 	return team as unknown as T | null;
@@ -62,11 +57,9 @@ export async function getLeadTeam<T = TeamView>(
  * Resolve the institution owned by `userId` (its campus lead), or null.
  */
 export async function getInstitutionForUser(
-	pb: PocketBase,
 	userId: string,
 	options?: { fields?: string; expand?: string },
 ): Promise<InstitutionRecord | null> {
-	void pb;
 	void options;
 	return institutions.findByCampusLeadId(
 		{ id: userId, role: "institution", institutionId: "" },
@@ -83,11 +76,9 @@ export async function getInstitutionForUser(
  * to have the §6.2 predicate applied here as well.
  */
 export async function getMemberCountsForTeams(
-	pb: PocketBase,
 	teamIds: string[],
 	user?: ActingUser,
 ): Promise<Record<string, number>> {
-	void pb;
 	if (teamIds.length === 0) return {};
 	return members.countByTeams(user, teamIds);
 }
@@ -122,11 +113,13 @@ export type TransitionResult = { ok: true } | { ok: false; response: ActionResul
  *  4. optimistic-lock update with `status_changed_at`
  *  5. best-effort audit insert
  */
-export async function transitionTeamStatus(
-	pb: PocketBase,
-	{ teamId, to, role, institutionId, actorUserId }: TransitionArgs,
-): Promise<TransitionResult> {
-	void pb;
+export async function transitionTeamStatus({
+	teamId,
+	to,
+	role,
+	institutionId,
+	actorUserId,
+}: TransitionArgs): Promise<TransitionResult> {
 	const actor: ActingUser = { id: actorUserId, role, institutionId: institutionId ?? "" };
 
 	const team = await teams.getOne(actor, teamId);
@@ -256,11 +249,9 @@ export interface CreateCampusLeadResult {
  * campus-leads action; pass the real user to make the scope explicit.
  */
 export async function createCampusLead(
-	pb: PocketBase,
 	args: CreateCampusLeadArgs,
 	user: ActingUser = ADMIN_ACTOR,
 ): Promise<CreateCampusLeadResult> {
-	void pb;
 	const {
 		institutionName,
 		district,

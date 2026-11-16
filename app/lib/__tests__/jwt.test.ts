@@ -48,7 +48,7 @@ function nowSeconds(): number {
 	return Math.floor(Date.now() / 1000);
 }
 
-// A real-shape PocketBase auth token payload (no signature verification).
+// A real-shape legacy auth token payload (no signature verification).
 // { collectionId, exp: 1813149038 (year 2027), id, refreshable, type }
 const FAR_FUTURE_TOKEN =
 	"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +

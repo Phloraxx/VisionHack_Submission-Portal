@@ -1,8 +1,7 @@
 /**
  * PostgreSQL access layer.
  *
- * Replaces `app/lib/pocketbase.server.ts` for the ported surface. The pool is a
- * process-wide singleton guarded on `globalThis` so Vite HMR (and React Router
+ * The pool is a process-wide singleton guarded on `globalThis` so Vite HMR (and React Router
  * dev restarts) do not leak connections.
  *
  * Conventions
@@ -11,11 +10,11 @@
  *   rows into the camelCase record shapes in `app/lib/types.ts`, so route code
  *   keeps reading `user.institutionId`, `team.created`, and so on.
  * - Every query is parameterised. No string interpolation of user input.
- * - `statement_timeout` is 20 s, matching the old PocketBase `fetch` timeout.
+ * - `statement_timeout` is 20 s, matching the old backend's request timeout.
  * - Every repository method takes the acting user and applies the §6.2 scope
- *   predicate in SQL. PocketBase's API rules were the second line of defence
- *   behind the route loaders; in Postgres they are gone, so the predicate lives
- *   here instead (docs/PG_PORT_PLAN.md §6.2).
+ *   predicate in SQL. The old backend's API rules were the second line of
+ *   defence behind the route loaders; in Postgres they are gone, so the
+ *   predicate lives here instead (docs/PG_PORT_PLAN.md §6.2).
  * - Repository calls made inside `withTransaction` join that transaction, so a
  *   route can compose several writes into one atomic unit.
  */
@@ -34,7 +33,7 @@ import type {
 	UserRecord,
 } from "./types";
 
-/** Matches the 20 s timeout the PocketBase client applied to every request. */
+/** Matches the 20 s timeout the old backend applied to every request. */
 const STATEMENT_TIMEOUT_MS = 20_000;
 /** pg-hub runs max_connections=120 across all apps (plan §10.7). */
 const POOL_MAX = 10;
@@ -167,7 +166,7 @@ export function mapRows<T>(rows: QueryResultRow[]): T[] {
  */
 export type ActingUser = Pick<UserRecord, "id" | "role" | "institutionId">;
 
-/** PocketBase `getList` result shape, so route code keeps reading `.items`. */
+/** Paginated list result shape, so route code keeps reading `.items`. */
 export interface ListResult<T> {
 	page: number;
 	perPage: number;
@@ -200,7 +199,7 @@ function isUuid(value: string): boolean {
 	return UUID_RE.test(value);
 }
 
-/** `timestamptz` → the ISO string PocketBase returned; unset → `""`. */
+/** `timestamptz` → ISO string; unset → `""`. */
 function toIso(value: Date | null): string {
 	return value ? value.toISOString() : "";
 }
@@ -224,7 +223,7 @@ function normalizePaging(
 }
 
 /**
- * Translate a PocketBase sort string (`"-created"`, `"name"`) into an ORDER BY
+ * Translate a sort string (`"-created"`, `"name"`) into an ORDER BY
  * clause. Only whitelisted columns reach the SQL, so the value cannot inject.
  */
 function orderByClause(
@@ -289,9 +288,8 @@ const USER_COLUMNS = "id, email, name, role, institution_id, created_at, updated
 /**
  * `users` row → `UserRecord`.
  *
- * PocketBase returned `""` for an unset relation and ISO strings for the
- * autodate fields; both are preserved so components keep their existing
- * truthiness checks.
+ * Unset relations map to `""` and the autodate fields to ISO strings; both
+ * are preserved so components keep their existing truthiness checks.
  */
 function toUserRecord(row: UserDbRow): UserRecord {
 	return {
@@ -483,8 +481,7 @@ const TEAM_SORT_COLUMNS: Record<string, string> = {
  *
  * `expand.institutionId` / `expand.leaderUserId` are always populated from the
  * LEFT JOINs, so components keep reading `team.expand.institutionId.name`.
- * Unset text/date columns come back as `""`, exactly as PocketBase returned
- * them.
+ * Unset text/date columns come back as `""`.
  */
 function toTeamView(row: TeamRow): TeamView {
 	const team: TeamView = {
@@ -532,7 +529,7 @@ function toTeamView(row: TeamRow): TeamView {
 export interface TeamListOptions {
 	page?: number;
 	perPage?: number;
-	/** PocketBase-style sort string: `"-created"`, `"name"`, … */
+	/** Sort string: `"-created"`, `"name"`, … */
 	sort?: string;
 	institutionId?: string | string[];
 	status?: TeamStatus | TeamStatus[];
@@ -556,7 +553,7 @@ export interface TeamCreateInput {
 
 /**
  * Fields a caller may change. Ownership (`institutionId`, `leaderUserId`) is
- * deliberately absent: PocketBase's update rule forbade both roles from
+ * deliberately absent: the old backend's update rule forbade both roles from
  * touching them, and no flow needs to.
  */
 export interface TeamUpdateInput {
@@ -1359,7 +1356,7 @@ const QUESTIONNAIRE_FROM = `
  *
  * The answer columns are free-form (`[field: string]: unknown` in
  * `types.ts`), so the mapper is generic: snake → camel, dates → ISO, and
- * unset text → `""` / unset number → `0`, matching PocketBase's defaults.
+ * unset text → `""` / unset number → `0`, matching the old backend's defaults.
  */
 function toQuestionnaireRecord(row: QuestionnaireRow): QuestionnaireResponseRecord {
 	const mapped = mapRow<Record<string, unknown>>(row);
@@ -1685,7 +1682,7 @@ export interface StatusTransitionsRepository {
 	 * Append an audit row.
 	 *
 	 * `actor_user_id` and `role` come from the session, never from the caller's
-	 * payload — the PocketBase create rule required exactly that.
+	 * payload — the old backend's create rule required exactly that.
 	 */
 	create(
 		user: ActingUser,

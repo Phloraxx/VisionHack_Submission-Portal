@@ -83,8 +83,6 @@ jobs:
       # Fixed CI-only signing key. Must be >= 32 bytes (env.server.ts).
       APP_JWT_SECRET: ci-idor-secret-0123456789abcdef0123456789abcdef
       UPLOADS_DIR: /tmp/uploads
-      # Still required by getEnv(); no route the suite exercises calls it.
-      POCKETBASE_URL: http://127.0.0.1:8090
       APP_URL: http://localhost:3000
       # The login action rejects a missing/mismatched Origin with a 403.
       ALLOWED_ORIGINS: http://localhost:3000

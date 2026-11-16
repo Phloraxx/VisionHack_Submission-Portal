@@ -4,20 +4,17 @@ import { validateOrigin } from "../origin.server";
 
 const ORIG_ALLOWED = process.env.ALLOWED_ORIGINS;
 const ORIG_NODE_ENV = process.env.NODE_ENV;
-const ORIG_PB_URL = process.env.POCKETBASE_URL;
 
 describe("validateOrigin", () => {
 	beforeEach(() => {
 		resetEnvCache();
 		process.env.ALLOWED_ORIGINS = "";
 		process.env.NODE_ENV = "test";
-		process.env.POCKETBASE_URL = "http://localhost:8090";
 	});
 
 	afterEach(() => {
 		process.env.ALLOWED_ORIGINS = ORIG_ALLOWED;
 		process.env.NODE_ENV = ORIG_NODE_ENV;
-		process.env.POCKETBASE_URL = ORIG_PB_URL;
 	});
 
 	// -----------------------------------------------------------------------

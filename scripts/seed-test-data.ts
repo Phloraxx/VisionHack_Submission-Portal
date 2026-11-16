@@ -29,8 +29,8 @@
  *
  * Passwords are hashed with `hashPassword()` from `app/lib/auth.server.ts`,
  * the same helper the app uses for every new hash (argon2id). `verifyPassword`
- * also accepts the bcrypt hashes carried over from PocketBase, so a seeded
- * account logs in through the real `/login` action.
+ * also accepts the bcrypt hashes carried over from the legacy backend, so a
+ * seeded account logs in through the real `/login` action.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";

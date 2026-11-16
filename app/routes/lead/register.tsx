@@ -102,9 +102,9 @@ class RegistrationError extends Error {
 // Loader
 // ---------------------------------------------------------------------------
 
-export const loader = secureLoader({ roles: ["lead"] }, async ({ user, pb }) => {
+export const loader = secureLoader({ roles: ["lead"] }, async ({ user }) => {
 	// Team and config are independent — fetch in parallel.
-	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(pb, user.id), getConfig(pb)]);
+	const [team, flags] = await Promise.all([getLeadTeam<TeamRecord>(user.id), getConfig()]);
 
 	const memberRows: MemberRecord[] = team
 		? (await members.list(user, { teamId: team.id, perPage: MAX_SAFE_LIST })).items
@@ -291,8 +291,8 @@ async function replaceRoster(
 // Action
 // ---------------------------------------------------------------------------
 
-export const action = secureAction({ roles: ["lead"] }, async ({ formData, user, pb }) => {
-	const flags = await getConfig(pb);
+export const action = secureAction({ roles: ["lead"] }, async ({ formData, user }) => {
+	const flags = await getConfig();
 	if (!flags.registration_open) {
 		return fail({ error: "Registration is currently closed", status: 403 });
 	}
