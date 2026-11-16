@@ -23,13 +23,15 @@ export function getClientIp(request: Request): string {
 		// proxy. X-Forwarded-For is a list the client can prepend to, so the
 		// *last* hop — the one the nearest trusted proxy appended — is the
 		// only entry we can attribute.
+		//
+		// Each candidate is trimmed and tested for emptiness: a present-but-empty
+		// header must fall through to the next source, not become a bucket key
+		// that every such client shares.
 		const forwarded = request.headers.get("X-Forwarded-For");
 		const lastHop = forwarded?.split(",").at(-1)?.trim();
-		return (
-			request.headers.get("CF-Connecting-IP") ??
-			request.headers.get("x-real-ip") ??
-			(lastHop || UNKNOWN_IP)
-		);
+		const cfConnectingIp = request.headers.get("CF-Connecting-IP")?.trim();
+		const realIp = request.headers.get("x-real-ip")?.trim();
+		return cfConnectingIp || realIp || lastHop || UNKNOWN_IP;
 	}
 	// Web Request objects (used by React Router) have no .socket property.
 	// Per-IP rate limiting only works behind a trusted proxy that sets

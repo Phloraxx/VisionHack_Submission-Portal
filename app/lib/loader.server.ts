@@ -69,11 +69,18 @@ export function secureLoader<C extends LoaderContext = LoaderContext, R = unknow
 				const isNavigation = request.headers.get("Accept")?.includes("text/html");
 				if (isNavigation) throw err;
 
-				if (err.status === 401) {
-					return data({ error: "Authentication required" }, { status: 401 });
-				}
 				if (err.status === 403) {
 					return data({ error: "Insufficient permissions" }, { status: 403 });
+				}
+				// `requireAuth` signals "not signed in" with a redirect to
+				// /login. A data request cannot follow a 302, so answer 401.
+				const location = err.headers.get("Location");
+				if (
+					err.status >= 300 &&
+					err.status < 400 &&
+					(!location || new URL(location, request.url).pathname === "/login")
+				) {
+					return data({ error: "Authentication required" }, { status: 401 });
 				}
 			}
 			throw err;

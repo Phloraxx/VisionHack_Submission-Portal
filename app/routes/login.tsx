@@ -13,11 +13,9 @@ import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { getAuthFromCookie, login, setAuthCookie } from "~/lib/auth.server";
+import { getAuthFromCookie, login, resolveSession, setAuthCookie } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
-import { users } from "~/lib/db.server";
 import { ipRateLimitKey } from "~/lib/ip.server";
-import { verifyJwt } from "~/lib/jwt.server";
 import { validateOrigin } from "~/lib/origin.server";
 import { checkRateLimit, resetRateLimit } from "~/lib/rate-limiter.server";
 import { loginSchema } from "~/lib/schemas/auth";
@@ -26,24 +24,18 @@ import { ROLE_DASHBOARD_MAP } from "~/lib/team-policy";
 export async function loader({ request }: LoaderFunctionArgs) {
 	const token = getAuthFromCookie(request);
 	if (token) {
-		try {
-			// Verify the token locally and load the live row — the same pattern
-			// `resolveAuth` uses (plan §3.4). No network round trip.
-			const payload = verifyJwt(token);
-			if (payload && typeof payload.id === "string" && payload.id && !payload.purpose) {
-				const user = await users.findById(payload.id);
-				if (user?.role) {
-					const target = ROLE_DASHBOARD_MAP[user.role as keyof typeof ROLE_DASHBOARD_MAP];
-					if (!target) {
-						throw new Response("No dashboard configured for your account role.", { status: 403 });
-					}
-					// The cookie is already valid — re-issuing it would only
-					// reset its Max-Age on every visit to /login.
-					throw redirect(target);
-				}
+		// The same validation `resolveAuth` runs. A cookie that fails it here
+		// must not redirect into the dashboard: the dashboard would reject it
+		// and send the browser straight back, forever.
+		const session = await resolveSession(token);
+		if (session) {
+			const target = ROLE_DASHBOARD_MAP[session.user.role as keyof typeof ROLE_DASHBOARD_MAP];
+			if (!target) {
+				throw new Response("No dashboard configured for your account role.", { status: 403 });
 			}
-		} catch (err) {
-			if (err instanceof Response) throw err;
+			// The cookie is already valid — re-issuing it would only reset its
+			// Max-Age on every visit to /login.
+			throw redirect(target);
 		}
 	}
 
@@ -75,10 +67,12 @@ export async function action({ request }: ActionFunctionArgs) {
 	const password = parsed.data.password;
 
 	// App-level rate limiting. The per-IP bucket only binds when the proxy
-	// headers gave us a real address — see `ipRateLimitKey`.
+	// headers gave us a real address — see `ipRateLimitKey`. It is deliberately
+	// looser than the per-email bucket: a campus NAT shares one address, and
+	// this counter is never reset on success.
 	const ipKey = ipRateLimitKey("login", request);
 	try {
-		if (ipKey) checkRateLimit(ipKey, 5, 60_000);
+		if (ipKey) checkRateLimit(ipKey, 30, 60_000);
 		checkRateLimit(`login:email:${email}`, 5, 60_000);
 	} catch {
 		return data({ error: "Too many attempts. Please try again later." }, { status: 429 });

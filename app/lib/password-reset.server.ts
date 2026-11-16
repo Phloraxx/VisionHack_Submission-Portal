@@ -13,7 +13,7 @@
  * carry the same claim, so a reset also invalidates every other session.
  */
 
-import { passwordFingerprint } from "./auth.server";
+import { matchesPasswordFingerprint, passwordFingerprint } from "./auth.server";
 import type { Db } from "./db.server";
 import { sendEmail } from "./email.server";
 import { getAppUrl } from "./env.server";
@@ -92,7 +92,7 @@ export async function verifyPasswordResetToken(
 
 	const currentHash = await database.users.findPasswordHashById(payload.sub);
 	if (!currentHash) return null;
-	if (passwordFingerprint(currentHash) !== payload.pwf) return null;
+	if (!matchesPasswordFingerprint(payload.pwf, currentHash)) return null;
 
 	return { userId: payload.sub, passwordHash: currentHash };
 }

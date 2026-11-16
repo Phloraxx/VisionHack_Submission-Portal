@@ -91,6 +91,18 @@ export function isExpiringSoon(payload: JwtClaims | null, skewSeconds = 300): bo
 // Signing
 // ---------------------------------------------------------------------------
 
+/**
+ * Constant-time string compare.
+ *
+ * Returns false on a length mismatch, which `timingSafeEqual` would throw on.
+ * Used for the claims an attacker can supply (the signature, `iss`, `pwf`).
+ */
+export function timingSafeStringEqual(a: string, b: string): boolean {
+	const left = Buffer.from(a, "utf8");
+	const right = Buffer.from(b, "utf8");
+	return left.length === right.length && timingSafeEqual(left, right);
+}
+
 /** Fixed header: HS256 only. Verification rejects anything else. */
 const JWT_HEADER = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
 
@@ -155,6 +167,11 @@ export function verifyJwt<T extends JwtPayload = JwtPayload>(token: string): T |
 			Buffer.from(payloadSegment, "base64url").toString("utf8"),
 		) as JwtPayload;
 		if (!payload || typeof payload !== "object") return null;
+		// Only this app mints tokens for this app: a foreign issuer is not ours
+		// to trust, even when it shares the signing key.
+		if (typeof payload.iss !== "string" || !timingSafeStringEqual(payload.iss, JWT_ISSUER)) {
+			return null;
+		}
 		if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) return null;
 		if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
 

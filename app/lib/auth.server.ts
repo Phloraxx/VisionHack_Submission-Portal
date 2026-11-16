@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import { redirect } from "react-router";
 import { type Db, db, users } from "./db.server";
-import { SESSION_TTL_SECONDS, isExpiringSoon, signJwt, verifyJwt } from "./jwt.server";
+import {
+	type JwtPayload,
+	SESSION_TTL_SECONDS,
+	isExpiringSoon,
+	signJwt,
+	timingSafeStringEqual,
+	verifyJwt,
+} from "./jwt.server";
 import { hashPassword, isBcryptHash, verifyPassword } from "./password.server";
 import type { Role, UserRecord } from "./types";
 
@@ -117,6 +124,18 @@ export function passwordFingerprint(passwordHash: string): string {
 	return createHash("sha256").update(passwordHash).digest("hex").slice(0, 16);
 }
 
+/**
+ * Whether a token's `pwf` claim still matches the live password hash.
+ *
+ * Constant-time: the claim is attacker-supplied, so a short-circuiting compare
+ * would leak how much of a guessed fingerprint is correct.
+ */
+export function matchesPasswordFingerprint(claim: unknown, passwordHash: string): boolean {
+	return (
+		typeof claim === "string" && timingSafeStringEqual(claim, passwordFingerprint(passwordHash))
+	);
+}
+
 // ---------------------------------------------------------------------------
 // Auth actions
 // ---------------------------------------------------------------------------
@@ -150,8 +169,11 @@ export async function login(
 	let passwordHash = row.passwordHash;
 	if (isBcryptHash(row.passwordHash)) {
 		try {
-			passwordHash = await hashPassword(password);
-			await users.updatePasswordHash(row.id, passwordHash);
+			const upgraded = await hashPassword(password);
+			await users.updatePasswordHash(row.id, upgraded);
+			// Promote only after the UPDATE resolved: a token bound to a hash
+			// the row does not hold would be rejected on the next request.
+			passwordHash = upgraded;
 		} catch (err) {
 			console.error("[auth] bcrypt → argon2id rehash failed", err);
 		}
@@ -236,6 +258,49 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
 	return promise;
 }
 
+/** A cookie that resolves to a live session. */
+export interface Session {
+	user: UserRecord;
+	/** The hash the token's `pwf` claim was checked against. */
+	passwordHash: string;
+	payload: JwtPayload;
+}
+
+/**
+ * Resolve a session token to its live user, or `null` when it is not a session.
+ *
+ * This is the single definition of "this cookie is still good": signature,
+ * expiry, `purpose`, the live row, and the `pwf` password binding. `resolveAuth`
+ * and the `/login` loader both call it — when the two disagreed about a stale
+ * cookie, the browser bounced between `/login` and the dashboard forever.
+ */
+export async function resolveSession(token: string): Promise<Session | null> {
+	const payload = verifyJwt(token);
+	// Bad signature, wrong alg, foreign issuer, expired or malformed.
+	if (!payload || typeof payload.id !== "string" || !payload.id) return null;
+	// Password-reset tokens share the signing key but are not sessions.
+	if (payload.purpose) return null;
+
+	const row = await users.findSessionUser(payload.id);
+	if (!row) return null;
+
+	// A completed password reset rewrites the hash, so the fingerprint in the
+	// token stops matching and every other session is invalidated.
+	if (!matchesPasswordFingerprint(payload.pwf, row.passwordHash)) return null;
+
+	const user: UserRecord = {
+		id: row.id,
+		email: row.email,
+		name: row.name,
+		role: row.role,
+		institutionId: row.institutionId,
+		created: row.created,
+		updated: row.updated,
+	};
+
+	return { user, passwordHash: row.passwordHash, payload };
+}
+
 /**
  * The actual auth resolution. Verifies the JWT locally (cheap) and loads the
  * live user row once per request.
@@ -248,39 +313,16 @@ async function resolveAuth(request: Request): Promise<AuthResult> {
 	const token = getAuthFromCookie(request);
 	if (!token) throw redirect("/login");
 
-	const payload = verifyJwt(token);
-	if (!payload || typeof payload.id !== "string" || !payload.id) {
-		// Bad signature, wrong alg, expired or malformed — treat as
-		// unauthenticated.
-		throw redirect("/login");
-	}
-	// Password-reset tokens share the signing key but are not sessions.
-	if (payload.purpose) throw redirect("/login");
-
-	const row = await users.findSessionUser(payload.id);
-	if (!row) throw redirect("/login");
-
-	// A completed password reset rewrites the hash, so the fingerprint in the
-	// token stops matching and every other session is invalidated.
-	if (payload.pwf !== passwordFingerprint(row.passwordHash)) throw redirect("/login");
-
-	const user: UserRecord = {
-		id: row.id,
-		email: row.email,
-		name: row.name,
-		role: row.role,
-		institutionId: row.institutionId,
-		created: row.created,
-		updated: row.updated,
-	};
+	const session = await resolveSession(token);
+	if (!session) throw redirect("/login");
 
 	// Near expiry: re-mint locally and hand the new token back so
 	// secureAction/secureLoader propagate the Set-Cookie they already do.
-	const nextToken = isExpiringSoon(payload)
-		? signJwt(sessionClaims(user, row.passwordHash))
+	const nextToken = isExpiringSoon(session.payload)
+		? signJwt(sessionClaims(session.user, session.passwordHash))
 		: token;
 
-	return { db, user, token: nextToken };
+	return { db, user: session.user, token: nextToken };
 }
 
 /**
