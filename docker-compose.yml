@@ -12,3 +12,10 @@ services:
       # per-IP rate limiting. Only set when behind Cloudflare / a trusted
       # ingress that overwrites these headers.
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-0}
+      # PostgreSQL on pg-hub + app-issued JWT sessions (docs/PG_PORT_PLAN.md §7).
+      - DATABASE_URL=${DATABASE_URL}
+      - APP_JWT_SECRET=${APP_JWT_SECRET}
+      - UPLOADS_DIR=${UPLOADS_DIR:-/app/uploads}
+    volumes:
+      # Submission files live on the host so they survive redeploys.
+      - /home/drvij/services/visionhack-portal/uploads:/app/uploads
