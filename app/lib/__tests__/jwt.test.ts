@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetEnvCache } from "../env.server";
 import {
@@ -46,6 +47,25 @@ function encodeSegment(value: unknown): string {
 /** Current time in whole seconds, matching the claim format. */
 function nowSeconds(): number {
 	return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Sign an arbitrary payload the way `signJwt` does, but with a chosen `iss`.
+ *
+ * `signJwt` always overwrites the claim, so a foreign issuer can only be
+ * produced by signing by hand — which is exactly what an attacker holding the
+ * key (or a second app sharing it) would do.
+ */
+function signWithIssuer(payload: Record<string, unknown>, iss: string | undefined): string {
+	const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+	const now = nowSeconds();
+	const body = Buffer.from(
+		JSON.stringify({ ...payload, iss, iat: now, exp: now + SESSION_TTL_SECONDS }),
+	).toString("base64url");
+	const signature = createHmac("sha256", TEST_SECRET)
+		.update(`${header}.${body}`)
+		.digest("base64url");
+	return `${header}.${body}.${signature}`;
 }
 
 // A real-shape legacy auth token payload (no signature verification).
@@ -133,6 +153,21 @@ describe("signJwt / verifyJwt", () => {
 		const segments = signJwt(claims).split(".");
 		const header = encodeSegment({ alg: "none", typ: "JWT" });
 		expect(verifyJwt(`${header}.${segments[1]}.${segments[2]}`)).toBeNull();
+	});
+
+	/**
+	 * R-02 regression: the e742828 commit message claimed `verifyJwt` rejects a
+	 * foreign `iss`, but only the docstring had changed.
+	 */
+	it("rejects a token whose iss is not ours", () => {
+		// Control: the same helper with our issuer verifies, so the rejection
+		// below is the issuer check and not a broken signature.
+		expect(verifyJwt(signWithIssuer(claims, JWT_ISSUER))).not.toBeNull();
+		expect(verifyJwt(signWithIssuer(claims, "someone-else"))).toBeNull();
+	});
+
+	it("rejects a token with no iss claim at all", () => {
+		expect(verifyJwt(signWithIssuer(claims, undefined))).toBeNull();
 	});
 
 	it("rejects a token minted with a different secret", () => {

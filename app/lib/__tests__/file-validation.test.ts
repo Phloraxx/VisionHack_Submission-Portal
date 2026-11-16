@@ -30,6 +30,39 @@ function zipWithEntry(name: string, data: Uint8Array, method: 0 | 8): Uint8Array
 	return out;
 }
 
+/**
+ * Build a minimal OLE2 (MS-CFB) container.
+ *
+ * Only the fields the validator reads are populated: the header's sector shift
+ * and `firstDirSector`, one FAT sector, and the directory sector holding a
+ * single entry name. `dirSector` is a parameter so a test can place the
+ * directory past the first 8 KiB, which is where a real .ppt keeps it.
+ */
+function ole2Container(options: { dirSector: number; entryName: string | null }): Uint8Array {
+	const SECTOR = 512;
+	const { dirSector, entryName } = options;
+	// Sector n occupies [(n + 1) * SECTOR, (n + 2) * SECTOR), so the file has
+	// to reach one sector past the directory.
+	const bytes = new Uint8Array((dirSector + 2) * SECTOR);
+	const view = new DataView(bytes.buffer);
+
+	// Header: OLE2 magic, 512-byte sectors, FAT in sector 0, directory at
+	// `dirSector`.
+	bytes.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1], 0);
+	view.setUint16(30, 9, true); // sector shift → 1 << 9 = 512
+	view.setUint32(48, dirSector, true); // first directory sector
+	view.setUint32(76, 0, true); // DIFAT[0] → FAT sector 0
+
+	// FAT: every sector ends its own chain.
+	for (let i = 0; i < SECTOR / 4; i++) view.setUint32(SECTOR + i * 4, 0xfffffffe, true);
+
+	if (entryName) {
+		// Directory entry name: 64 bytes of UTF-16LE at the start of the sector.
+		bytes.set(Buffer.from(entryName, "utf16le").subarray(0, 64), (dirSector + 1) * SECTOR);
+	}
+	return bytes;
+}
+
 function asFile(bytes: Uint8Array, name = "deck.pptx"): File {
 	// Copy into a fresh ArrayBuffer so the Blob constructor sees a plain view.
 	const buffer = new ArrayBuffer(bytes.byteLength);
@@ -69,6 +102,27 @@ describe("validateFileSignature", () => {
 		expect(bomb.length).toBeLessThan(1024 * 1024);
 		const zip = zipWithEntry(CONTENT_TYPES, bomb, 8);
 		expect(await validateFileSignature(asFile(zip))).toBe(false);
+	});
+
+	/**
+	 * R-11 regression: the legacy-.ppt check scanned only the first 8 KiB, but
+	 * the `PowerPoint Document` entry lives in the directory stream the header
+	 * points at — routinely past that prefix.
+	 */
+	it("accepts a legacy .ppt whose directory entry sits past the first 8 KiB", async () => {
+		const ppt = ole2Container({ dirSector: 20, entryName: "PowerPoint Document" });
+		expect(ppt.length).toBeGreaterThan(8 * 1024);
+		expect(await validateFileSignature(asFile(ppt, "deck.ppt"))).toBe(true);
+	});
+
+	it("rejects an OLE2 container whose directory has no PowerPoint entry", async () => {
+		const doc = ole2Container({ dirSector: 20, entryName: "WordDocument" });
+		expect(await validateFileSignature(asFile(doc, "deck.ppt"))).toBe(false);
+	});
+
+	it("rejects an OLE2 container with an empty directory", async () => {
+		const empty = ole2Container({ dirSector: 20, entryName: null });
+		expect(await validateFileSignature(asFile(empty, "deck.ppt"))).toBe(false);
 	});
 
 	it("rejects a file that is neither PDF, OLE2 nor ZIP", async () => {
