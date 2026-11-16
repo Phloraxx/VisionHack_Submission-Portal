@@ -487,12 +487,12 @@ interface TeamRow extends QueryResultRow {
 	leader_user_id: string;
 	team_code: string | null;
 	status: TeamStatus;
-	statusChangedAt: Date | null;
-	questionnaireCompleted: boolean;
-	ideaTitle: string | null;
-	ideaDesc: string | null;
-	ideaTechStack: string | null;
-	submissionFile: string | null;
+	status_changed_at: Date | null;
+	questionnaire_completed: boolean;
+	idea_title: string | null;
+	idea_desc: string | null;
+	idea_tech_stack: string | null;
+	submission_file: string | null;
 	created_at: Date;
 	updated_at: Date;
 	inst_id: string | null;
@@ -506,8 +506,8 @@ interface TeamRow extends QueryResultRow {
 
 const TEAM_SELECT = `
 	t.id, t.name, t.institution_id, t.leader_user_id, t.team_code, t.status,
-	t.statusChangedAt, t.questionnaireCompleted, t.ideaTitle, t.ideaDesc,
-	t.ideaTechStack, t.submissionFile, t.created_at, t.updated_at,
+	t.status_changed_at, t.questionnaire_completed, t.idea_title, t.idea_desc,
+	t.idea_tech_stack, t.submission_file, t.created_at, t.updated_at,
 	i.id AS inst_id, i.name AS inst_name, i.district AS inst_district, i.code AS inst_code,
 	u.id AS lead_id, u.name AS lead_name, u.email AS lead_email`;
 
@@ -539,12 +539,12 @@ function toTeamView(row: TeamRow): TeamView {
 		leaderUserId: row.leader_user_id,
 		teamCode: row.team_code ?? "",
 		status: row.status,
-		statusChangedAt: toIso(row.statusChangedAt),
-		questionnaireCompleted: row.questionnaireCompleted,
-		ideaTitle: row.ideaTitle ?? "",
-		ideaDesc: row.ideaDesc ?? "",
-		ideaTechStack: row.ideaTechStack ?? "",
-		submissionFile: row.submissionFile ?? "",
+		statusChangedAt: toIso(row.status_changed_at),
+		questionnaireCompleted: row.questionnaire_completed,
+		ideaTitle: row.idea_title ?? "",
+		ideaDesc: row.idea_desc ?? "",
+		ideaTechStack: row.idea_tech_stack ?? "",
+		submissionFile: row.submission_file ?? "",
 		created: row.created_at.toISOString(),
 		updated: row.updated_at.toISOString(),
 	};

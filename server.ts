@@ -38,7 +38,7 @@ let buildPromise: Promise<ServerBuild> | null = null;
 const getBuild = (): Promise<ServerBuild> => {
 	if (!buildPromise) {
 		// @ts-expect-error — build/server/index.js only exists after `npm run build`
-		buildPromise = import("./build/server/index.js").then((mod) => mod.default as ServerBuild);
+		buildPromise = import("./build/server/index.js");
 	}
 	return buildPromise;
 };

@@ -227,6 +227,11 @@ CREATE TABLE IF NOT EXISTS questionnaire_responses (
 	updated_at      timestamptz NOT NULL DEFAULT now()
 );
 
+-- Additive migration: databases created before `year_of_graduation` existed
+-- get the column here, so re-running this file upgrades them in place.
+ALTER TABLE questionnaire_responses
+	ADD COLUMN IF NOT EXISTS year_of_graduation varchar(16);
+
 -- -----------------------------------------------------------------------------
 -- 7. status_transitions
 -- -----------------------------------------------------------------------------

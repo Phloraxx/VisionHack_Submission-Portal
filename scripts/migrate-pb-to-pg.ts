@@ -10,7 +10,8 @@
  * Usage
  * -----
  *   # 1. Copy the PocketBase database out of its container. Read-only: the
- *   #    original file is never opened by this script.
+ *   #    original file is never opened by this script. Requires the `sqlite3`
+ *   #    CLI on PATH (the only external tool this script needs).
  *   docker cp <pb-container>:/pocketbase/data/data.db /tmp/pb-data.db
  *
  *   # 2. Dry run (default): prints the plan, writes nothing.
@@ -542,6 +543,15 @@ async function pbDownloadFile(
  * read-only.
  */
 function readPasswordHashes(sqlitePath: string): Map<string, string> {
+	// Fail with a clear message rather than an ENOENT from execFileSync.
+	try {
+		execFileSync("sqlite3", ["-version"], { stdio: "ignore" });
+	} catch {
+		throw new Error(
+			"the `sqlite3` CLI is required to read password hashes from the PocketBase database; install it (apt install sqlite3 / brew install sqlite) and re-run",
+		);
+	}
+
 	let output: string;
 	try {
 		output = execFileSync("sqlite3", ["-json", sqlitePath, "SELECT id, password FROM users"], {
@@ -992,9 +1002,22 @@ async function applyDeferredColumns(client: PoolClient, table: TablePlan): Promi
 	);
 	if (rows.length === 0) return 0;
 
-	await client.query(
-		`ALTER TABLE "${table.spec.name}" DISABLE TRIGGER "trg_${table.spec.name}_updated_at"`,
-	);
+	// Preserving the migrated `updated_at` needs the trigger off, which needs
+	// table ownership. Without it the trigger bumps the column to now() — an
+	// acceptable loss for a one-time migration, so degrade instead of failing.
+	let triggerDisabled = false;
+	try {
+		await client.query(
+			`ALTER TABLE "${table.spec.name}" DISABLE TRIGGER "trg_${table.spec.name}_updated_at"`,
+		);
+		triggerDisabled = true;
+	} catch (error) {
+		const code = (error as { code?: string }).code;
+		if (code !== "42501" && code !== "42P01") throw error;
+		console.warn(
+			`[migrate] cannot disable the updated_at trigger on "${table.spec.name}" (${code}); migrated timestamps will be replaced by now()`,
+		);
+	}
 	try {
 		for (const row of rows) {
 			const assignments = deferred
@@ -1013,9 +1036,11 @@ async function applyDeferredColumns(client: PoolClient, table: TablePlan): Promi
 			);
 		}
 	} finally {
-		await client.query(
-			`ALTER TABLE "${table.spec.name}" ENABLE TRIGGER "trg_${table.spec.name}_updated_at"`,
-		);
+		if (triggerDisabled) {
+			await client.query(
+				`ALTER TABLE "${table.spec.name}" ENABLE TRIGGER "trg_${table.spec.name}_updated_at"`,
+			);
+		}
 	}
 
 	return rows.length;
