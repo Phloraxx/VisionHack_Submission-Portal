@@ -52,8 +52,7 @@ function requireJwtSecret(): string {
 	const bytes = Buffer.byteLength(secret, "utf8");
 	if (bytes < MIN_JWT_SECRET_BYTES) {
 		throw new Error(
-			`APP_JWT_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes (got ${bytes}). ` +
-				"Generate one with: openssl rand -base64 48",
+			`APP_JWT_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes (got ${bytes}). Generate one with: openssl rand -base64 48`,
 		);
 	}
 	return secret;

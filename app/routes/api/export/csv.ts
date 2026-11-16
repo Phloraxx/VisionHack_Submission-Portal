@@ -53,7 +53,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 	const membersByTeam: Record<string, MemberRecord[]> = {};
 	for (const m of memberRows) {
-		const list = membersByTeam[m.teamId] ?? (membersByTeam[m.teamId] = []);
+		let list = membersByTeam[m.teamId];
+		if (list === undefined) {
+			list = [];
+			membersByTeam[m.teamId] = list;
+		}
 		list.push(m);
 	}
 

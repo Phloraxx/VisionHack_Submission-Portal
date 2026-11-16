@@ -87,7 +87,6 @@ jobs:
       # The login action rejects a missing/mismatched Origin with a 403.
       ALLOWED_ORIGINS: http://localhost:3000
       FIXTURES_PATH: /tmp/visionhack-test-fixtures.json
-      NODE_ENV: production
       PORT: 3000
 
     steps:
@@ -118,7 +117,9 @@ jobs:
       - name: Run IDOR suite
         run: |
           set -euo pipefail
-          npx tsx server.ts > /tmp/app.log 2>&1 &
+          # NODE_ENV is set here only: at job level it would make `npm ci`
+          # skip devDependencies (husky's prepare hook then fails).
+          NODE_ENV=production npx tsx server.ts > /tmp/app.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 

@@ -145,9 +145,9 @@ export function StepIndicator({ steps, currentStep, totalSteps, className }: Ste
 							className={cn("flex items-center", isLast ? "" : "sm:flex-1")}
 							aria-current={isActive ? "step" : undefined}
 						>
-							{hasHref ? (
+							{step.href ? (
 								<Link
-									to={step.href!}
+									to={step.href}
 									aria-label={`${step.label} — ${isCompleted ? "completed" : isActive ? "current step" : "pending"}`}
 									className={innerClass}
 								>

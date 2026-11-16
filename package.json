@@ -57,9 +57,6 @@
 		"vitest": "^4.1.9"
 	},
 	"lint-staged": {
-		"*.{ts,tsx}": [
-			"biome check --apply",
-			"vitest related --run"
-		]
+		"*.{ts,tsx}": ["biome check --apply", "vitest related --run"]
 	}
 }

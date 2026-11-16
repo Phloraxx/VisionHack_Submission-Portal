@@ -1,5 +1,13 @@
 import { ArrowLeft, ArrowRight, KeyRound, Loader2, ShieldAlert } from "lucide-react";
-import { Form, Link, data, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import {
+	Form,
+	Link,
+	data,
+	redirect,
+	useActionData,
+	useLoaderData,
+	useNavigation,
+} from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { AnimatedGrid } from "~/components/ui/animated-grid";
 import { Button } from "~/components/ui/button";
@@ -268,7 +276,10 @@ export default function ResetPassword() {
 									Request a fresh one to continue.
 								</p>
 								<Button asChild className="mt-8 w-full vh-touch" size="lg">
-									<Link to="/forgot-password" className="inline-flex items-center justify-center gap-2">
+									<Link
+										to="/forgot-password"
+										className="inline-flex items-center justify-center gap-2"
+									>
 										Request a new link
 										<ArrowRight className="h-4 w-4" />
 									</Link>
