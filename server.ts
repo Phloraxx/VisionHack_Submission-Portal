@@ -6,8 +6,8 @@ import http from "node:http";
 import type { Socket } from "node:net";
 import path from "node:path";
 import { createRequestListener } from "@react-router/node";
-import type { ServerBuild } from "react-router";
 import * as Sentry from "@sentry/node";
+import type { ServerBuild } from "react-router";
 import { getEnv } from "./app/lib/env.server.ts";
 
 /** MIME types for static assets served from build/client/. */

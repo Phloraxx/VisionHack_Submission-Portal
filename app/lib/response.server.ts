@@ -4,6 +4,9 @@ import { data } from "react-router";
  * RR7's `data()` returns a `DataWithResponseInit` class instance, not a
  * `Response`. Wrapping one in another `data()` serialises the wrapper as the
  * body and drops the inner status code.
+ *
+ * React Router keeps this predicate internal (only the `UNSAFE_DataWithResponseInit`
+ * type is exported), so the check has to be local.
  */
 export function isDataWithResponseInit(
 	value: unknown,

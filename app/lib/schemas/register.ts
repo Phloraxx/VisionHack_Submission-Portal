@@ -10,7 +10,10 @@ export const registerSchema = z
 			.string()
 			.min(1, "Lead phone is required")
 			.max(20, "Lead phone must be at most 20 characters"),
-		leadGender: z.string().min(1, "Lead gender is required"),
+		leadGender: z
+			.string()
+			.min(1, "Lead gender is required")
+			.max(32, "Lead gender must be at most 32 characters"),
 		leadRole: z
 			.string()
 			.min(1, "Lead role is required")
@@ -48,6 +51,18 @@ export const registerSchema = z
 		{
 			message: "All member arrays must have the same length",
 			path: ["memberName"],
+		},
+	)
+	// `members` is unique on `(team_id, email)`, so two rows sharing an address
+	// would raise 23505 and surface as a 500. Reject it as a field error.
+	.refine(
+		(data) => {
+			const emails = data.memberEmail.map((email) => email.trim().toLowerCase());
+			return new Set(emails).size === emails.length;
+		},
+		{
+			message: "Each member must have a different email address",
+			path: ["memberEmail"],
 		},
 	);
 

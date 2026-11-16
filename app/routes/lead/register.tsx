@@ -355,8 +355,9 @@ export default function LeadRegister() {
 	const navigation = useNavigation();
 	const isSubmitting = navigation.state === "submitting";
 
-	// Autosave — periodically persist form state (sessionStorage + server
-	// draft for cross-device resume), restore drafts on mount.
+	// Autosave — periodically persist form state to sessionStorage and restore
+	// the draft on mount. It is per-browser only: `clearOnUnmount` wipes it as
+	// soon as the form unmounts, because the payload is PII.
 	const { savedData, save, clearSaved } = useAutoSave<RegisterFormData>(
 		`register-form-${user.id}`,
 		true, // clearOnUnmount — PII should not persist after closing

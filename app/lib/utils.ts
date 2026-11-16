@@ -31,8 +31,10 @@ export function escapeCsv(str: string): string {
 	if (!str) return "";
 	let text = String(str);
 
-	// Neutralize formula injection before quoting.
-	if (/^[=+\-@\t\r]/.test(text)) {
+	// Neutralize formula injection before quoting. Leading whitespace is
+	// included because Excel trims it on some import paths, so `" =cmd"` would
+	// otherwise still be evaluated.
+	if (/^\s*[=+\-@\t\r]/.test(text)) {
 		text = `'${text}`;
 	}
 
@@ -50,9 +52,12 @@ export const QUESTIONNAIRE_EXCLUDE_KEYS = ["id", "teamId", "userId", "created", 
 /**
  * Count items by a derived key.
  * Returns `Record<key, count>` — e.g. count members per team.
+ *
+ * The map has no prototype: a key of `__proto__` is a legal team name and
+ * would otherwise be swallowed by the setter on `Object.prototype`.
  */
 export function countByKey<T>(items: T[], keyFn: (item: T) => string): Record<string, number> {
-	const counts: Record<string, number> = {};
+	const counts: Record<string, number> = Object.create(null);
 	for (const item of items) {
 		const key = keyFn(item);
 		counts[key] = (counts[key] ?? 0) + 1;

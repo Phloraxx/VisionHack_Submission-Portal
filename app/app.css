@@ -502,7 +502,17 @@
    UTILITY PRIMITIVES
    -----------------------------------------------------------------------
    - .vh-grid-bg: subtle grid backdrop (used on hero panels)
+   - .vh-wash-tr: radial glow in the top-right corner (used on the admin and
+     institution dashboard heroes)
    ========================================================================= */
+
+.vh-wash-tr {
+	background: radial-gradient(
+		ellipse at top right,
+		color-mix(in oklch, var(--primary), transparent 88%),
+		transparent 60%
+	);
+}
 
 .vh-grid-bg {
 	background-image: linear-gradient(

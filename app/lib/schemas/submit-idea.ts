@@ -1,16 +1,10 @@
 import { z } from "zod";
 
 /**
- * Optional file field — Zod doesn't natively handle File objects,
- * so we use `z.any()` with a refinement.
+ * The idea text fields. The presentation file is validated separately in the
+ * action (`validateFileSignature`), because Zod cannot inspect a `File`'s
+ * bytes and the browser MIME type is advisory.
  */
-const optionalFile = z
-	.any()
-	.optional()
-	.refine((v) => v === undefined || v instanceof File, {
-		message: "Expected a File or undefined",
-	});
-
 export const submitIdeaSchema = z.object({
 	ideaTitle: z
 		.string()
@@ -24,7 +18,6 @@ export const submitIdeaSchema = z.object({
 		.string()
 		.min(1, "Tech stack is required")
 		.max(500, "Tech stack must be at most 500 characters"),
-	file: optionalFile,
 });
 
 export type SubmitIdeaInput = z.infer<typeof submitIdeaSchema>;

@@ -73,7 +73,15 @@ export default async function handleRequest(
 	const manifest = routerContext.manifest;
 	const entryModule = manifest.entry.module;
 	const routes = manifest.routes;
-	const routeEntries = Object.entries(routes).filter(([, r]) => r?.module);
+	// Only the routes this request actually rendered. Importing every module in
+	// the manifest pulls every route chunk on a cold load; the rest are fetched
+	// on navigation through `window.__reactRouterManifest`.
+	const activeRouteIds = new Set(
+		routerContext.staticHandlerContext.matches.map((match) => match.route.id),
+	);
+	const routeEntries = Object.entries(routes).filter(
+		([id, route]) => route?.module && activeRouteIds.has(id),
+	);
 
 	// Build route import statements & module registry
 	const importLines: string[] = [];

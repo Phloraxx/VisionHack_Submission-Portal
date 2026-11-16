@@ -4,6 +4,17 @@ import { UNKNOWN_IP, getClientIp, ipRateLimitKey } from "../ip.server";
 
 const ORIG_TRUST = process.env.TRUST_PROXY_HEADERS;
 
+/** Restore the variable, deleting it when it was unset — assigning the string
+ * `"undefined"` would leak a bogus value into later test files. */
+function restoreTrust(): void {
+	if (ORIG_TRUST === undefined) {
+		// biome-ignore lint/performance/noDelete: test-only env cleanup
+		delete process.env.TRUST_PROXY_HEADERS;
+	} else {
+		process.env.TRUST_PROXY_HEADERS = ORIG_TRUST;
+	}
+}
+
 function request(headers: Record<string, string> = {}): Request {
 	return new Request("http://localhost/login", { headers });
 }
@@ -16,7 +27,7 @@ describe("getClientIp", () => {
 	});
 
 	afterEach(() => {
-		process.env.TRUST_PROXY_HEADERS = ORIG_TRUST;
+		restoreTrust();
 		resetEnvCache();
 	});
 
@@ -49,7 +60,7 @@ describe("ipRateLimitKey", () => {
 	});
 
 	afterEach(() => {
-		process.env.TRUST_PROXY_HEADERS = ORIG_TRUST;
+		restoreTrust();
 		resetEnvCache();
 	});
 

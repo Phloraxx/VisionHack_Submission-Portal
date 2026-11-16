@@ -20,8 +20,8 @@ export async function action({ request }: ActionFunctionArgs) {
 	// A state-changing POST must carry a matching Origin.
 	validateOrigin(request, true);
 
-	// Clear the auth cookie and redirect to login. Rate limiting is handled
-	// by the app-wide settings.
+	// Clear the auth cookie and redirect to login. Logout is idempotent and
+	// costs no database work, so it carries no rate limit of its own.
 	const cookie = clearAuthCookie();
 
 	throw redirect("/login", {
