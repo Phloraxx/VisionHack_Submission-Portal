@@ -155,7 +155,7 @@ export default function TeamDetail({
 
 							<div className="text-xs text-muted-foreground flex items-center gap-1">
 								<CalendarIcon className="h-3 w-3" />
-								Created: {team.created ? new Date(team.created).toLocaleString() : "—"}
+								Created: {team.created ? team.created.slice(0, 16).replace("T", " ") : "—"}
 							</div>
 						</CardContent>
 					</Card>
@@ -191,7 +191,7 @@ export default function TeamDetail({
 											)}
 											<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
 												<User className="h-3 w-3" />
-												{member.gender} • {member.role}
+												{[member.gender, member.role].filter(Boolean).join(" • ")}
 											</div>
 										</div>
 									))}
@@ -218,7 +218,7 @@ export default function TeamDetail({
 										.map(([key, value]) => (
 											<div key={key} className="flex justify-between gap-3 border-b pb-1">
 												<span className="shrink-0 text-muted-foreground capitalize">
-													{key.replace(/_/g, " ")}
+													{key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ")}
 												</span>
 												<span className="min-w-0 flex-1 break-words text-right font-medium">
 													{Array.isArray(value) ? (value as string[]).join(", ") : String(value)}

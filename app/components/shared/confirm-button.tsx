@@ -48,8 +48,16 @@ export function ConfirmButton({
 		const handleKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") setConfirming(false);
 		};
+		// Cancel on a click outside the confirmation pair.
+		const handlePointerDown = (e: PointerEvent) => {
+			if (!el.contains(e.target as Node)) setConfirming(false);
+		};
 		el.addEventListener("keydown", handleKey);
-		return () => el.removeEventListener("keydown", handleKey);
+		document.addEventListener("pointerdown", handlePointerDown);
+		return () => {
+			el.removeEventListener("keydown", handleKey);
+			document.removeEventListener("pointerdown", handlePointerDown);
+		};
 	}, [confirming]);
 
 	const handleInitialClick = (e: React.MouseEvent) => {

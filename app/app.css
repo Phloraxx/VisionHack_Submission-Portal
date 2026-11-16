@@ -224,7 +224,7 @@
    ========================================================================= */
 
 /* Easing tokens — the system's single source of truth.
- * Keep these aligned with /references/motion.md timing table:
+ * Keep these aligned with the motion timing table:
  *   vh-ease-out   — quart-ish, sharp arrival
  *   vh-ease-in    — used for exits only
  *   vh-ease-glide — balanced for spatial transitions (drawer, accordion)
@@ -267,17 +267,6 @@
 	from {
 		opacity: 0;
 		transform: translateX(8px);
-	}
-	to {
-		opacity: 1;
-		transform: translateX(0);
-	}
-}
-
-@keyframes vh-slide-in-left {
-	from {
-		opacity: 0;
-		transform: translateX(-8px);
 	}
 	to {
 		opacity: 1;
@@ -365,16 +354,6 @@
 	}
 }
 
-@keyframes vh-focus-pulse {
-	0%,
-	100% {
-		box-shadow: 0 0 0 2px var(--ring), 0 0 0 4px transparent;
-	}
-	50% {
-		box-shadow: 0 0 0 2px var(--ring), 0 0 0 6px color-mix(in oklch, var(--ring), transparent 70%);
-	}
-}
-
 /* ---- Composite utilities ---- */
 
 .stagger-cards > * {
@@ -439,9 +418,6 @@
 .panel-enter {
 	animation: vh-slide-in-right 240ms var(--vh-ease-out) both;
 }
-.panel-enter-left {
-	animation: vh-slide-in-left 240ms var(--vh-ease-out) both;
-}
 
 /* Pop-in for confirmation dialogs / inline alerts */
 .pop-in {
@@ -481,10 +457,6 @@
 }
 
 /* Focus ring with subtle pulse — opt-in for primary CTAs */
-.vh-focus-pulse:focus-visible {
-	animation: vh-focus-pulse 1.6s var(--vh-ease-out) infinite;
-}
-
 /* Drawer slide — used on the dashboard sidebar */
 .drawer-slide {
 	transition: transform 320ms var(--vh-ease-glide);
@@ -492,7 +464,7 @@
 
 /* Reduced motion: kill animations, preserve final state.
  * Reduced version must still communicate functional signals
- * (focus, progress, loading, confirmation) — see /references/motion.md. */
+ * (focus, progress, loading, confirmation). */
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
@@ -517,8 +489,7 @@
 		animation-duration: 2.4s !important;
 		opacity: 0.7;
 	}
-	.vh-shake,
-	.vh-focus-pulse {
+	.vh-shake {
 		animation: none;
 	}
 	.vh-press:active,
@@ -530,42 +501,8 @@
 /* =========================================================================
    UTILITY PRIMITIVES
    -----------------------------------------------------------------------
-   - .vh-mono: monospace numerics
-   - .vh-pill: status pill base
-   - .vh-divider: hairline divider with brand tint
-   - .vh-grid-line: subtle grid backdrop (used on hero panels)
+   - .vh-grid-bg: subtle grid backdrop (used on hero panels)
    ========================================================================= */
-
-.vh-mono {
-	font-family: var(--font-mono);
-	font-variant-numeric: tabular-nums;
-	letter-spacing: -0.01em;
-}
-
-.vh-pill {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.375rem;
-	padding: 0.125rem 0.5rem;
-	border-radius: 9999px;
-	font-size: 0.6875rem;
-	font-weight: 500;
-	letter-spacing: 0.02em;
-	text-transform: uppercase;
-	line-height: 1;
-	border: 1px solid currentColor;
-	border-color: color-mix(in oklch, currentColor, transparent 80%);
-}
-
-.vh-divider {
-	height: 1px;
-	background: linear-gradient(
-		to right,
-		transparent,
-		color-mix(in oklch, var(--border), transparent 30%),
-		transparent
-	);
-}
 
 .vh-grid-bg {
 	background-image: linear-gradient(
@@ -579,50 +516,6 @@
 			transparent 1px
 		);
 	background-size: 32px 32px;
-}
-
-/* Brand signal: a 1px line that gradients brand to transparent */
-.vh-brand-line {
-	height: 1px;
-	background: linear-gradient(
-		to right,
-		var(--primary),
-		color-mix(in oklch, var(--primary), transparent 100%)
-	);
-}
-
-/* Brand wash: large soft brand-tinted area on a positioned element.
- * Apply to a div with `absolute inset-0` and one of the modifier classes
- * (`.vh-wash-tl`, `.vh-wash-tr`, `.vh-wash-bl`, `.vh-wash-br`) to
- * place the glow in a specific corner.
- */
-.vh-wash-tl {
-	background: radial-gradient(
-		ellipse at top left,
-		color-mix(in oklch, var(--primary), transparent 88%),
-		transparent 60%
-	);
-}
-.vh-wash-tr {
-	background: radial-gradient(
-		ellipse at top right,
-		color-mix(in oklch, var(--primary), transparent 88%),
-		transparent 60%
-	);
-}
-.vh-wash-bl {
-	background: radial-gradient(
-		ellipse at bottom left,
-		color-mix(in oklch, var(--primary), transparent 88%),
-		transparent 60%
-	);
-}
-.vh-wash-br {
-	background: radial-gradient(
-		ellipse at bottom right,
-		color-mix(in oklch, var(--primary), transparent 88%),
-		transparent 60%
-	);
 }
 
 /* =========================================================================
@@ -642,31 +535,6 @@
 .vh-safe-top {
 	padding-top: env(safe-area-inset-top);
 }
-.vh-safe-bottom {
-	padding-bottom: env(safe-area-inset-bottom);
-}
-.vh-safe-left {
-	padding-left: env(safe-area-inset-left);
-}
-.vh-safe-right {
-	padding-right: env(safe-area-inset-right);
-}
-
-/* Additive variants: safe-area inset added on top of existing layout padding.
-   Use when the same element also carries Tailwind padding utilities. */
-.vh-safe-top-add {
-	padding-top: calc(var(--_pt, 0px) + env(safe-area-inset-top));
-}
-.vh-safe-bottom-add {
-	padding-bottom: calc(var(--_pb, 0px) + env(safe-area-inset-bottom));
-}
-.vh-safe-left-add {
-	padding-left: calc(var(--_pl, 0px) + env(safe-area-inset-left));
-}
-.vh-safe-right-add {
-	padding-right: calc(var(--_pr, 0px) + env(safe-area-inset-right));
-}
-
 .vh-h-screen-dynamic {
 	height: 100vh;
 	height: 100dvh;
@@ -674,19 +542,6 @@
 .vh-min-h-screen-dynamic {
 	min-height: 100vh;
 	min-height: 100dvh;
-}
-
-/* Container queries — let a component respond to its own width,
- * not the viewport. Pair with @container on parents. */
-@container vh-card (max-width: 320px) {
-	.vh-card-narrow [data-card-meta] {
-		display: none;
-	}
-}
-@container vh-card (max-width: 240px) {
-	.vh-card-narrow [data-card-code] {
-		display: none;
-	}
 }
 
 /* AnimatedGrid cell pulse — keyframes here to avoid inline <style> CSP violations */
@@ -764,23 +619,33 @@
 	opacity: 1;
 }
 
-/* Dark login panel — force visible input fields regardless of Tailwind dark: variants */
-[data-theme="dark"] input[data-slot="input"] {
-	background-color: #f5f0e8 !important;
-	border-color: #d4c9b8 !important;
-	color: #1a1714 !important;
-}
-[data-theme="dark"] input[data-slot="input"]::placeholder {
-	color: #8c8070 !important;
-	opacity: 1;
-}
-[data-theme="dark"] input[data-slot="input"]:focus-visible {
-	border-color: #c2820c !important;
-	box-shadow: 0 0 0 3px rgba(194, 130, 12, 0.25) !important;
-	outline: none !important;
+/* Paper surface used by the dark login form's fields. */
+:root {
+	--vh-paper: oklch(0.96 0.012 85);
+	--vh-paper-border: oklch(0.85 0.02 80);
+	--vh-paper-ink: oklch(0.22 0.012 60);
+	--vh-paper-muted: oklch(0.58 0.015 70);
 }
 
-/* Icons inside inputs on dark login panel — must be dark to show on light input bg */
-[data-theme="dark"] .relative > svg.lucide {
-	color: #8c8070 !important;
+/* Dark login panel — the inputs stay light so the form reads as a sheet of
+   paper on the dark chrome. Scoped to the login form's own field wrapper so
+   it cannot leak into other dark subtrees. */
+[data-theme="dark"] .vh-dark-form input[data-slot="input"] {
+	background-color: var(--vh-paper);
+	border-color: var(--vh-paper-border);
+	color: var(--vh-paper-ink);
+}
+[data-theme="dark"] .vh-dark-form input[data-slot="input"]::placeholder {
+	color: var(--vh-paper-muted);
+	opacity: 1;
+}
+[data-theme="dark"] .vh-dark-form input[data-slot="input"]:focus-visible {
+	border-color: var(--primary);
+	box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary), transparent 75%);
+	outline: none;
+}
+
+/* Icons inside those inputs must be dark to show on the light field. */
+[data-theme="dark"] .vh-dark-form .relative > svg.lucide {
+	color: var(--vh-paper-muted);
 }

@@ -191,7 +191,7 @@ export default function ResetPassword() {
 									</p>
 								</div>
 
-								<Form method="post" className="space-y-5">
+								<Form method="post" className="vh-dark-form space-y-5">
 									<input type="hidden" name="token" value={token} />
 
 									{actionData?.error && (

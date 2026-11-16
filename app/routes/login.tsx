@@ -256,7 +256,7 @@ export default function Login() {
 							</p>
 						</div>
 
-						<Form method="post" className="space-y-5">
+						<Form method="post" className="vh-dark-form space-y-5">
 							{actionData?.error && (
 								<div
 									role="alert"

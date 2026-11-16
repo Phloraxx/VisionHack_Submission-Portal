@@ -43,6 +43,7 @@ export function ProgressBar({
 					)}
 				</div>
 			)}
+			{/* biome-ignore lint/a11y/useFocusableInteractive: a progressbar is a read-only indicator, not a control */}
 			<div
 				className="relative h-1 w-full overflow-hidden rounded-full bg-muted"
 				role="progressbar"
@@ -50,7 +51,6 @@ export function ProgressBar({
 				aria-valuenow={value}
 				aria-valuemin={0}
 				aria-valuemax={max}
-				tabIndex={0}
 			>
 				<div
 					className={cn(

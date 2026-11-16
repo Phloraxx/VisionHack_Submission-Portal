@@ -6,8 +6,6 @@ interface MetricCardProps {
 	value: string | number;
 	/** Short subtitle/context line. */
 	context?: string;
-	/** Optional trend (positive/negative delta). */
-	trend?: { value: string; direction: "up" | "down" | "flat" };
 	/** Optional icon — small, top-right. */
 	icon?: LucideIcon;
 	/** Tone for the value color (used sparingly). */
@@ -24,12 +22,6 @@ const TONE_VALUE: Record<NonNullable<MetricCardProps["tone"]>, string> = {
 	info: "text-info",
 };
 
-const TREND_COLOR = {
-	up: "text-success",
-	down: "text-danger",
-	flat: "text-muted-foreground",
-} as const;
-
 /**
  * A single-stat card for dashboards.
  * Designed for 4-up grids — label/value/context stacked, icon top-right.
@@ -39,7 +31,6 @@ export function MetricCard({
 	label,
 	value,
 	context,
-	trend,
 	icon: Icon,
 	tone = "default",
 	className,
@@ -72,11 +63,6 @@ export function MetricCard({
 				>
 					{value}
 				</span>
-				{trend && (
-					<span className={cn("text-xs font-medium", TREND_COLOR[trend.direction])}>
-						{trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "→"} {trend.value}
-					</span>
-				)}
 			</div>
 			{context && <p className="text-xs text-muted-foreground leading-snug">{context}</p>}
 		</div>
