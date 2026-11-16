@@ -72,7 +72,7 @@ jobs:
         env:
           POSTGRES_USER: visionhack
           POSTGRES_PASSWORD: visionhack_ci
-          POSTGRES_DB: visionhack
+          POSTGRES_DB: visionhack_test
         ports:
           - 5432:5432
         options: >-
@@ -82,7 +82,7 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgres://visionhack:visionhack_ci@localhost:5432/visionhack
+      DATABASE_URL: postgres://visionhack:visionhack_ci@localhost:5432/visionhack_test
       # Fixed CI-only signing key. Must be >= 32 bytes (env.server.ts).
       APP_JWT_SECRET: ci-idor-secret-0123456789abcdef0123456789abcdef
       UPLOADS_DIR: /tmp/uploads
