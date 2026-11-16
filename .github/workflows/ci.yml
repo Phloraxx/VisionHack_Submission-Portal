@@ -177,3 +177,95 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Boots the actual Docker image (the Dockerfile CMD, the exact runner-stage
+  # file set, Node 22 type stripping) against a fresh Postgres, so boot-only
+  # regressions fail CI instead of crash-looping production. This would have
+  # caught both the env.server import crash and the divergent-hashed CSS from
+  # the `app.css?url` era (a second stylesheet link on /login).
+  image:
+    name: Docker image boot smoke
+    if: github.ref == 'refs/heads/main'
+    needs: [check, lint, idor]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: visionhack
+          POSTGRES_PASSWORD: visionhack_ci
+          POSTGRES_DB: visionhack_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U visionhack -d visionhack_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Apply schema
+        run: psql "postgres://visionhack:visionhack_ci@localhost:5432/visionhack_test" -v ON_ERROR_STOP=1 -f postgres/schema.sql
+
+      - name: Build image
+        run: docker build -t vh-ci-image .
+
+      - name: Boot image in production mode
+        run: |
+          set -euo pipefail
+          # Host networking: the container reaches the postgres service on
+          # localhost and its port is reachable from the runner.
+          docker run -d --name vh-ci-app --network host \
+            -e DATABASE_URL=postgres://visionhack:visionhack_ci@localhost:5432/visionhack_test \
+            -e APP_JWT_SECRET=ci-image-secret-0123456789abcdef0123456789abcdef \
+            -e UPLOADS_DIR=/tmp/uploads \
+            -e APP_URL=http://localhost:4199 \
+            -e ALLOWED_ORIGINS=http://localhost:4199 \
+            -e TRUST_PROXY_HEADERS=1 \
+            -e NODE_ENV=production \
+            -e PORT=4199 \
+            vh-ci-image
+
+          # Poll the app itself; docker's HEALTHCHECK has a 20s start period.
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:4199/api/health; then
+              echo "app healthy after ${i}s"
+              ready=1
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' vh-ci-app)" != "true" ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "app did not become healthy"
+            docker logs vh-ci-app
+            exit 1
+          fi
+
+      - name: Verify SSR page and stylesheet
+        run: |
+          set -euo pipefail
+          html=$(curl -fsS http://localhost:4199/login)
+          # Exactly one stylesheet href, and the named file must exist. The
+          # `app.css?url` bug leaked a second, client-only CSS hash here.
+          printf '%s' "$html" | grep -qE '/assets/[A-Za-z0-9_.-]+\.css'
+          css=$(printf '%s' "$html" | grep -oE '/assets/[A-Za-z0-9_.-]+\.css' | sort -u)
+          echo "stylesheet hrefs: $css"
+          [ "$(printf '%s\n' "$css" | grep -c .)" -eq 1 ]
+          status=$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:4199$css")
+          echo "stylesheet fetch: $status"
+
+      - name: Container log (on failure)
+        if: failure()
+        run: docker logs vh-ci-app || true
