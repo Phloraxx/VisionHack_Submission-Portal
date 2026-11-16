@@ -24,6 +24,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 import { getEnv } from "./env.server";
 import type {
+	ConfigRecord,
 	InstitutionRecord,
 	MemberRecord,
 	QuestionnaireResponseRecord,
@@ -318,6 +319,8 @@ export interface UsersRepository {
 	findByEmail(email: string): Promise<UserAuthRow | null>;
 	/** Load the live record used by `resolveAuth` — no password hash. */
 	findById(id: string): Promise<UserRecord | null>;
+	/** Count the users the actor may list (§6.2 users list predicate). */
+	count(user: ActingUser): Promise<number>;
 	/** Current hash, for the password-reset fingerprint check. */
 	findPasswordHashById(id: string): Promise<string | null>;
 	/** Write a new hash (bcrypt → argon2id upgrade, or a completed reset). */
@@ -352,6 +355,24 @@ export const users: UsersRepository = {
 		);
 		const row = result.rows[0];
 		return row ? toUserRecord(row) : null;
+	},
+
+	async count(user: ActingUser): Promise<number> {
+		const { params, p } = paramList();
+		const actorId = p(user.id);
+		const actorRole = p(user.role);
+		const actorInstitution = p(user.institutionId);
+		// §6.2 users list/view: self ∨ admin ∨ coordinator ∨ lead ∨ own inst.
+		const scope = [
+			`id = NULLIF(${actorId}, '')::uuid`,
+			`${actorRole}::text IN ('admin', 'coordinator', 'lead')`,
+			`institution_id = NULLIF(${actorInstitution}, '')::uuid`,
+		].join(" OR ");
+		const result = await query<{ count: number }>(
+			`SELECT count(*)::int AS count FROM users WHERE ${scope}`,
+			params,
+		);
+		return result.rows[0]?.count ?? 0;
 	},
 
 	async findPasswordHashById(id: string): Promise<string | null> {
@@ -890,6 +911,13 @@ export interface InstitutionsRepository {
 	 * top of it.
 	 */
 	findByCampusLeadId(user: ActingUser, campusLeadId: string): Promise<InstitutionView | null>;
+	/**
+	 * Exact `code` lookup — the campus-leads duplicate check.
+	 *
+	 * `code` is unique, so this is the `getFirstListItem("code = …")` the
+	 * admin route used before the port.
+	 */
+	findByCode(user: ActingUser, code: string): Promise<InstitutionView | null>;
 	create(user: ActingUser, input: InstitutionCreateInput): Promise<InstitutionView | null>;
 	update(
 		user: ActingUser,
@@ -971,6 +999,20 @@ export const institutions: InstitutionsRepository = {
 		const result = await query<InstitutionRow>(
 			`SELECT ${INSTITUTION_SELECT} ${INSTITUTION_FROM}
 			 WHERE i.campus_lead_id = ${leadParam} AND (${scope})
+			 LIMIT 1`,
+			params,
+		);
+		const row = result.rows[0];
+		return row ? toInstitutionView(row) : null;
+	},
+
+	async findByCode(user: ActingUser, code: string): Promise<InstitutionView | null> {
+		const { params, p } = paramList();
+		const codeParam = p(code);
+		const scope = institutionScope(user, p);
+		const result = await query<InstitutionRow>(
+			`SELECT ${INSTITUTION_SELECT} ${INSTITUTION_FROM}
+			 WHERE i.code = ${codeParam} AND ${scope}
 			 LIMIT 1`,
 			params,
 		);
@@ -1715,6 +1757,84 @@ export const statusTransitions: StatusTransitionsRepository = {
 		);
 		const row = result.rows[0];
 		return row ? toStatusTransitionRecord(row) : null;
+	},
+};
+
+// ---------------------------------------------------------------------------
+// config repository
+// ---------------------------------------------------------------------------
+
+interface ConfigRow extends QueryResultRow {
+	id: string;
+	key: string;
+	value: boolean;
+	created_at: Date;
+	updated_at: Date;
+}
+
+const CONFIG_SELECT = "id, key, value, created_at, updated_at";
+
+function toConfigRecord(row: ConfigRow): ConfigRecord {
+	return {
+		id: row.id,
+		key: row.key,
+		value: row.value === true,
+		created: row.created_at.toISOString(),
+		updated: row.updated_at.toISOString(),
+	};
+}
+
+/**
+ * `schema_version` and any `_`-prefixed key are bookkeeping, not phase gates
+ * (plan §6.3) — `getConfig()` skips them, so the write path must too.
+ */
+function isFlagKey(key: string): boolean {
+	return key !== "schema_version" && !key.startsWith("_");
+}
+
+export interface ConfigRepository {
+	/** One flag by key. Null for a missing key or a bookkeeping key. */
+	get(user: ActingUser, key: string): Promise<ConfigRecord | null>;
+	/**
+	 * Insert or update one flag.
+	 *
+	 * `ON CONFLICT (key) DO UPDATE` makes the write idempotent against the
+	 * unique index on `key`; `updated_at` is bumped by the table trigger.
+	 * Admin only (§6.2 config write rule) — null when the actor may not.
+	 */
+	upsert(user: ActingUser, key: string, value: boolean): Promise<ConfigRecord | null>;
+}
+
+export const config: ConfigRepository = {
+	async get(user: ActingUser, key: string): Promise<ConfigRecord | null> {
+		// §6.2 config list/view is public — the login page reads it
+		// unauthenticated — so the actor is not part of the predicate.
+		void user;
+		if (!isFlagKey(key)) return null;
+		const result = await query<ConfigRow>(
+			`SELECT ${CONFIG_SELECT} FROM config WHERE key = $1 LIMIT 1`,
+			[key],
+		);
+		const row = result.rows[0];
+		return row ? toConfigRecord(row) : null;
+	},
+
+	async upsert(user: ActingUser, key: string, value: boolean): Promise<ConfigRecord | null> {
+		if (!isFlagKey(key)) return null;
+		const { params, p } = paramList();
+		const keyParam = p(key);
+		const valueParam = p(value);
+		const actorRole = p(user.role);
+		const result = await query<ConfigRow>(
+			`INSERT INTO config (key, value)
+			 SELECT ${keyParam}, ${valueParam}::boolean
+			 WHERE ${actorRole}::text = 'admin'
+			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+			 RETURNING ${CONFIG_SELECT}`,
+			params,
+		);
+		const row = result.rows[0];
+		return row ? toConfigRecord(row) : null;
 	},
 };
 

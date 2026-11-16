@@ -20,6 +20,7 @@ import {
 } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { TEAM_STATUSES } from "~/lib/constants";
+import { institutions as institutionsRepo, teams as teamsRepo } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
@@ -38,8 +39,6 @@ interface InstitutionRecord {
 
 const PAGE_SIZE = 50;
 export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb, request }) => {
-	pb.autoCancellation(false);
-
 	const url = new URL(request.url);
 	const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
 	const search = (url.searchParams.get("q") ?? "").trim();
@@ -50,47 +49,27 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 	// Coordinator can see all teams; paginate the teams query and skip
 	// the expensive full-list scan. The institutions list is bounded
 	// (a few hundred at most for a hackathon) and is still loaded once.
-	// PB's filter syntax does NOT support `expand.X.field` for filtering
-	// by related-record fields. To filter teams by district, we resolve
-	// the district to institution IDs and filter by `institutionId` instead.
-	const institutions = await pb.collection("institutions").getList<InstitutionRecord>(1, 200, {
-		expand: "campusLeadId",
-		sort: "name",
-		fields: "id,name,district,code,campusLeadId,expand.campusLeadId.name,expand.campusLeadId.email",
-	});
+	// Filtering teams by district resolves the district to institution IDs
+	// and filters on `institutionId` instead — the repository takes the list.
+	const institutionsResult = await institutionsRepo.list(user, { perPage: 200, sort: "name" });
+	const institutions = institutionsResult.items;
 
-	const teamClauses: string[] = [];
-	if (search) {
-		const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
-		teamClauses.push(pb.filter("(name ~ {:search} || teamCode ~ {:search})", { search: safe }));
-	}
-	if (
-		status &&
-		status !== "all" &&
-		TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
-	) {
-		teamClauses.push(pb.filter("status = {:status}", { status }));
-	}
+	const statusFilter =
+		status && status !== "all" && TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
+			? (status as TeamStatus)
+			: undefined;
+
+	// Resolve the district + institution filters to one id list. Both are
+	// ANDed, so an explicit institution narrows the district's set.
+	let institutionIds: string[] | undefined;
 	if (district && district !== "all") {
-		const instIds = institutions.items.filter((i) => i.district === district).map((i) => i.id);
-		if (instIds.length > 0) {
-			// Institution IDs are PB-generated UUIDs from the database, not from user input.
-			// The district filter determines which institutions are selected; the district
-			// value itself is validated implicitly against existing institutions.
-			// PB doesn't accept SQL `IN` lists; we expand to `||` clauses.
-			const idFilters = instIds.map((id) => `institutionId = {:id_${id}}`);
-			const filterParams: Record<string, string> = {};
-			for (const id of instIds) {
-				filterParams[`id_${id}`] = id;
-			}
-			const orChain = idFilters.join(" || ");
-			teamClauses.push(pb.filter(`(${orChain})`, filterParams));
-		} else {
+		institutionIds = institutions.filter((i) => i.district === district).map((i) => i.id);
+		if (institutionIds.length === 0) {
 			// District has no institutions — short-circuit to empty.
 			return {
 				user,
 				teams: [] as TeamView[],
-				institutions: institutions.items,
+				institutions,
 				memberCounts: {} as Record<string, number>,
 				page: 1,
 				perPage: PAGE_SIZE,
@@ -108,29 +87,53 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 		}
 	}
 	if (institution && institution !== "all") {
-		teamClauses.push(pb.filter("institutionId = {:id}", { id: institution }));
+		// The id comes from the URL, so a malformed value must read as "no
+		// match" rather than reaching the `::uuid` cast.
+		institutionIds = institutionIds
+			? institutionIds.filter((id) => id === institution)
+			: [institution];
+		if (institutionIds.length === 0) {
+			return {
+				user,
+				teams: [] as TeamView[],
+				institutions,
+				memberCounts: {} as Record<string, number>,
+				page: 1,
+				perPage: PAGE_SIZE,
+				totalItems: 0,
+				totalPages: 1,
+				statusCounts: {} as Partial<Record<TeamStatus, number>>,
+				teamsByInstitution: {} as Record<
+					string,
+					{ total: number; registered: number; shortlisted: number }
+				>,
+				uniqueInstitutionIds: 0,
+				scannedCount: 0,
+				activeFilters: { search, status, district, institution },
+			};
+		}
 	}
-	const teamFilter = teamClauses.length > 0 ? teamClauses.join(" && ") : undefined;
 
 	// For accurate per-status counts and per-institution aggregates we scan
-	// a bounded set of teams (id/status/institutionId only) matching the
-	// current filter — independent of the page slice. Capped to keep it cheap.
+	// a bounded set of teams matching the current filter — independent of the
+	// page slice. Capped to keep it cheap.
 	const COUNT_SCAN_CAP = 1000;
 
 	const [teamsPage, countScan] = await Promise.all([
-		pb.collection("teams").getList<TeamView>(page, PAGE_SIZE, {
-			filter: teamFilter,
-			expand: "institutionId,leaderUserId",
+		teamsRepo.list(user, {
+			page,
+			perPage: PAGE_SIZE,
 			sort: "-created",
-			fields:
-				"id,name,teamCode,status,created,institutionId,leaderUserId,expand.institutionId.name,expand.leaderUserId.name,expand.leaderUserId.email,expand.institutionId.district",
+			q: search ? search.slice(0, 100) : undefined,
+			status: statusFilter,
+			institutionId: institutionIds,
 		}),
-		pb.collection("teams").getList<{
-			status: TeamStatus;
-			institutionId: string;
-		}>(1, COUNT_SCAN_CAP, {
-			filter: teamFilter,
-			fields: "status,institutionId",
+		teamsRepo.list(user, {
+			page: 1,
+			perPage: COUNT_SCAN_CAP,
+			q: search ? search.slice(0, 100) : undefined,
+			status: statusFilter,
+			institutionId: institutionIds,
 		}),
 	]);
 
@@ -138,6 +141,7 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 	const memberCounts = await getMemberCountsForTeams(
 		pb,
 		teamsPage.items.map((t) => t.id),
+		user,
 	);
 
 	// Status counts + per-institution aggregates across the (filtered) scan.
@@ -166,7 +170,7 @@ export const loader = secureLoader({ roles: ["coordinator"] }, async ({ user, pb
 	return {
 		user,
 		teams: teamsPage.items,
-		institutions: institutions.items,
+		institutions,
 		memberCounts,
 		page: teamsPage.page,
 		perPage: teamsPage.perPage,

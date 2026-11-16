@@ -32,8 +32,10 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { useActionToast } from "~/hooks/use-action-toast";
-import { fail, ok, secureAction } from "~/lib/action.server";
+import { type ActionResult, fail, ok, secureAction } from "~/lib/action.server";
+import { hashPassword } from "~/lib/auth.server";
 import { getConfig } from "~/lib/config.server";
+import { members, teams, users, withTransaction } from "~/lib/db.server";
 import { getStr, isEmail } from "~/lib/form.server";
 import { secureLoader } from "~/lib/loader.server";
 import { sendPasswordResetEmail } from "~/lib/password-reset.server";
@@ -71,42 +73,33 @@ interface TeamWithExpand {
 // ---------------------------------------------------------------------------
 
 export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb }) => {
-	pb.autoCancellation(false);
-
 	// Resolve this institution via the user's id (no full scan).
 	const institution = await getInstitutionForUser(pb, user.id);
 	if (!institution) {
 		throw new Response("Institution not found for this user", { status: 404 });
 	}
 
-	// Load teams + config in parallel. Field-trim expand to keep payload small.
+	// Load teams + config in parallel. The repository joins the institution
+	// and lead records, so `expand` is populated without a second query.
 	const MAX_SAFE_LIST = 500;
 	const [teamsResult, flags] = await Promise.all([
-		pb.collection("teams").getList<TeamWithExpand>(1, MAX_SAFE_LIST, {
-			filter: pb.filter("institutionId = {:institutionId}", {
-				institutionId: institution.id,
-			}),
-			expand: "leaderUserId",
-			fields:
-				"id,name,teamCode,status,idea_title,leaderUserId,institutionId,status_changed_at,questionnaire_completed,created,updated,expand.leaderUserId.name,expand.leaderUserId.email",
+		teams.list(user, {
+			institutionId: institution.id,
+			perPage: MAX_SAFE_LIST,
 			sort: "-created",
 		}),
 		getConfig(pb),
 	]);
-	const teams = teamsResult.items;
+	const institutionTeams = teamsResult.items;
 	if (teamsResult.totalItems > MAX_SAFE_LIST) {
 		console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
 
-	// Members: single query via institution relation traversal (avoids
+	// Members: single query via the institution relation traversal (avoids
 	// building an OR chain of up to 500 team IDs).
 	const allMembers =
-		teams.length > 0
-			? (
-					await pb.collection("members").getList<MemberRecord>(1, MAX_SAFE_LIST, {
-						filter: pb.filter("teamId.institutionId = {:instId}", { instId: institution.id }),
-					})
-				).items
+		institutionTeams.length > 0
+			? (await members.list(user, { institutionId: institution.id, perPage: MAX_SAFE_LIST })).items
 			: [];
 
 	const membersByTeam: Record<string, MemberRecord[]> = {};
@@ -120,7 +113,7 @@ export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb
 	return {
 		user,
 		institution,
-		teams,
+		teams: institutionTeams,
 		membersByTeam,
 		nominationOpen: flags.nomination_open ?? false,
 	};
@@ -129,6 +122,19 @@ export const loader = secureLoader({ roles: ["institution"] }, async ({ user, pb
 // ---------------------------------------------------------------------------
 // Action
 // ---------------------------------------------------------------------------
+
+/**
+ * Abort the invite transaction with a ready-made action result.
+ *
+ * Thrown from inside `withTransaction` so the lead account and its team roll
+ * back together, then caught by the action and returned to the client
+ * unchanged.
+ */
+class InviteError extends Error {
+	constructor(readonly response: ActionResult) {
+		super("invite aborted");
+	}
+}
 
 export const action = secureAction(
 	{ roles: ["institution"] },
@@ -150,83 +156,92 @@ export const action = secureAction(
 
 				// Capacity check + existing-user lookup are independent — parallel.
 				const [teamCount, existingUser] = await Promise.all([
-					pb.collection("teams").getList(1, 1, {
-						filter: pb.filter("institutionId = {:instId}", {
-							instId: institution.id,
-						}),
-						fields: "id",
-					}),
-					pb
-						.collection("users")
-						.getFirstListItem<{ id: string; role: string }>(
-							pb.filter("email = {:email}", { email }),
-							{ fields: "id,role" },
-						)
-						.catch(() => null),
+					teams.countByInstitution(user, institution.id),
+					users.findByEmail(email),
 				]);
 
-				if (institution.maxTeams > 0 && teamCount.totalItems >= institution.maxTeams) {
+				if (institution.maxTeams > 0 && teamCount >= institution.maxTeams) {
 					return fail({
 						error: `This institution has reached its maximum of ${institution.maxTeams} teams.`,
 					});
 				}
 
-				let leadUserId: string;
+				let createdLeadAccount = false;
 
-				if (existingUser) {
-					// Don't allow an admin or coordinator to be re-registered as a lead.
-					if (existingUser.role !== "lead") {
-						return fail({ error: "This email is associated with a non-lead account" });
-					}
-					leadUserId = existingUser.id;
-				} else {
-					// Create user with a random password, then trigger PB's
-					// password-reset email. The lead sets their own password.
-					const tempPassword = crypto.randomUUID();
-					const newUser = await pb.collection("users").create({
-						email,
-						password: tempPassword,
-						passwordConfirm: tempPassword,
-						name,
-						role: "lead",
-						institutionId: institution.id,
+				// The lead account and its invited team are one unit: a failure
+				// on either side must not leave the other behind.
+				try {
+					await withTransaction(async () => {
+						let leadUserId: string;
+
+						if (existingUser) {
+							// Don't allow an admin or coordinator to be re-registered as a lead.
+							if (existingUser.role !== "lead") {
+								throw new InviteError(
+									fail({ error: "This email is associated with a non-lead account" }),
+								);
+							}
+							leadUserId = existingUser.id;
+						} else {
+							// Create the user with a random password; the reset
+							// email below is how the lead sets their own.
+							const passwordHash = await hashPassword(crypto.randomUUID());
+							const newUser = await users.create(user, {
+								email,
+								name,
+								role: "lead",
+								institutionId: institution.id,
+								passwordHash,
+							});
+							if (!newUser) {
+								throw new InviteError(
+									fail({ error: "Failed to create the lead account", status: 500 }),
+								);
+							}
+							leadUserId = newUser.id;
+							createdLeadAccount = true;
+						}
+
+						// Check for an existing team under this lead at this
+						// institution. `findByLeader` is scoped to the actor's
+						// institution, so it can only ever return a team inside
+						// this campus.
+						const existingTeam = await teams.findByLeader(user, leadUserId);
+						if (existingTeam) {
+							throw new InviteError(
+								fail({
+									error: "A team already exists for this lead at your institution",
+									status: 409,
+								}),
+							);
+						}
+
+						// Create the team.
+						const created = await teams.create(user, {
+							name: `${name}'s Team`,
+							institutionId: institution.id,
+							leaderUserId: leadUserId,
+							status: "invited",
+							statusChangedAt: new Date().toISOString(),
+						});
+						if (!created) {
+							throw new InviteError(fail({ error: "Failed to create the team", status: 500 }));
+						}
 					});
-					leadUserId = newUser.id;
+				} catch (err) {
+					if (err instanceof InviteError) return err.response;
+					throw err;
+				}
 
-					// Send the app's password-reset email.
+				// Send the app's password-reset email once the account exists
+				// for real — a rolled-back invite must not mail a dead link.
+				if (createdLeadAccount) {
 					try {
 						await sendPasswordResetEmail(db, email);
 					} catch (err) {
 						console.error("[institution] Failed to send invite/reset email:", err);
 					}
 				}
-
-				// Check for an existing team under this lead at this institution.
-				const existingTeam = await pb
-					.collection("teams")
-					.getFirstListItem(
-						pb.filter("leaderUserId = {:leaderUserId} && institutionId = {:institutionId}", {
-							leaderUserId: leadUserId,
-							institutionId: institution.id,
-						}),
-						{ fields: "id" },
-					)
-					.catch(() => null);
-				if (existingTeam) {
-					return fail({
-						error: "A team already exists for this lead at your institution",
-						status: 409,
-					});
-				}
-
-				// Create the team.
-				await pb.collection("teams").create({
-					name: `${name}'s Team`,
-					institutionId: institution.id,
-					leaderUserId: leadUserId,
-					status: "invited",
-					status_changed_at: new Date().toISOString(),
-				});
 
 				return ok();
 			}
@@ -264,12 +279,9 @@ export const action = secureAction(
 				if (!result.ok) return result.response;
 				// Best-effort email notification to the lead
 				try {
-					const team = await pb.collection("teams").getOne(teamId, {
-						expand: "leaderUserId",
-						fields: "id,name,expand.leaderUserId.email,expand.leaderUserId.name",
-					});
-					const lead = team.expand?.leaderUserId;
-					if (lead?.email) {
+					const team = await teams.getOne(user, teamId);
+					const lead = team?.expand?.leaderUserId;
+					if (team && lead?.email) {
 						void sendStatusChangeEmail({
 							to: lead.email,
 							leadName: lead.name || "Team Lead",

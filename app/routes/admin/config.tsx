@@ -9,6 +9,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Switch } from "~/components/ui/switch";
 import { fail, ok, secureAction } from "~/lib/action.server";
 import { getConfig } from "~/lib/config.server";
+import { config } from "~/lib/db.server";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { secureLoader } from "~/lib/loader.server";
 import { configUpdateSchema } from "~/lib/schemas/config";
@@ -29,19 +30,17 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) =>
 
 export const action = secureAction(
 	{ roles: ["admin"], schema: configUpdateSchema },
-	async ({ formData, pb, validated }) => {
+	async ({ validated, user }) => {
 		const { key } = validated as { key: string };
 
 		if (!FEATURE_FLAGS.some((f) => f.key === key)) {
 			return fail({ error: "Invalid configuration key" });
 		}
 
-		// Config writes use the admin user's own auth token — the config
-		// collection's create/update rules require @request.auth.role = "admin".
-		const target = await pb
-			.collection("config")
-			.getFirstListItem(pb.filter("key = {:key}", { key }))
-			.catch(() => null);
+		// Config writes are admin-only, which the repository enforces in SQL.
+		// `get` skips `schema_version` and `_`-prefixed keys, so a bookkeeping
+		// row can never be toggled through this route.
+		const target = await config.get(user, key);
 		if (!target) {
 			return fail({ error: "Configuration key not found" });
 		}
@@ -49,11 +48,12 @@ export const action = secureAction(
 		// Server-authoritative toggle: read the current value from the DB and flip it.
 		// This eliminates the TOCTOU race where two admins clicking simultaneously
 		// would both trust a stale client-side value.
-		const currentValue = target.value === "true" || target.value === true;
-		const newValue = !currentValue;
+		const updated = await config.upsert(user, key, !target.value);
+		if (!updated) {
+			return fail({ error: "Configuration key not found" });
+		}
 
-		await pb.collection("config").update(target.id, { value: newValue });
-		return ok({ key, value: newValue });
+		return ok({ key, value: updated.value });
 	},
 );
 

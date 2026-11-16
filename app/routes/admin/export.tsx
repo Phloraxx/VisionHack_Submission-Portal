@@ -13,6 +13,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "~/components/ui/select";
+import { members, teams } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus, TeamView } from "~/lib/types";
@@ -25,21 +26,14 @@ import { countByKey } from "~/lib/utils";
 // The export *page* only renders counts + filters; the actual CSV is
 // produced by /api/export/csv. So the loader needs team metadata for the
 // filter UI and member counts only — not full member rows.
-export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) => {
+export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
 	const MAX_SAFE_LIST = 500;
 	const [teamsResult, membersResult] = await Promise.all([
-		pb.collection("teams").getList<TeamView>(1, MAX_SAFE_LIST, {
-			expand: "institutionId,leaderUserId",
-			sort: "-created",
-			fields:
-				"id,name,teamCode,status,institutionId,leaderUserId,created,updated,expand.institutionId.name,expand.institutionId.district,expand.leaderUserId.name,expand.leaderUserId.email",
-		}),
-		pb.collection("members").getList<{ teamId: string }>(1, MAX_SAFE_LIST, {
-			fields: "teamId",
-		}),
+		teams.list(user, { perPage: MAX_SAFE_LIST, sort: "-created" }),
+		members.list(user, { perPage: MAX_SAFE_LIST }),
 	]);
-	const teams = teamsResult.items;
-	const members = membersResult.items;
+	const allTeams = teamsResult.items;
+	const allMembers = membersResult.items;
 	if (teamsResult.totalItems > MAX_SAFE_LIST) {
 		console.warn(`[teams] More than ${MAX_SAFE_LIST} items — pagination needed`);
 	}
@@ -49,13 +43,13 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) =>
 
 	// Only count members whose team exists in the loaded set —
 	// avoids a total/filtered mismatch from orphaned member records.
-	const teamIds = new Set(teams.map((t) => t.id));
-	const memberCounts = countByKey(members, (m) => m.teamId);
-	const totalMembers = members.filter((m) => teamIds.has(m.teamId)).length;
+	const teamIds = new Set(allTeams.map((t) => t.id));
+	const memberCounts = countByKey(allMembers, (m) => m.teamId);
+	const totalMembers = allMembers.filter((m) => teamIds.has(m.teamId)).length;
 
 	return {
 		user,
-		teams,
+		teams: allTeams,
 		memberCounts,
 		totalMembers,
 	};

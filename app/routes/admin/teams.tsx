@@ -7,6 +7,7 @@ import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { Skeleton } from "~/components/ui/skeleton";
 import { TEAM_STATUSES } from "~/lib/constants";
+import { teams as teamsRepo } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { getMemberCountsForTeams } from "~/lib/team.server";
 import type { TeamStatus, TeamView } from "~/lib/types";
@@ -19,51 +20,42 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb, requ
 	const search = (url.searchParams.get("q") ?? "").trim();
 	const status = url.searchParams.get("status") ?? "";
 
-	// Build a server-side filter. PB's `~` operator works on local
-	// fields (name, teamCode) and on equality of expanded relations
-	// (expand.X.field = "...") but NOT for substring match across
-	// expanded relations. We therefore scope server-side search to
-	// name and teamCode, then post-filter on lead name/email and
-	// institution name in JS below. The page is bounded to PAGE_SIZE,
-	// so the post-filter is cheap.
-	const clauses: string[] = [];
-	if (search) {
-		const safe = search.slice(0, 100).replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
-		clauses.push(pb.filter("(name ~ {:search} || teamCode ~ {:search})", { search: safe }));
-	}
-	if (
-		status &&
-		status !== "all" &&
-		TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
-	) {
-		clauses.push(pb.filter("status = {:status}", { status }));
-	}
-	const filter = clauses.length > 0 ? clauses.join(" && ") : undefined;
+	// Server-side filter. The repository's `q` option is a `contains` match
+	// on `name` and `team_code` (the same two local fields PocketBase's `~`
+	// operator covered); substring match across expanded relations is not
+	// expressible in SQL without a join, so lead name/email and institution
+	// name are still post-filtered in JS below. The page is bounded to
+	// PAGE_SIZE, so the post-filter is cheap.
+	const statusFilter =
+		status && status !== "all" && TEAM_STATUSES.includes(status as (typeof TEAM_STATUSES)[number])
+			? (status as TeamStatus)
+			: undefined;
 
 	// Page slice + a fields-only scan for per-status counts. We cap the
 	// count scan at 500 rows; for 500+ teams, the metric cards become
 	// approximate. (A future migration can add server-side aggregations
-	// on PB if the event grows past this size.)
+	// if the event grows past this size.)
 	const COUNT_SCAN_CAP = 500;
 
 	const [pageResult, countScan] = await Promise.all([
-		pb.collection("teams").getList<TeamView>(page, PAGE_SIZE, {
-			filter,
-			expand: "institutionId,leaderUserId",
+		teamsRepo.list(user, {
+			page,
+			perPage: PAGE_SIZE,
 			sort: "-created",
-			fields:
-				"id,name,teamCode,status,created,institutionId,leaderUserId,expand.institutionId.name,expand.leaderUserId.name,expand.leaderUserId.email",
+			q: search ? search.slice(0, 100) : undefined,
+			status: statusFilter,
 		}),
-		pb.collection("teams").getList<{ id: string; status: TeamStatus }>(1, COUNT_SCAN_CAP, {
-			filter,
-			fields: "id,status",
-			$autoCancel: false,
+		teamsRepo.list(user, {
+			page: 1,
+			perPage: COUNT_SCAN_CAP,
+			q: search ? search.slice(0, 100) : undefined,
+			status: statusFilter,
 		}),
 	]);
 
 	// Member counts for THIS PAGE only — full counts are too expensive.
 	const teamIds = pageResult.items.map((t) => t.id);
-	const memberCounts = await getMemberCountsForTeams(pb, teamIds);
+	const memberCounts = await getMemberCountsForTeams(pb, teamIds, user);
 
 	const statusCounts: Partial<Record<TeamStatus, number>> = {};
 	for (const t of countScan.items) {

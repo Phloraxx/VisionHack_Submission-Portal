@@ -12,18 +12,17 @@ import { MetricCard } from "~/components/shared/metric-card";
 import { PanelHeader } from "~/components/shared/panel-header";
 import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
+import { institutions, teams, users } from "~/lib/db.server";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { secureLoader } from "~/lib/loader.server";
 import { STATUS_COLORS, STATUS_LABELS } from "~/lib/team-status";
 import type { TeamStatus } from "~/lib/types";
 
-export const loader = secureLoader({ roles: ["admin"] }, async ({ pb }) => {
-	pb.autoCancellation(false);
-	// PB's list rules allow admin-role clients for teams, institutions,
-	// and users — the user's own auth token is sufficient here.
-
-	// Issue one count query per status instead of scanning all rows;
-	// institution/user totals come from `totalItems`.
+export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
+	// One count query per status instead of scanning all rows; institution
+	// and user totals come from the repositories' own counts. The admin
+	// scope predicate is `TRUE` for teams/institutions, so nothing is
+	// filtered out.
 	const statusKeys: TeamStatus[] = [
 		"invited",
 		"registered",
@@ -34,14 +33,11 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ pb }) => {
 		"withdrawn",
 	];
 	const countQueries = statusKeys.map((status) =>
-		pb
-			.collection("teams")
-			.getList(1, 1, { filter: pb.filter("status = {:status}", { status }), fields: "id" })
-			.then((page) => [status, page.totalItems] as const),
+		teams.list(user, { status, perPage: 1 }).then((page) => [status, page.totalItems] as const),
 	);
-	const [institutionsPage, usersPage, ...statusResults] = await Promise.all([
-		pb.collection("institutions").getList(1, 1, { fields: "id" }),
-		pb.collection("users").getList(1, 1, { fields: "id" }),
+	const [institutionsPage, totalUsers, ...statusResults] = await Promise.all([
+		institutions.list(user, { perPage: 1 }),
+		users.count(user),
 		...countQueries,
 	]);
 
@@ -50,7 +46,7 @@ export const loader = secureLoader({ roles: ["admin"] }, async ({ pb }) => {
 	return {
 		totalTeams: Object.values(statusCounts).reduce((a, b) => a + b, 0),
 		totalInstitutions: institutionsPage.totalItems,
-		totalUsers: usersPage.totalItems,
+		totalUsers,
 		statusCounts,
 	};
 });

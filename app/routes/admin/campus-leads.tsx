@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { fail, ok, secureAction } from "~/lib/action.server";
+import { institutions, users, withTransaction } from "~/lib/db.server";
 import { secureLoader } from "~/lib/loader.server";
 import { createCampusLeadSchema } from "~/lib/schemas/campus-leads";
 import { createCampusLead } from "~/lib/team.server";
@@ -57,33 +58,17 @@ function parseCsvLine(rawLine: string): string[] {
 // Loader
 // ---------------------------------------------------------------------------
 
-export const loader = secureLoader({ roles: ["admin"] }, async ({ user, pb }) => {
-	const institutions = await pb.collection("institutions").getList<{
-		id: string;
-		name: string;
-		district: string;
-		code: string;
-		campusLeadId: string;
-		expand?: {
-			campusLeadId?: {
-				id: string;
-				name: string;
-				email: string;
-			};
-		};
-	}>(1, 1000, {
-		expand: "campusLeadId",
-		sort: "-created",
-	});
+export const loader = secureLoader({ roles: ["admin"] }, async ({ user }) => {
+	const institutionsResult = await institutions.list(user, { perPage: 1000, sort: "-created" });
 
-	return { user, institutions: institutions.items };
+	return { user, institutions: institutionsResult.items };
 });
 
 // ---------------------------------------------------------------------------
 // Action
 // ---------------------------------------------------------------------------
 
-export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent, pb }) => {
+export const action = secureAction({ roles: ["admin"] }, async ({ formData, intent, pb, user }) => {
 	if (intent === "create-single") {
 		const parsed = createCampusLeadSchema.safeParse({
 			institutionName: formData.get("institutionName"),
@@ -105,14 +90,8 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 		try {
 			// The two existence checks are independent — run in parallel.
 			const [existingInst, existingUser] = await Promise.all([
-				pb
-					.collection("institutions")
-					.getFirstListItem(pb.filter("code = {:code}", { code }))
-					.catch(() => null),
-				pb
-					.collection("users")
-					.getFirstListItem(pb.filter("email = {:email}", { email: leadEmail }))
-					.catch(() => null),
+				institutions.findByCode(user, code),
+				users.findByEmail(leadEmail),
 			]);
 			if (existingInst) {
 				return fail({ error: `Institution with code "${code}" already exists` });
@@ -121,12 +100,20 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 				return fail({ error: `User with email "${leadEmail}" already exists` });
 			}
 
-			await createCampusLead(pb, {
-				institutionName,
-				district,
-				code,
-				leadName,
-				leadEmail,
+			// Institution + campus-lead user + back-link are one unit: a
+			// failure anywhere rolls the whole creation back.
+			await withTransaction(async () => {
+				await createCampusLead(
+					pb,
+					{
+						institutionName,
+						district,
+						code,
+						leadName,
+						leadEmail,
+					},
+					user,
+				);
 			});
 
 			return ok({ type: "single", success: true, institutionName, leadName, leadEmail });
@@ -221,10 +208,7 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 					continue;
 				}
 
-				const exists = await pb
-					.collection("institutions")
-					.getFirstListItem(pb.filter("code = {:code}", { code: cleanCode }))
-					.catch(() => null);
+				const exists = await institutions.findByCode(user, cleanCode);
 				if (exists) {
 					results.push({
 						row: rowNum,
@@ -235,10 +219,7 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 					continue;
 				}
 				// COR-5: Check for existing user with this email.
-				const existingUser = await pb
-					.collection("users")
-					.getFirstListItem(pb.filter("email = {:email}", { email: cleanLeadEmail }))
-					.catch(() => null);
+				const existingUser = await users.findByEmail(cleanLeadEmail);
 				if (existingUser) {
 					results.push({
 						row: rowNum,
@@ -249,12 +230,20 @@ export const action = secureAction({ roles: ["admin"] }, async ({ formData, inte
 					continue;
 				}
 
-				await createCampusLead(pb, {
-					institutionName: cleanInst,
-					district: cleanDistrict,
-					code: cleanCode,
-					leadName: cleanLeadName,
-					leadEmail: cleanLeadEmail,
+				// Each row is its own unit — one bad row must not roll back
+				// the rows already created.
+				await withTransaction(async () => {
+					await createCampusLead(
+						pb,
+						{
+							institutionName: cleanInst,
+							district: cleanDistrict,
+							code: cleanCode,
+							leadName: cleanLeadName,
+							leadEmail: cleanLeadEmail,
+						},
+						user,
+					);
 				});
 
 				created++;
