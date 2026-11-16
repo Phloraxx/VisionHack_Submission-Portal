@@ -58,6 +58,98 @@ jobs:
       - name: Lint
         run: npx biome check .
 
+  idor:
+    name: IDOR (app HTTP + Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: visionhack
+          POSTGRES_PASSWORD: visionhack_ci
+          POSTGRES_DB: visionhack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U visionhack -d visionhack"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://visionhack:visionhack_ci@localhost:5432/visionhack
+      # Fixed CI-only signing key. Must be >= 32 bytes (env.server.ts).
+      APP_JWT_SECRET: ci-idor-secret-0123456789abcdef0123456789abcdef
+      UPLOADS_DIR: /tmp/uploads
+      # Still required by getEnv(); no route the suite exercises calls it.
+      POCKETBASE_URL: http://127.0.0.1:8090
+      APP_URL: http://localhost:3000
+      # The login action rejects a missing/mismatched Origin with a 403.
+      ALLOWED_ORIGINS: http://localhost:3000
+      FIXTURES_PATH: /tmp/visionhack-test-fixtures.json
+      NODE_ENV: production
+      PORT: 3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Apply schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f postgres/schema.sql
+
+      - name: Seed fixtures
+        run: npm run seed:test
+
+      - name: Build
+        run: npm run build
+
+      - name: Run IDOR suite
+        run: |
+          set -euo pipefail
+          npx tsx server.ts > /tmp/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null "$APP_URL/login"; then
+              echo "app ready after ${i}s"
+              ready=1
+              break
+            fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "app exited before becoming ready"
+              cat /tmp/app.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "app did not become ready within 60s"
+            cat /tmp/app.log
+            exit 1
+          fi
+
+          node tests/test-idor.mjs
+
+      - name: App log (on failure)
+        if: failure()
+        run: cat /tmp/app.log || true
+
   build:
     name: Build
     if: github.ref == 'refs/heads/main'

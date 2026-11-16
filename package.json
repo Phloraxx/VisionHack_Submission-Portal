@@ -9,6 +9,7 @@
 		"start": "node --env-file=.env server.ts",
 		"start:prod": "NODE_ENV=production node server.ts",
 		"setup:pb": "tsx scripts/setup-pb.ts",
+		"seed:test": "tsx scripts/seed-test-data.ts",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
@@ -58,9 +59,6 @@
 		"vitest": "^4.1.9"
 	},
 	"lint-staged": {
-		"*.{ts,tsx}": [
-			"biome check --apply",
-			"vitest related --run"
-		]
+		"*.{ts,tsx}": ["biome check --apply", "vitest related --run"]
 	}
 }
